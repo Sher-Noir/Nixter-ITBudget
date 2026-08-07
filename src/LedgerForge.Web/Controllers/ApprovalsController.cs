@@ -37,6 +37,22 @@ public sealed class ApprovalsController(ApprovalQueueService approvalQueueServic
     public Task<IActionResult> RejectPurchaseOrder(Guid id, string reason, CancellationToken cancellationToken)
         => RunDecision(() => approvalQueueService.RejectPurchaseOrderAsync(id, RequireActor(), reason, cancellationToken));
 
+    [HttpPost("invoices/{id:guid}/approve")]
+    public Task<IActionResult> ApproveInvoice(Guid id, CancellationToken cancellationToken)
+        => RunDecision(() => approvalQueueService.ApproveInvoiceAsync(id, RequireActor(), cancellationToken));
+
+    [HttpPost("invoices/{id:guid}/reject")]
+    public Task<IActionResult> RejectInvoice(Guid id, string reason, CancellationToken cancellationToken)
+        => RunDecision(() => approvalQueueService.RejectInvoiceAsync(id, RequireActor(), reason, cancellationToken));
+
+    [HttpPost("budget-amendments/{id:guid}/approve")]
+    public Task<IActionResult> ApproveBudgetAmendment(Guid id, string? note, CancellationToken cancellationToken)
+        => RunDecision(() => approvalQueueService.ApproveBudgetAmendmentAsync(id, RequireActor(), note, cancellationToken));
+
+    [HttpPost("budget-amendments/{id:guid}/reject")]
+    public Task<IActionResult> RejectBudgetAmendment(Guid id, string reason, CancellationToken cancellationToken)
+        => RunDecision(() => approvalQueueService.RejectBudgetAmendmentAsync(id, RequireActor(), reason, cancellationToken));
+
     private async Task<IActionResult> RunDecision(Func<Task> action)
     {
         try
