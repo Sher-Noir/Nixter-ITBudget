@@ -8,6 +8,8 @@ public sealed record ImportIndexViewModel(
 
 public sealed record ImportBatchDetailViewModel(
     ImportBatchDetail Detail,
+    IReadOnlyList<ImportCommitTarget> CommitTargets,
     string? ErrorMessage = null,
     bool Saved = false,
-    bool Accepted = false);
+    bool Accepted = false,
+    bool Committed = false);
