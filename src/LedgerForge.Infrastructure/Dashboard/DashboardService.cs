@@ -1,5 +1,6 @@
 using LedgerForge.Domain.Budgeting;
 using LedgerForge.Domain.Importing;
+using LedgerForge.Domain.Procurement;
 using LedgerForge.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 
@@ -60,6 +61,23 @@ public sealed class DashboardService(LedgerForgeDbContext dbContext)
             .Where(x => x.FiscalYearId == fiscalYear.Id)
             .SumAsync(x => (decimal?)x.Amount, cancellationToken) ?? 0m;
 
+        var issuedOrderIds = await dbContext.PurchaseOrders
+            .AsNoTracking()
+            .Where(x => x.FiscalYearId == fiscalYear.Id && x.State == PurchaseOrderState.Issued)
+            .Select(x => x.Id)
+            .ToListAsync(cancellationToken);
+
+        var committed = issuedOrderIds.Count == 0
+            ? 0m
+            : await dbContext.PurchaseOrderLines
+                .AsNoTracking()
+                .Where(x => issuedOrderIds.Contains(x.PurchaseOrderId))
+                .SumAsync(x => (decimal?)x.LineTotal, cancellationToken) ?? 0m;
+
+        var pendingPurchaseOrders = await dbContext.PurchaseOrders
+            .AsNoTracking()
+            .CountAsync(x => x.FiscalYearId == fiscalYear.Id && x.State == PurchaseOrderState.PendingApproval, cancellationToken);
+
         var version = await dbContext.BudgetVersions
             .AsNoTracking()
             .Where(x => x.FiscalYearId == fiscalYear.Id)
@@ -73,9 +91,11 @@ public sealed class DashboardService(LedgerForgeDbContext dbContext)
             {
                 FiscalYearId = fiscalYear.Id,
                 FiscalYearName = fiscalYear.DisplayName,
+                Committed = committed,
                 Actual = actual,
-                Available = -actual,
-                Forecast = actual
+                Available = -committed - actual,
+                Forecast = committed + actual,
+                PendingApprovals = pendingPurchaseOrders
             };
         }
 
@@ -99,9 +119,8 @@ public sealed class DashboardService(LedgerForgeDbContext dbContext)
         var planned = items.Sum(x => x.PlannedTotal);
         var approved = items.Sum(x => x.ApprovedTotal ?? 0m);
         var revised = items.Sum(x => x.RevisedTotal ?? x.ApprovedTotal ?? x.PlannedTotal);
-        const decimal committed = 0m;
         var available = revised - committed - actual;
-        var forecast = Math.Max(revised, actual);
+        var forecast = Math.Max(revised, committed + actual);
 
         var today = DateOnly.FromDateTime(DateTime.UtcNow);
         var renewalCutoff = today.AddDays(30);
@@ -145,7 +164,7 @@ public sealed class DashboardService(LedgerForgeDbContext dbContext)
             actual,
             available,
             forecast,
-            items.Count(x => x.Status == BudgetItemStatus.Submitted),
+            items.Count(x => x.Status == BudgetItemStatus.Submitted) + pendingPurchaseOrders,
             renewalMatches.Length,
             items.Count,
             await CountImportReviewAsync(cancellationToken),
