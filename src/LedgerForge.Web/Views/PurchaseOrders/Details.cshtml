@@ -149,6 +149,41 @@
     }
 </section>
 
+@if (canManage && isDraft && Model.Lines.Count > 0)
+{
+    <section class="lf-card" aria-labelledby="edit-lines-title">
+        <div class="lf-panel-header">
+            <div>
+                <h2 id="edit-lines-title">Edit draft lines</h2>
+                <p class="lf-muted">Update quantity, price, description, or coding before submission. Blank coding selections keep the line's current assignment.</p>
+            </div>
+        </div>
+        @foreach (var line in Model.Lines)
+        {
+            <details>
+                <summary>Line @line.LineNumber · @line.Description · @line.LineTotal.ToString("C2")</summary>
+                <form method="post" action="/purchase-orders/@Model.Order.Id/lines/@line.Id/update">
+                    @Html.AntiForgeryToken()
+                    <div class="lf-form-grid">
+                        <div class="lf-span-all"><label>Description<input name="description" maxlength="500" required value="@line.Description" /></label></div>
+                        <div><label>Quantity<input name="quantity" type="number" min="0.0001" step="0.0001" required value="@line.Quantity" /></label></div>
+                        <div><label>Unit cost<input name="unitCost" type="number" min="0" step="0.0001" required value="@line.UnitCost" /></label></div>
+                        <div><label>Budget item<select name="budgetItemId"><option value="">Keep current</option>@foreach (var option in Model.BudgetItems) { <option value="@option.Id">@option.Label</option> }</select></label></div>
+                        <div><label>Finance account<select name="financeAccountId"><option value="">Keep current</option>@foreach (var option in Model.FinanceAccounts) { <option value="@option.Id">@option.Label</option> }</select></label></div>
+                        <div><label>Department<select name="departmentId"><option value="">Keep current</option>@foreach (var option in Model.Departments) { <option value="@option.Id">@option.Label</option> }</select></label></div>
+                        <div><label>Location<select name="locationId"><option value="">Keep current</option>@foreach (var option in Model.Locations) { <option value="@option.Id">@option.Label</option> }</select></label></div>
+                    </div>
+                    <p><button type="submit">Save line</button></p>
+                </form>
+                <form method="post" action="/purchase-orders/@Model.Order.Id/lines/@line.Id/delete">
+                    @Html.AntiForgeryToken()
+                    <button type="submit">Delete draft line</button>
+                </form>
+            </details>
+        }
+    </section>
+}
+
 @if (canManage && Model.Order.State == PurchaseOrderState.Issued && Model.Lines.Count > 0)
 {
     <section class="lf-card" aria-labelledby="record-receipt-title">
