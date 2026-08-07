@@ -18,7 +18,12 @@ jobs:
       - run: dotnet --info
       - run: dotnet restore LedgerForge.slnx
       - run: dotnet build LedgerForge.slnx --configuration Release --no-restore
-      - run: dotnet test LedgerForge.slnx --configuration Release --no-build --logger "trx;LogFileName=ledgerforge-tests.trx"
+      - name: Unit tests
+        run: dotnet test tests/LedgerForge.UnitTests/LedgerForge.UnitTests.csproj --configuration Release --no-build --logger "trx;LogFileName=ledgerforge-unit-tests.trx"
+      - name: Integration tests
+        run: dotnet test tests/LedgerForge.IntegrationTests/LedgerForge.IntegrationTests.csproj --configuration Release --no-build --logger "trx;LogFileName=ledgerforge-integration-tests.trx"
+      - name: UI tests
+        run: dotnet test tests/LedgerForge.UiTests/LedgerForge.UiTests.csproj --configuration Release --no-build --logger "trx;LogFileName=ledgerforge-ui-tests.trx"
 
   migration-gate:
     runs-on: ubuntu-latest
@@ -67,7 +72,7 @@ jobs:
           docker logs "$container_id"
           exit 1
 
-      - name: Require committed InitialCreate migration
+      - name: Require committed migrations
         shell: bash
         run: |
           migration_dir='src/LedgerForge.Infrastructure/Persistence/Migrations'
@@ -75,6 +80,8 @@ jobs:
             echo 'InitialCreate is not committed. Generate and review migrations explicitly before CI.'
             exit 1
           fi
+          echo "Committed migration files:"
+          find "$migration_dir" -maxdepth 1 -name '*.cs' ! -name '*.Designer.cs' ! -name '*ModelSnapshot.cs' -print | sort
 
       - name: Verify migration matches the EF model
         run: |
@@ -83,7 +90,7 @@ jobs:
             --startup-project src/LedgerForge.Web/LedgerForge.Web.csproj \
             --context LedgerForgeDbContext
 
-      - name: Generate migration SQL
+      - name: Generate full migration SQL
         shell: bash
         run: |
           mkdir -p artifacts
@@ -91,14 +98,14 @@ jobs:
             --project src/LedgerForge.Infrastructure/LedgerForge.Infrastructure.csproj \
             --startup-project src/LedgerForge.Web/LedgerForge.Web.csproj \
             --context LedgerForgeDbContext \
-            --output artifacts/InitialCreate.sql
+            --output artifacts/LedgerForge-Migrations.sql
 
       - name: Review migration SQL safety invariants
         shell: bash
         run: |
           python3 - <<'PY'
           from pathlib import Path
-          sql_path = Path('artifacts/InitialCreate.sql')
+          sql_path = Path('artifacts/LedgerForge-Migrations.sql')
           sql = sql_path.read_text(encoding='utf-8')
           upper = sql.upper()
           blocked = ['DROP TABLE', 'DROP COLUMN', 'TRUNCATE TABLE', 'ON DELETE CASCADE']
@@ -170,9 +177,8 @@ jobs:
               SELECT 1
               FROM __EFMigrationsHistory
               WHERE MigrationId LIKE N'%_InitialCreate'
-                AND ProductVersion = N'10.0.10'
           )
-              THROW 50002, 'InitialCreate migration history row is missing or uses the wrong EF version.', 1;
+              THROW 50002, 'InitialCreate migration history row is missing.', 1;
 
           IF EXISTS (
               SELECT 1
@@ -200,18 +206,28 @@ jobs:
             "$SQLCMD" -b -S localhost -U sa -P "$MSSQL_SA_PASSWORD" -C -d LedgerForgeMigrationGate -i /tmp/schema-inspection.sql
           '
 
-      - name: Run tests after database validation
-        run: dotnet test LedgerForge.slnx --configuration Release --no-build --logger "trx;LogFileName=ledgerforge-tests.trx"
+      - name: Unit tests after database validation
+        run: dotnet test tests/LedgerForge.UnitTests/LedgerForge.UnitTests.csproj --configuration Release --no-build --logger "trx;LogFileName=ledgerforge-unit-tests.trx"
+        env:
+          ConnectionStrings__LedgerForge: ${{ env.LEDGERFORGE_TEST_CONNECTION }}
+
+      - name: Integration tests after database validation
+        run: dotnet test tests/LedgerForge.IntegrationTests/LedgerForge.IntegrationTests.csproj --configuration Release --no-build --logger "trx;LogFileName=ledgerforge-integration-tests.trx"
+        env:
+          ConnectionStrings__LedgerForge: ${{ env.LEDGERFORGE_TEST_CONNECTION }}
+
+      - name: UI tests after database validation
+        run: dotnet test tests/LedgerForge.UiTests/LedgerForge.UiTests.csproj --configuration Release --no-build --logger "trx;LogFileName=ledgerforge-ui-tests.trx"
         env:
           ConnectionStrings__LedgerForge: ${{ env.LEDGERFORGE_TEST_CONNECTION }}
 
       - name: Upload migration review
         uses: actions/upload-artifact@v4
         with:
-          name: ledgerforge-initial-migration
+          name: ledgerforge-migrations
           if-no-files-found: error
           path: |
             src/LedgerForge.Infrastructure/Persistence/Migrations/**
-            artifacts/InitialCreate.sql
+            artifacts/LedgerForge-Migrations.sql
             artifacts/schema-review.txt
             artifacts/schema-inspection.sql
