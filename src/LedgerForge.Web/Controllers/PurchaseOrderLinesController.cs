@@ -45,6 +45,13 @@ public sealed class PurchaseOrderLinesController(LedgerForgeDbContext dbContext)
             await RequireLookupAsync(dbContext.Departments, departmentId, "department", cancellationToken);
             await RequireLookupAsync(dbContext.Locations, locationId, "location", cancellationToken);
 
+            // A blank selection in the edit form means "keep the current coding". This is
+            // important for historical dimensions that may have since been deactivated.
+            budgetItemId ??= line.BudgetItemId;
+            financeAccountId ??= line.FinanceAccountId;
+            departmentId ??= line.DepartmentId;
+            locationId ??= line.LocationId;
+
             line.Update(description, quantity, unitCost, budgetItemId, financeAccountId, departmentId, locationId);
             await dbContext.SaveChangesAsync(cancellationToken);
             return RedirectToAction("Details", "PurchaseOrders", new { id = purchaseOrderId, saved = true });
