@@ -1,8 +1,12 @@
 @model LedgerForge.Web.Models.FiscalYears.FiscalYearDetailViewModel
+@using LedgerForge.Domain.Budgeting
 @{
     ViewData["Title"] = Model.FiscalYear.DisplayName;
     var saved = ViewData["Saved"] as bool? == true;
     var error = TempData["FiscalYearError"] as string;
+    var isClosed = Model.FiscalYear.Status is FiscalYearStatus.Closed or FiscalYearStatus.Archived;
+    var nextStart = Model.FiscalYear.StartDate.AddYears(1);
+    var nextEnd = Model.FiscalYear.EndDate.AddYears(1);
 }
 
 <div class="lf-page-header">
@@ -11,14 +15,14 @@
         <p class="lf-subtitle">@Model.FiscalYear.StartDate.ToString("MMMM d, yyyy") – @Model.FiscalYear.EndDate.ToString("MMMM d, yyyy") · @Model.FiscalYear.Status</p>
     </div>
     <div>
-        @if (!Model.FiscalYear.IsCurrent)
+        @if (!Model.FiscalYear.IsCurrent && !isClosed)
         {
             <form method="post" action="/fiscal-years/@Model.FiscalYear.Id/current">
                 @Html.AntiForgeryToken()
                 <button type="submit">Make current</button>
             </form>
         }
-        else
+        else if (Model.FiscalYear.IsCurrent)
         {
             <span class="badge">Current fiscal year</span>
         }
@@ -27,7 +31,7 @@
 
 @if (saved)
 {
-    <div class="card lf-alert lf-alert-success" role="status">Fiscal year created.</div>
+    <div class="card lf-alert lf-alert-success" role="status">Fiscal-year change saved.</div>
 }
 @if (!string.IsNullOrWhiteSpace(error))
 {
@@ -41,7 +45,46 @@
     <article class="lf-card lf-kpi"><div class="lf-kpi-icon @(Model.FiscalYear.IsLocked ? "red" : "green")">L</div><div><div class="lf-card-title">Edit State</div><div class="lf-kpi-value">@(Model.FiscalYear.IsLocked ? "Locked" : "Open")</div></div></article>
 </div>
 
-<section class="card" aria-labelledby="version-title">
+<section class="lf-card" aria-labelledby="period-title">
+    <div class="lf-panel-header">
+        <div><h2 id="period-title">Fiscal periods</h2><p class="lf-muted">Periods must be closed before the fiscal year can close.</p></div>
+        <span class="badge">@Model.CloseReadiness.OpenPeriods open</span>
+    </div>
+    @if (Model.Periods.Count == 0)
+    {
+        <div class="lf-empty-state"><p>No fiscal periods were generated for this year.</p></div>
+    }
+    else
+    {
+        <div class="lf-table-wrap">
+            <table class="lf-table">
+                <thead><tr><th>Period</th><th>Date range</th><th>State</th><th>Closed by</th><th></th></tr></thead>
+                <tbody>
+                @foreach (var period in Model.Periods)
+                {
+                    <tr>
+                        <td><strong>@period.Code · @period.Name</strong></td>
+                        <td>@period.StartDate.ToString("yyyy-MM-dd") – @period.EndDate.ToString("yyyy-MM-dd")</td>
+                        <td><span class="badge">@(period.IsClosed ? "Closed" : "Open")</span></td>
+                        <td>@(period.ClosedBy ?? "—")</td>
+                        <td>
+                            @if (!period.IsClosed && !isClosed)
+                            {
+                                <form method="post" action="/fiscal-years/@Model.FiscalYear.Id/periods/@period.Id/close">
+                                    @Html.AntiForgeryToken()
+                                    <button type="submit">Close period</button>
+                                </form>
+                            }
+                        </td>
+                    </tr>
+                }
+                </tbody>
+            </table>
+        </div>
+    }
+</section>
+
+<section class="lf-card" aria-labelledby="version-title">
     <div class="lf-panel-header">
         <h2 id="version-title">Budget versions</h2>
         <a class="button" href="/budget?fiscalYearId=@Model.FiscalYear.Id">Open budget</a>
@@ -71,3 +114,44 @@
         </div>
     }
 </section>
+
+@if (!isClosed)
+{
+    <section class="lf-card" aria-labelledby="close-title">
+        <div class="lf-panel-header"><div><h2 id="close-title">Fiscal-year close</h2><p class="lf-muted">Close is blocked until all operational and financial work is resolved.</p></div><span class="badge">@(Model.CloseReadiness.CanClose ? "Ready" : "Not ready")</span></div>
+        @if (Model.CloseReadiness.CanClose)
+        {
+            <div class="lf-alert lf-alert-success">All close checks passed. Closing locks every budget version and preserves this year as historical record.</div>
+            <form method="post" action="/fiscal-years/@Model.FiscalYear.Id/close">
+                @Html.AntiForgeryToken()
+                <button class="primary" type="submit">Close fiscal year</button>
+            </form>
+        }
+        else
+        {
+            <ul>
+                @foreach (var blocker in Model.CloseReadiness.Blockers)
+                {
+                    <li>@blocker</li>
+                }
+            </ul>
+        }
+    </section>
+}
+else if (Model.FiscalYear.Status == FiscalYearStatus.Closed)
+{
+    <section class="lf-card" aria-labelledby="rollover-title">
+        <div class="lf-panel-header"><div><h2 id="rollover-title">Roll forward to a new planning year</h2><p class="lf-muted">Carries the latest eligible budget baseline and allocations into a new editable planning version. Historical workflow decisions remain in this closed year.</p></div></div>
+        <form method="post" action="/fiscal-years/@Model.FiscalYear.Id/rollover" class="lf-form-grid">
+            @Html.AntiForgeryToken()
+            <div><label for="displayName">New fiscal-year label</label><input id="displayName" name="displayName" required maxlength="32" value="FY@(Model.FiscalYear.PlanningYear + 1)" /></div>
+            <div><label for="planningYear">Planning year</label><input id="planningYear" name="planningYear" type="number" min="1900" max="9999" required value="@(Model.FiscalYear.PlanningYear + 1)" /></div>
+            <div><label for="startDate">Start date</label><input id="startDate" name="startDate" type="date" required value="@nextStart.ToString("yyyy-MM-dd")" /></div>
+            <div><label for="endDate">End date</label><input id="endDate" name="endDate" type="date" required value="@nextEnd.ToString("yyyy-MM-dd")" /></div>
+            <div><label for="initialVersionName">Initial version</label><input id="initialVersionName" name="initialVersionName" maxlength="100" value="Rolled Forward Planning" /></div>
+            <div><label for="description">Description</label><input id="description" name="description" maxlength="1000" value="Rolled forward from @Model.FiscalYear.DisplayName" /></div>
+            <div><label><input type="checkbox" name="createMonthlyPeriods" value="true" checked /> Create monthly fiscal periods</label></div>
+            <div><button class="primary" type="submit">Create next fiscal year</button></div>
+        </form>
+    </section>
+}
