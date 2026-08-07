@@ -61,8 +61,7 @@ public sealed class ImportBatch : AuditableEntity
         DateTimeOffset generatedAtUtc)
     {
         if (Status != ImportBatchStatus.Validating) throw new InvalidOperationException($"Import preview cannot complete from status {Status}.");
-        if (sourceRowCount < 0) throw new ArgumentOutOfRangeException(nameof(sourceRowCount));
-        if (acceptedRowCount < 0 || acceptedRowCount > sourceRowCount) throw new ArgumentOutOfRangeException(nameof(acceptedRowCount));
+        ValidateAcceptedCount(sourceRowCount, acceptedRowCount);
         if (exceptionCount < 0) throw new ArgumentOutOfRangeException(nameof(exceptionCount));
         if (recalculatedPlannedTotal < 0m) throw new ArgumentOutOfRangeException(nameof(recalculatedPlannedTotal));
         if (priorityNeedLevelCount < 0 || priorityNeedLevelCount > sourceRowCount) throw new ArgumentOutOfRangeException(nameof(priorityNeedLevelCount));
@@ -74,6 +73,15 @@ public sealed class ImportBatch : AuditableEntity
         ReconciledToExpectedTargets = reconciledToExpectedTargets;
         PreviewGeneratedAtUtc = generatedAtUtc;
         Status = ImportBatchStatus.PreviewReady;
+    }
+
+    public void UpdateAcceptedRowCount(int acceptedRowCount)
+    {
+        if (Status != ImportBatchStatus.PreviewReady || !string.IsNullOrWhiteSpace(AcceptedBy))
+            throw new InvalidOperationException("Accepted row count can only change while an import preview is open for review.");
+        var sourceRowCount = SourceRowCount ?? throw new InvalidOperationException("Source row count is not available.");
+        ValidateAcceptedCount(sourceRowCount, acceptedRowCount);
+        AcceptedRowCount = acceptedRowCount;
     }
 
     public void MarkValidationFailed()
@@ -103,5 +111,11 @@ public sealed class ImportBatch : AuditableEntity
     {
         if (Status == ImportBatchStatus.Committed) throw new InvalidOperationException("Committed import batches cannot be rejected.");
         Status = ImportBatchStatus.Rejected;
+    }
+
+    private static void ValidateAcceptedCount(int sourceRowCount, int acceptedRowCount)
+    {
+        if (sourceRowCount < 0) throw new ArgumentOutOfRangeException(nameof(sourceRowCount));
+        if (acceptedRowCount < 0 || acceptedRowCount > sourceRowCount) throw new ArgumentOutOfRangeException(nameof(acceptedRowCount));
     }
 }
