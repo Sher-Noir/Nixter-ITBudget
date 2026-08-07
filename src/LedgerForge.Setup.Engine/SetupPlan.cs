@@ -11,7 +11,8 @@ public sealed record SetupPlan(
     string DocumentsPath,
     string SqlServer,
     string DatabaseName,
-    string SystemAdministratorGroup,
+    string InitialAdministratorIdentity,
+    string? SystemAdministratorGroup,
     int HttpPort,
     string? HostName = null)
 {
@@ -37,7 +38,9 @@ public static class SetupPlanValidator
         Required(plan.SqlServer, 256, "SQL Server", errors);
         if (!DatabaseNamePattern.IsMatch(plan.DatabaseName ?? string.Empty))
             errors.Add("Database name contains unsupported characters or is longer than 128 characters.");
-        Required(plan.SystemAdministratorGroup, 256, "System Administrator Windows group", errors);
+        Required(plan.InitialAdministratorIdentity, 256, "Initial administrator Windows identity", errors);
+        if (!string.IsNullOrWhiteSpace(plan.SystemAdministratorGroup) && plan.SystemAdministratorGroup.Trim().Length > 256)
+            errors.Add("System Administrator Windows group cannot exceed 256 characters.");
 
         if (plan.HttpPort is < 1 or > 65535)
             errors.Add("HTTP port must be between 1 and 65535.");
@@ -92,6 +95,9 @@ public static class DeploymentConfigurationRenderer
     public static string RenderProductionSettings(SetupPlan plan)
     {
         EnsureValid(plan);
+        var administratorGroups = string.IsNullOrWhiteSpace(plan.SystemAdministratorGroup)
+            ? Array.Empty<string>()
+            : new[] { plan.SystemAdministratorGroup.Trim() };
         var settings = new
         {
             Branding = new
@@ -122,7 +128,7 @@ public static class DeploymentConfigurationRenderer
             {
                 AdGroups = new Dictionary<string, string[]>
                 {
-                    ["SystemAdministrator"] = [plan.SystemAdministratorGroup.Trim()],
+                    ["SystemAdministrator"] = administratorGroups,
                     ["BudgetAdministrator"] = [],
                     ["BudgetEditor"] = [],
                     ["Approver"] = [],
