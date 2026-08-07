@@ -1,5 +1,6 @@
 using Crch.ItBudget.Domain.Budgeting;
 using Crch.ItBudget.Domain.Importing;
+using Crch.ItBudget.Domain.MasterData;
 using Microsoft.EntityFrameworkCore;
 
 namespace Crch.ItBudget.Infrastructure.Persistence;
@@ -12,6 +13,26 @@ public sealed class ItBudgetDbContext(DbContextOptions<ItBudgetDbContext> option
     public DbSet<ImportBatch> ImportBatches => Set<ImportBatch>();
     public DbSet<ImportRow> ImportRows => Set<ImportRow>();
     public DbSet<ImportException> ImportExceptions => Set<ImportException>();
+
+    public DbSet<BudgetSection> BudgetSections => Set<BudgetSection>();
+    public DbSet<FinanceAccount> FinanceAccounts => Set<FinanceAccount>();
+    public DbSet<FinanceCategory> FinanceCategories => Set<FinanceCategory>();
+    public DbSet<InternalCategory> InternalCategories => Set<InternalCategory>();
+    public DbSet<Department> Departments => Set<Department>();
+    public DbSet<Location> Locations => Set<Location>();
+    public DbSet<NeedLevel> NeedLevels => Set<NeedLevel>();
+    public DbSet<PriorityLookup> Priorities => Set<PriorityLookup>();
+    public DbSet<Frequency> Frequencies => Set<Frequency>();
+    public DbSet<PurchaseTypeLookup> PurchaseTypes => Set<PurchaseTypeLookup>();
+    public DbSet<UnitOfMeasure> UnitsOfMeasure => Set<UnitOfMeasure>();
+    public DbSet<DocumentType> DocumentTypes => Set<DocumentType>();
+    public DbSet<ApprovalStatusLookup> ApprovalStatuses => Set<ApprovalStatusLookup>();
+    public DbSet<TransactionTypeLookup> TransactionTypes => Set<TransactionTypeLookup>();
+    public DbSet<PurchaseOrderStatusLookup> PurchaseOrderStatuses => Set<PurchaseOrderStatusLookup>();
+    public DbSet<InvoiceStatusLookup> InvoiceStatuses => Set<InvoiceStatusLookup>();
+    public DbSet<RenewalStatusLookup> RenewalStatuses => Set<RenewalStatusLookup>();
+    public DbSet<ContractStatusLookup> ContractStatuses => Set<ContractStatusLookup>();
+    public DbSet<LookupValueAlias> LookupValueAliases => Set<LookupValueAlias>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -76,6 +97,71 @@ public sealed class ItBudgetDbContext(DbContextOptions<ItBudgetDbContext> option
                 .OnDelete(DeleteBehavior.Restrict);
         });
 
+        ConfigureManagedLookups(modelBuilder);
+        ConfigureImports(modelBuilder);
+    }
+
+    private static void ConfigureManagedLookups(ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<ManagedLookupEntity>().UseTpcMappingStrategy();
+
+        ConfigureLookup<BudgetSection>(modelBuilder, "BudgetSection");
+        ConfigureLookup<FinanceAccount>(modelBuilder, "FinanceAccount");
+        ConfigureLookup<FinanceCategory>(modelBuilder, "FinanceCategory");
+        ConfigureLookup<InternalCategory>(modelBuilder, "InternalCategory");
+        ConfigureLookup<Department>(modelBuilder, "Department");
+        ConfigureLookup<Location>(modelBuilder, "Location");
+        ConfigureLookup<NeedLevel>(modelBuilder, "NeedLevel");
+        ConfigureLookup<PriorityLookup>(modelBuilder, "Priority");
+        ConfigureLookup<Frequency>(modelBuilder, "Frequency");
+        ConfigureLookup<PurchaseTypeLookup>(modelBuilder, "PurchaseType");
+        ConfigureLookup<UnitOfMeasure>(modelBuilder, "UnitOfMeasure");
+        ConfigureLookup<DocumentType>(modelBuilder, "DocumentType");
+        ConfigureLookup<ApprovalStatusLookup>(modelBuilder, "ApprovalStatus");
+        ConfigureLookup<TransactionTypeLookup>(modelBuilder, "TransactionType");
+        ConfigureLookup<PurchaseOrderStatusLookup>(modelBuilder, "PurchaseOrderStatus");
+        ConfigureLookup<InvoiceStatusLookup>(modelBuilder, "InvoiceStatus");
+        ConfigureLookup<RenewalStatusLookup>(modelBuilder, "RenewalStatus");
+        ConfigureLookup<ContractStatusLookup>(modelBuilder, "ContractStatus");
+
+        modelBuilder.Entity<FinanceAccount>()
+            .HasOne<FinanceCategory>()
+            .WithMany()
+            .HasForeignKey(x => x.FinanceCategoryId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        modelBuilder.Entity<LookupValueAlias>(entity =>
+        {
+            entity.ToTable("LookupValueAlias");
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.LookupType).HasMaxLength(100).IsRequired();
+            entity.Property(x => x.SourceValue).HasMaxLength(500).IsRequired();
+            entity.Property(x => x.CanonicalCode).HasMaxLength(100).IsRequired();
+            entity.Property(x => x.RowVersion).IsRowVersion();
+            entity.HasIndex(x => new { x.LookupType, x.SourceValue }).IsUnique();
+            entity.HasIndex(x => new { x.LookupType, x.CanonicalCode, x.IsActive });
+        });
+    }
+
+    private static void ConfigureLookup<TEntity>(ModelBuilder modelBuilder, string tableName)
+        where TEntity : ManagedLookupEntity
+    {
+        var entity = modelBuilder.Entity<TEntity>();
+        entity.ToTable(tableName, table =>
+        {
+            table.HasCheckConstraint($"CK_{tableName}_SortOrder", "[SortOrder] >= 0");
+        });
+        entity.HasKey(x => x.Id);
+        entity.Property(x => x.Code).HasMaxLength(100).IsRequired();
+        entity.Property(x => x.Name).HasMaxLength(250).IsRequired();
+        entity.Property(x => x.Description).HasMaxLength(1000);
+        entity.Property(x => x.RowVersion).IsRowVersion();
+        entity.HasIndex(x => x.Code).IsUnique();
+        entity.HasIndex(x => new { x.IsActive, x.SortOrder, x.Name });
+    }
+
+    private static void ConfigureImports(ModelBuilder modelBuilder)
+    {
         modelBuilder.Entity<ImportBatch>(entity =>
         {
             entity.ToTable("ImportBatch", table =>
