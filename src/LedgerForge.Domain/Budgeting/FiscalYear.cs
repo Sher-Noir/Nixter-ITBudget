@@ -36,6 +36,7 @@ public sealed class FiscalYear : AuditableEntity
     public bool IsCurrent { get; private set; }
     public string? Description { get; private set; }
     public DateTimeOffset? LockedAtUtc { get; private set; }
+    public bool IsLocked => LockedAtUtc is not null;
     public DateTimeOffset? ClosedAtUtc { get; private set; }
 
     public void UpdateDetails(
