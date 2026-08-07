@@ -55,6 +55,11 @@ public sealed class DashboardService(LedgerForgeDbContext dbContext)
             return Empty(importReviewCount);
         }
 
+        var actual = await dbContext.ActualTransactions
+            .AsNoTracking()
+            .Where(x => x.FiscalYearId == fiscalYear.Id)
+            .SumAsync(x => (decimal?)x.Amount, cancellationToken) ?? 0m;
+
         var version = await dbContext.BudgetVersions
             .AsNoTracking()
             .Where(x => x.FiscalYearId == fiscalYear.Id)
@@ -67,7 +72,10 @@ public sealed class DashboardService(LedgerForgeDbContext dbContext)
             return Empty(importReviewCount) with
             {
                 FiscalYearId = fiscalYear.Id,
-                FiscalYearName = fiscalYear.DisplayName
+                FiscalYearName = fiscalYear.DisplayName,
+                Actual = actual,
+                Available = -actual,
+                Forecast = actual
             };
         }
 
@@ -92,15 +100,17 @@ public sealed class DashboardService(LedgerForgeDbContext dbContext)
         var approved = items.Sum(x => x.ApprovedTotal ?? 0m);
         var revised = items.Sum(x => x.RevisedTotal ?? x.ApprovedTotal ?? x.PlannedTotal);
         const decimal committed = 0m;
-        const decimal actual = 0m;
         var available = revised - committed - actual;
-        var forecast = revised;
+        var forecast = Math.Max(revised, actual);
 
         var today = DateOnly.FromDateTime(DateTime.UtcNow);
         var renewalCutoff = today.AddDays(30);
-        var upcomingRenewals = items
+        var renewalMatches = items
             .Where(x => x.RenewalDate is not null && x.RenewalDate.Value >= today && x.RenewalDate.Value <= renewalCutoff)
             .OrderBy(x => x.RenewalDate)
+            .ToArray();
+
+        var upcomingRenewals = renewalMatches
             .Take(5)
             .Select(x => new DashboardRenewalItem(
                 x.Id,
@@ -136,7 +146,7 @@ public sealed class DashboardService(LedgerForgeDbContext dbContext)
             available,
             forecast,
             items.Count(x => x.Status == BudgetItemStatus.Submitted),
-            upcomingRenewals.Length,
+            renewalMatches.Length,
             items.Count,
             await CountImportReviewAsync(cancellationToken),
             upcomingRenewals,
