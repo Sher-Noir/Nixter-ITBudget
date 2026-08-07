@@ -15,6 +15,7 @@ namespace LedgerForge.Web.Controllers;
 public sealed class ImportsController(
     LegacyBudgetImportPreviewService previewService,
     ImportReviewService reviewService,
+    LegacyBudgetImportCommitService commitService,
     IOptions<LegacyImportOptions> legacyImportOptions,
     IConfiguration configuration) : Controller
 {
@@ -65,11 +66,17 @@ public sealed class ImportsController(
         var detail = await reviewService.GetBatchAsync(id, cancellationToken);
         if (detail is null) return NotFound();
 
+        var targets = !string.IsNullOrWhiteSpace(detail.Batch.AcceptedBy) && detail.Batch.Status == ImportBatchStatus.PreviewReady
+            ? await commitService.ListTargetsAsync(cancellationToken)
+            : [];
+
         return View(new ImportBatchDetailViewModel(
             detail,
+            targets,
             TempData["ImportReviewError"] as string,
             Request.Query.ContainsKey("saved"),
-            Request.Query.ContainsKey("accepted")));
+            Request.Query.ContainsKey("accepted"),
+            Request.Query.ContainsKey("committed")));
     }
 
     [HttpPost("{batchId:guid}/exceptions/{exceptionId:guid}/resolve")]
@@ -169,6 +176,28 @@ public sealed class ImportsController(
             return NotFound();
         }
         catch (Exception exception) when (exception is ArgumentException or InvalidOperationException)
+        {
+            TempData["ImportReviewError"] = exception.Message;
+            return RedirectToAction(nameof(Details), new { id });
+        }
+    }
+
+    [HttpPost("{id:guid}/commit")]
+    public async Task<IActionResult> Commit(
+        Guid id,
+        Guid budgetVersionId,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await commitService.CommitAsync(id, budgetVersionId, cancellationToken);
+            return RedirectToAction(nameof(Details), new { id, committed = true });
+        }
+        catch (KeyNotFoundException)
+        {
+            return NotFound();
+        }
+        catch (Exception exception) when (exception is ArgumentException or InvalidOperationException or JsonException)
         {
             TempData["ImportReviewError"] = exception.Message;
             return RedirectToAction(nameof(Details), new { id });
