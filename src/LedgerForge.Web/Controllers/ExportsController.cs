@@ -8,7 +8,10 @@ namespace LedgerForge.Web.Controllers;
 
 [Authorize(Policy = AuthorizationPolicies.ViewBudget)]
 [Route("exports")]
-public sealed class ExportsController(ReportingService reportingService) : Controller
+public sealed class ExportsController(
+    ReportingService reportingService,
+    FinanceExportService financeExportService,
+    IConfiguration configuration) : Controller
 {
     [HttpGet("")]
     public IActionResult Index() => RedirectToAction("Index", "Reports");
@@ -45,6 +48,26 @@ public sealed class ExportsController(ReportingService reportingService) : Contr
                     x.FinanceAccount, x.Department, x.Location, x.FiscalPeriod, x.Amount, x.ReversalReason
                 }));
             return File(bytes, "text/csv; charset=utf-8", "ledgerforge-actuals.csv");
+        }
+        catch (KeyNotFoundException) { return NotFound(); }
+    }
+
+    [HttpGet("finance.csv")]
+    public async Task<IActionResult> Finance(Guid fiscalYearId, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var rows = await financeExportService.GetAsync(fiscalYearId, cancellationToken);
+            string H(string key, string fallback) => configuration[$"FinanceExport:Headers:{key}"]?.Trim() is { Length: > 0 } value ? value : fallback;
+            var bytes = CsvExportWriter.Write(
+                [H("TransactionDate", "Transaction Date"), H("FiscalYear", "Fiscal Year"), H("FiscalPeriod", "Fiscal Period"), H("Kind", "Kind"), H("Description", "Description"), H("SourceReference", "Source Reference"), H("FinanceAccount", "Finance Account"), H("Department", "Department"), H("Location", "Location"), H("BudgetItem", "Budget Item"), H("Amount", "Amount")],
+                rows.Select(x => (IReadOnlyList<object?>)new object?[]
+                {
+                    x.TransactionDate, x.FiscalYear, x.FiscalPeriod, x.Kind, x.Description,
+                    x.SourceReference, x.FinanceAccount, x.Department, x.Location, x.BudgetItem, x.Amount
+                }));
+            var fileName = configuration["FinanceExport:FileName"]?.Trim();
+            return File(bytes, "text/csv; charset=utf-8", string.IsNullOrWhiteSpace(fileName) ? "ledgerforge-finance-posting.csv" : Path.GetFileName(fileName));
         }
         catch (KeyNotFoundException) { return NotFound(); }
     }
