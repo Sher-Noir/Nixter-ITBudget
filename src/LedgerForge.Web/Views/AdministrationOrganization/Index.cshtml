@@ -14,15 +14,15 @@
 
 @if (saved)
 {
-    <div class="card" role="status" style="margin-bottom:1rem;border-color:var(--lf-success)">Organization settings saved.</div>
+    <div class="card lf-alert lf-alert-success" role="status">Organization settings saved.</div>
 }
 @if (reset)
 {
-    <div class="card" role="status" style="margin-bottom:1rem;border-color:var(--lf-info)">Local overrides were removed. Deployment defaults are active again.</div>
+    <div class="card lf-alert lf-alert-info" role="status">Local overrides were removed. Deployment defaults are active again.</div>
 }
 @if (!ViewData.ModelState.IsValid)
 {
-    <div class="card" role="alert" style="margin-bottom:1rem;border-color:var(--lf-danger)">
+    <div class="card lf-alert lf-alert-danger" role="alert">
         @foreach (var error in ViewData.ModelState.Values.SelectMany(value => value.Errors))
         {
             <div>@error.ErrorMessage</div>
@@ -96,10 +96,10 @@
 
     <aside class="card lf-setting-preview" aria-labelledby="preview-title">
         <h2 id="preview-title">Preview</h2>
-        <div style="padding:1rem;border-radius:10px;background:var(--lf-sidebar);color:var(--lf-sidebar-text);margin-bottom:1rem">
-            <strong style="font-size:1.15rem">@Model.ProductName</strong>
-            <div style="margin-top:.75rem;color:var(--lf-sidebar-muted)">@Model.OrganizationName</div>
-            <div style="color:var(--lf-sidebar-muted)">@Model.ApplicationTitle</div>
+        <div class="lf-preview-brand">
+            <strong>@Model.ProductName</strong>
+            <div class="lf-preview-org">@Model.OrganizationName</div>
+            <div class="lf-preview-title">@Model.ApplicationTitle</div>
         </div>
         <dl>
             <dt>Fiscal year selector</dt><dd>@Model.DefaultFiscalYearLabel</dd>
