@@ -9,6 +9,7 @@ public static class AuthorizationPolicies
     public const string EditPlanningBudget = nameof(EditPlanningBudget);
     public const string ManageBudget = nameof(ManageBudget);
     public const string PostActuals = nameof(PostActuals);
+    public const string ManageProcurement = nameof(ManageProcurement);
     public const string Approve = nameof(Approve);
     public const string ManageImports = nameof(ManageImports);
     public const string ViewAudit = nameof(ViewAudit);
@@ -24,6 +25,7 @@ public static class AuthorizationPolicies
         Add(options, EditPlanningBudget, ApplicationRole.SystemAdministrator, ApplicationRole.BudgetAdministrator, ApplicationRole.BudgetEditor);
         Add(options, ManageBudget, ApplicationRole.SystemAdministrator, ApplicationRole.BudgetAdministrator);
         Add(options, PostActuals, ApplicationRole.SystemAdministrator, ApplicationRole.BudgetAdministrator, ApplicationRole.BudgetEditor);
+        Add(options, ManageProcurement, ApplicationRole.SystemAdministrator, ApplicationRole.BudgetAdministrator, ApplicationRole.BudgetEditor);
         Add(options, Approve, ApplicationRole.SystemAdministrator, ApplicationRole.BudgetAdministrator, ApplicationRole.Approver);
         Add(options, ManageImports, ApplicationRole.SystemAdministrator, ApplicationRole.BudgetAdministrator);
         Add(options, ViewAudit, ApplicationRole.SystemAdministrator, ApplicationRole.Auditor);
