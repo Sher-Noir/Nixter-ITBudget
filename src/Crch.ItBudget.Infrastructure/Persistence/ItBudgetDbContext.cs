@@ -8,8 +8,10 @@ namespace Crch.ItBudget.Infrastructure.Persistence;
 public sealed class ItBudgetDbContext(DbContextOptions<ItBudgetDbContext> options) : DbContext(options)
 {
     public DbSet<FiscalYear> FiscalYears => Set<FiscalYear>();
+    public DbSet<FiscalPeriod> FiscalPeriods => Set<FiscalPeriod>();
     public DbSet<BudgetVersion> BudgetVersions => Set<BudgetVersion>();
     public DbSet<BudgetItem> BudgetItems => Set<BudgetItem>();
+    public DbSet<BudgetItemAllocation> BudgetItemAllocations => Set<BudgetItemAllocation>();
     public DbSet<ImportBatch> ImportBatches => Set<ImportBatch>();
     public DbSet<ImportRow> ImportRows => Set<ImportRow>();
     public DbSet<ImportException> ImportExceptions => Set<ImportException>();
@@ -50,6 +52,27 @@ public sealed class ItBudgetDbContext(DbContextOptions<ItBudgetDbContext> option
             entity.HasIndex(x => x.DisplayName).IsUnique();
             entity.HasIndex(x => x.IsCurrent).HasFilter("[IsCurrent] = 1").IsUnique();
             entity.HasIndex(x => new { x.StartDate, x.EndDate });
+        });
+
+        modelBuilder.Entity<FiscalPeriod>(entity =>
+        {
+            entity.ToTable("FiscalPeriod", table =>
+            {
+                table.HasCheckConstraint("CK_FiscalPeriod_Number", "[PeriodNumber] >= 1 AND [PeriodNumber] <= 53");
+                table.HasCheckConstraint("CK_FiscalPeriod_DateRange", "[EndDate] >= [StartDate]");
+            });
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.Code).HasMaxLength(32).IsRequired();
+            entity.Property(x => x.Name).HasMaxLength(100).IsRequired();
+            entity.Property(x => x.ClosedBy).HasMaxLength(256);
+            entity.Property(x => x.RowVersion).IsRowVersion();
+            entity.HasIndex(x => new { x.FiscalYearId, x.PeriodNumber }).IsUnique();
+            entity.HasIndex(x => new { x.FiscalYearId, x.Code }).IsUnique();
+            entity.HasIndex(x => new { x.FiscalYearId, x.StartDate, x.EndDate });
+            entity.HasOne<FiscalYear>()
+                .WithMany()
+                .HasForeignKey(x => x.FiscalYearId)
+                .OnDelete(DeleteBehavior.Restrict);
         });
 
         modelBuilder.Entity<BudgetVersion>(entity =>
@@ -95,6 +118,47 @@ public sealed class ItBudgetDbContext(DbContextOptions<ItBudgetDbContext> option
             entity.HasOne<BudgetVersion>()
                 .WithMany()
                 .HasForeignKey(x => x.BudgetVersionId)
+                .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<BudgetItemAllocation>(entity =>
+        {
+            entity.ToTable("BudgetItemAllocation", table =>
+            {
+                table.HasCheckConstraint(
+                    "CK_BudgetItemAllocation_Value",
+                    "([Method] = 0 AND [Percentage] IS NOT NULL AND [Percentage] >= 0 AND [Percentage] <= 100 AND [Amount] IS NULL) OR " +
+                    "([Method] = 1 AND [Amount] IS NOT NULL AND [Amount] >= 0 AND [Percentage] IS NULL)");
+            });
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.Percentage).HasPrecision(9, 4);
+            entity.Property(x => x.Amount).HasPrecision(19, 4);
+            entity.Property(x => x.Notes).HasMaxLength(1000);
+            entity.Property(x => x.RowVersion).IsRowVersion();
+            entity.HasIndex(x => x.BudgetItemId);
+            entity.HasIndex(x => x.DepartmentId);
+            entity.HasIndex(x => x.LocationId);
+            entity.HasIndex(x => x.FinanceAccountId);
+            entity.HasIndex(x => x.FiscalPeriodId);
+            entity.HasOne<BudgetItem>()
+                .WithMany()
+                .HasForeignKey(x => x.BudgetItemId)
+                .OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<Department>()
+                .WithMany()
+                .HasForeignKey(x => x.DepartmentId)
+                .OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<Location>()
+                .WithMany()
+                .HasForeignKey(x => x.LocationId)
+                .OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<FinanceAccount>()
+                .WithMany()
+                .HasForeignKey(x => x.FinanceAccountId)
+                .OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<FiscalPeriod>()
+                .WithMany()
+                .HasForeignKey(x => x.FiscalPeriodId)
                 .OnDelete(DeleteBehavior.Restrict);
         });
 
