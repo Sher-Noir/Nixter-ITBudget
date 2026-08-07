@@ -51,6 +51,7 @@ builder.Services.AddScoped<ActualLedgerService>();
 builder.Services.AddScoped<ProcurementService>();
 builder.Services.AddScoped<ApprovalQueueService>();
 builder.Services.AddScoped<ReportingService>();
+builder.Services.AddScoped<RenewalCalendarService>();
 builder.Services.AddScoped<DashboardService>();
 
 var app = builder.Build();
