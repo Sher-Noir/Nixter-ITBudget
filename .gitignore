@@ -1,0 +1,13 @@
+**/bin/
+**/obj/
+.vs/
+.vscode/
+.idea/
+TestResults/
+playwright-report/
+*.user
+*.suo
+*.db
+*.db-shm
+*.db-wal
+src/LedgerForge.Web/App_Data/
