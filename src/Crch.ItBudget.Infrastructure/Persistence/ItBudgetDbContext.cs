@@ -1,6 +1,7 @@
 using Crch.ItBudget.Domain.Budgeting;
 using Crch.ItBudget.Domain.Importing;
 using Crch.ItBudget.Domain.MasterData;
+using Crch.ItBudget.Domain.Security;
 using Microsoft.EntityFrameworkCore;
 
 namespace Crch.ItBudget.Infrastructure.Persistence;
@@ -36,6 +37,9 @@ public sealed class ItBudgetDbContext(DbContextOptions<ItBudgetDbContext> option
     public DbSet<RenewalStatusLookup> RenewalStatuses => Set<RenewalStatusLookup>();
     public DbSet<ContractStatusLookup> ContractStatuses => Set<ContractStatusLookup>();
     public DbSet<LookupValueAlias> LookupValueAliases => Set<LookupValueAlias>();
+
+    public DbSet<AdGroupMapping> AdGroupMappings => Set<AdGroupMapping>();
+    public DbSet<UserRoleException> UserRoleExceptions => Set<UserRoleException>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -164,6 +168,7 @@ public sealed class ItBudgetDbContext(DbContextOptions<ItBudgetDbContext> option
 
         ConfigureManagedLookups(modelBuilder);
         ConfigureImports(modelBuilder);
+        ConfigureSecurity(modelBuilder);
     }
 
     private static void ConfigureManagedLookups(ModelBuilder modelBuilder)
@@ -288,6 +293,33 @@ public sealed class ItBudgetDbContext(DbContextOptions<ItBudgetDbContext> option
                 .WithMany()
                 .HasForeignKey(x => x.ImportRowId)
                 .OnDelete(DeleteBehavior.Restrict);
+        });
+    }
+
+    private static void ConfigureSecurity(ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<AdGroupMapping>(entity =>
+        {
+            entity.ToTable("AdGroupMapping");
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.GroupName).HasMaxLength(256).IsRequired();
+            entity.Property(x => x.Description).HasMaxLength(1000);
+            entity.Property(x => x.RowVersion).IsRowVersion();
+            entity.HasIndex(x => new { x.Role, x.GroupName }).IsUnique();
+            entity.HasIndex(x => new { x.IsActive, x.Role });
+        });
+
+        modelBuilder.Entity<UserRoleException>(entity =>
+        {
+            entity.ToTable("UserRoleException");
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.DomainIdentity).HasMaxLength(256).IsRequired();
+            entity.Property(x => x.Reason).HasMaxLength(2000).IsRequired();
+            entity.Property(x => x.RowVersion).IsRowVersion();
+            entity.HasIndex(x => new { x.DomainIdentity, x.Role })
+                .HasFilter("[IsActive] = 1")
+                .IsUnique();
+            entity.HasIndex(x => new { x.IsActive, x.ExpiresAtUtc });
         });
     }
 }
