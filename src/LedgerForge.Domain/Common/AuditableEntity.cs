@@ -4,7 +4,7 @@ public abstract class AuditableEntity
 {
     public Guid Id { get; protected set; } = Guid.NewGuid();
     public string CreatedBy { get; protected set; } = string.Empty;
-    public DateTimeOffset CreatedAtUtc { get; protected set; }
+    public DateTimeOffset CreatedAtUtc { get; protected set; } = DateTimeOffset.UtcNow;
     public string? ModifiedBy { get; protected set; }
     public DateTimeOffset? ModifiedAtUtc { get; protected set; }
     public bool IsArchived { get; protected set; }
