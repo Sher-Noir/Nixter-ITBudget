@@ -1,0 +1,73 @@
+@model LedgerForge.Web.Models.FiscalYears.FiscalYearDetailViewModel
+@{
+    ViewData["Title"] = Model.FiscalYear.DisplayName;
+    var saved = ViewData["Saved"] as bool? == true;
+    var error = TempData["FiscalYearError"] as string;
+}
+
+<div class="lf-page-header">
+    <div>
+        <h1 class="lf-page-title">@Model.FiscalYear.DisplayName</h1>
+        <p class="lf-subtitle">@Model.FiscalYear.StartDate.ToString("MMMM d, yyyy") – @Model.FiscalYear.EndDate.ToString("MMMM d, yyyy") · @Model.FiscalYear.Status</p>
+    </div>
+    <div>
+        @if (!Model.FiscalYear.IsCurrent)
+        {
+            <form method="post" action="/fiscal-years/@Model.FiscalYear.Id/current">
+                @Html.AntiForgeryToken()
+                <button type="submit">Make current</button>
+            </form>
+        }
+        else
+        {
+            <span class="badge">Current fiscal year</span>
+        }
+    </div>
+</div>
+
+@if (saved)
+{
+    <div class="card" role="status" style="margin-bottom:1rem;border-color:var(--lf-success)">Fiscal year created.</div>
+}
+@if (!string.IsNullOrWhiteSpace(error))
+{
+    <div class="card" role="alert" style="margin-bottom:1rem;border-color:var(--lf-danger)">@error</div>
+}
+
+<div class="lf-kpi-grid">
+    <article class="lf-card lf-kpi"><div class="lf-kpi-icon blue">FY</div><div><div class="lf-card-title">Planning Year</div><div class="lf-kpi-value">@Model.FiscalYear.PlanningYear</div></div></article>
+    <article class="lf-card lf-kpi"><div class="lf-kpi-icon teal">P</div><div><div class="lf-card-title">Fiscal Periods</div><div class="lf-kpi-value">@Model.FiscalYear.PeriodCount</div></div></article>
+    <article class="lf-card lf-kpi"><div class="lf-kpi-icon purple">V</div><div><div class="lf-card-title">Budget Versions</div><div class="lf-kpi-value">@Model.FiscalYear.VersionCount</div></div></article>
+    <article class="lf-card lf-kpi"><div class="lf-kpi-icon @(Model.FiscalYear.IsLocked ? "red" : "green")">L</div><div><div class="lf-card-title">Edit State</div><div class="lf-kpi-value">@(Model.FiscalYear.IsLocked ? "Locked" : "Open")</div></div></article>
+</div>
+
+<section class="card" aria-labelledby="version-title">
+    <div class="lf-panel-header">
+        <h2 id="version-title">Budget versions</h2>
+        <a class="button" href="/budget?fiscalYearId=@Model.FiscalYear.Id">Open budget</a>
+    </div>
+    @if (Model.Versions.Count == 0)
+    {
+        <p class="muted">No budget versions exist for this fiscal year.</p>
+    }
+    else
+    {
+        <div style="overflow-x:auto">
+            <table class="lf-table">
+                <thead><tr><th>Version</th><th>Type</th><th>Effective</th><th>State</th><th>Approved</th></tr></thead>
+                <tbody>
+                @foreach (var version in Model.Versions)
+                {
+                    <tr>
+                        <td><strong>v@version.VersionNumber · @version.Name</strong></td>
+                        <td>@version.VersionType</td>
+                        <td>@(version.EffectiveDate?.ToString("yyyy-MM-dd") ?? "—")</td>
+                        <td>@(version.IsLocked ? "Locked" : "Editable")</td>
+                        <td>@(version.ApprovedAtUtc?.ToString("u") ?? "—")</td>
+                    </tr>
+                }
+                </tbody>
+            </table>
+        </div>
+    }
+</section>
