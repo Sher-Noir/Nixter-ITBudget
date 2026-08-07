@@ -59,8 +59,10 @@ public sealed class FiscalYearsController(FiscalYearAdministrationService servic
         if (year is null) return NotFound();
 
         var versions = await service.ListVersionsAsync(id, cancellationToken);
+        var periods = await service.ListPeriodsAsync(id, cancellationToken);
+        var closeReadiness = await service.GetCloseReadinessAsync(id, cancellationToken);
         ViewData["Saved"] = Request.Query.ContainsKey("saved");
-        return View(new FiscalYearDetailViewModel(year, versions));
+        return View(new FiscalYearDetailViewModel(year, versions, periods, closeReadiness));
     }
 
     [HttpPost("{id:guid}/current")]
@@ -80,5 +82,76 @@ public sealed class FiscalYearsController(FiscalYearAdministrationService servic
         }
 
         return RedirectToAction(nameof(Details), new { id });
+    }
+
+    [HttpPost("{id:guid}/periods/{periodId:guid}/close")]
+    public Task<IActionResult> ClosePeriod(Guid id, Guid periodId, CancellationToken cancellationToken)
+        => RunMutation(id, () => service.ClosePeriodAsync(id, periodId, RequireActor(), cancellationToken));
+
+    [HttpPost("{id:guid}/close")]
+    public Task<IActionResult> CloseYear(Guid id, CancellationToken cancellationToken)
+        => RunMutation(id, () => service.CloseAsync(id, RequireActor(), cancellationToken));
+
+    [HttpPost("{id:guid}/rollover")]
+    public async Task<IActionResult> Rollover(
+        Guid id,
+        string displayName,
+        DateOnly startDate,
+        DateOnly endDate,
+        int planningYear,
+        string? description,
+        string initialVersionName,
+        bool createMonthlyPeriods,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var targetId = await service.RolloverAsync(
+                id,
+                displayName,
+                startDate,
+                endDate,
+                planningYear,
+                description,
+                initialVersionName,
+                createMonthlyPeriods,
+                cancellationToken);
+            return RedirectToAction(nameof(Details), new { id = targetId, saved = true });
+        }
+        catch (KeyNotFoundException)
+        {
+            return NotFound();
+        }
+        catch (Exception exception) when (exception is ArgumentException or InvalidOperationException)
+        {
+            TempData["FiscalYearError"] = exception.Message;
+            return RedirectToAction(nameof(Details), new { id });
+        }
+    }
+
+    private async Task<IActionResult> RunMutation(Guid fiscalYearId, Func<Task> action)
+    {
+        try
+        {
+            await action();
+            return RedirectToAction(nameof(Details), new { id = fiscalYearId, saved = true });
+        }
+        catch (KeyNotFoundException)
+        {
+            return NotFound();
+        }
+        catch (Exception exception) when (exception is ArgumentException or InvalidOperationException)
+        {
+            TempData["FiscalYearError"] = exception.Message;
+            return RedirectToAction(nameof(Details), new { id = fiscalYearId });
+        }
+    }
+
+    private string RequireActor()
+    {
+        var actor = User.Identity?.Name;
+        if (string.IsNullOrWhiteSpace(actor))
+            throw new InvalidOperationException("An authenticated directory identity is required for this action.");
+        return actor;
     }
 }
