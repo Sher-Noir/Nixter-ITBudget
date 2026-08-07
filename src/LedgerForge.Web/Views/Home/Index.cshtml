@@ -7,7 +7,7 @@
 <div class="lf-page-header">
     <div>
         <h1 class="lf-page-title">Dashboard</h1>
-        <p class="lf-subtitle">Current fiscal-year planning, commitments, approvals, and actual activity from LedgerForge authoritative records.</p>
+        <p class="lf-subtitle">Current fiscal-year planning, open commitments, approvals, renewals, forecasts, and actual activity from LedgerForge authoritative records.</p>
     </div>
     <div class="lf-dashboard-context">
         <span class="badge">@Model.FiscalYearName</span>
@@ -20,12 +20,12 @@
     <article class="lf-card lf-kpi"><div class="lf-kpi-icon blue">P</div><div><h2 class="lf-card-title">Planned Budget</h2><div class="lf-kpi-value">@Model.PlannedBudget.ToString("C2")</div><div class="lf-kpi-note">Latest planning version</div></div></article>
     <article class="lf-card lf-kpi"><div class="lf-kpi-icon blue">✓</div><div><h2 class="lf-card-title">Approved Budget</h2><div class="lf-kpi-value">@Model.ApprovedBudget.ToString("C2")</div><div class="lf-kpi-note">Approved item totals</div></div></article>
     <article class="lf-card lf-kpi"><div class="lf-kpi-icon purple">✎</div><div><h2 class="lf-card-title">Revised Budget</h2><div class="lf-kpi-value">@Model.RevisedBudget.ToString("C2")</div><div class="lf-kpi-note">Revised, approved, or planned fallback</div></div></article>
-    <article class="lf-card lf-kpi"><div class="lf-kpi-icon orange">↔</div><div><h2 class="lf-card-title">Committed</h2><div class="lf-kpi-value">@Model.Committed.ToString("C2")</div><div class="lf-kpi-note"><a href="/purchase-orders">Issued purchase-order lines</a></div></div></article>
+    <article class="lf-card lf-kpi"><div class="lf-kpi-icon orange">↔</div><div><h2 class="lf-card-title">Committed</h2><div class="lf-kpi-value">@Model.Committed.ToString("C2")</div><div class="lf-kpi-note"><a href="/reports">Issued POs less posted linked invoices</a></div></div></article>
     <article class="lf-card lf-kpi"><div class="lf-kpi-icon green">▥</div><div><h2 class="lf-card-title">Actual</h2><div class="lf-kpi-value">@Model.Actual.ToString("C2")</div><div class="lf-kpi-note"><a href="/actuals">Posted actual ledger</a></div></div></article>
-    <article class="lf-card lf-kpi"><div class="lf-kpi-icon teal">□</div><div><h2 class="lf-card-title">Available</h2><div class="lf-kpi-value">@Model.Available.ToString("C2")</div><div class="lf-kpi-note">Revised less commitments and actuals</div></div></article>
-    <article class="lf-card lf-kpi"><div class="lf-kpi-icon blue">⌁</div><div><h2 class="lf-card-title">Forecast</h2><div class="lf-kpi-value">@Model.Forecast.ToString("C2")</div><div class="lf-kpi-note">Baseline forecast until forecasting workflow is added</div></div></article>
-    <article class="lf-card lf-kpi"><div class="lf-kpi-icon gold">!</div><div><h2 class="lf-card-title">Pending Approvals</h2><div class="lf-kpi-value">@Model.PendingApprovals</div><div class="lf-kpi-note">Submitted budget items and purchase orders</div></div></article>
-    <article class="lf-card lf-kpi"><div class="lf-kpi-icon red">◫</div><div><h2 class="lf-card-title">Renewals Due in 30 Days</h2><div class="lf-kpi-value">@Model.RenewalsDueIn30Days</div><div class="lf-kpi-note">Budget items with upcoming renewal dates</div></div></article>
+    <article class="lf-card lf-kpi"><div class="lf-kpi-icon teal">□</div><div><h2 class="lf-card-title">Available</h2><div class="lf-kpi-value">@Model.Available.ToString("C2")</div><div class="lf-kpi-note">Revised less open commitments and actuals</div></div></article>
+    <article class="lf-card lf-kpi"><div class="lf-kpi-icon blue">⌁</div><div><h2 class="lf-card-title">Forecast</h2><div class="lf-kpi-value">@Model.Forecast.ToString("C2")</div><div class="lf-kpi-note">@(Model.ForecastIsPublished ? "Latest published forecast" : "Fallback until a forecast is published")</div></div></article>
+    <article class="lf-card lf-kpi"><div class="lf-kpi-icon gold">!</div><div><h2 class="lf-card-title">Pending Approvals</h2><div class="lf-kpi-value">@Model.PendingApprovals</div><div class="lf-kpi-note"><a href="/approvals">All pending financial workflows</a></div></div></article>
+    <article class="lf-card lf-kpi"><div class="lf-kpi-icon red">◫</div><div><h2 class="lf-card-title">Renewals Due in 30 Days</h2><div class="lf-kpi-value">@Model.RenewalsDueIn30Days</div><div class="lf-kpi-note"><a href="/renewals">Contract-first renewal schedule</a></div></div></article>
 </section>
 
 <section class="lf-dashboard-panels">
@@ -62,7 +62,7 @@
     }
 
     <article class="lf-card lf-panel lf-dashboard-wide">
-        <div class="lf-panel-header"><h2>Upcoming renewals</h2><a href="/budget">Review budget items</a></div>
+        <div class="lf-panel-header"><h2>Upcoming renewals</h2><a href="/renewals">Open renewal calendar</a></div>
         @if (Model.UpcomingRenewals.Count == 0)
         {
             <div class="lf-empty-state"><p>No renewal dates fall within the next 30 days.</p></div>
@@ -71,11 +71,28 @@
         {
             <div class="lf-table-wrap">
                 <table class="lf-table">
-                    <thead><tr><th>Item</th><th>Description</th><th>Date</th><th class="lf-number">Estimate</th></tr></thead>
+                    <thead><tr><th>Reference</th><th>Source</th><th>Description</th><th>Date</th><th class="lf-number">Estimate</th></tr></thead>
                     <tbody>
                     @foreach (var renewal in Model.UpcomingRenewals)
                     {
-                        <tr><td><a href="/budget/items/@renewal.Id"><strong>@renewal.ItemNumber</strong></a></td><td>@renewal.Description</td><td>@renewal.RenewalDate.ToString("yyyy-MM-dd")</td><td class="lf-number">@renewal.EstimatedAmount.ToString("C2")</td></tr>
+                        <tr>
+                            <td>
+                                @if (renewal.ContractId is not null)
+                                {
+                                    <a href="/contracts/@renewal.ContractId"><strong>@renewal.Reference</strong></a>
+                                }
+                                else if (renewal.BudgetItemId is not null)
+                                {
+                                    <a href="/budget/items/@renewal.BudgetItemId"><strong>@renewal.Reference</strong></a>
+                                }
+                                else
+                                {
+                                    <strong>@renewal.Reference</strong>
+                                }
+                            </td>
+                            <td><span class="badge">@renewal.Source</span></td>
+                            <td>@renewal.Description</td><td>@renewal.RenewalDate.ToString("yyyy-MM-dd")</td><td class="lf-number">@renewal.EstimatedAmount.ToString("C2")</td>
+                        </tr>
                     }
                     </tbody>
                 </table>
@@ -84,7 +101,7 @@
     </article>
 
     <article class="lf-card lf-panel">
-        <div class="lf-panel-header"><h2>Procurement commitments</h2><a href="/purchase-orders">Purchase orders</a></div>
-        <div class="lf-dashboard-empty-chart"><p><strong>@Model.Committed.ToString("C2")</strong> is currently committed on issued purchase orders. Closed and cancelled orders are excluded.</p></div>
+        <div class="lf-panel-header"><h2>Procurement commitments</h2><a href="/exports/commitments.csv?fiscalYearId=@Model.FiscalYearId">Export open commitments</a></div>
+        <div class="lf-dashboard-empty-chart"><p><strong>@Model.Committed.ToString("C2")</strong> remains committed after posted invoices linked to issued purchase orders are reconciled.</p></div>
     </article>
 </section>
