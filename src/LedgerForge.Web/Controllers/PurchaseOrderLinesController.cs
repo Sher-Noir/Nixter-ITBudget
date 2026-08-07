@@ -52,7 +52,11 @@ public sealed class PurchaseOrderLinesController(LedgerForgeDbContext dbContext)
             departmentId ??= line.DepartmentId;
             locationId ??= line.LocationId;
 
-            line.Update(description, quantity, unitCost, budgetItemId, financeAccountId, departmentId, locationId);
+            budgetItemId ??= line.BudgetItemId;
+    financeAccountId ??= line.FinanceAccountId;
+    departmentId ??= line.DepartmentId;
+    locationId ??= line.LocationId;
+    line.Update(description, quantity, unitCost, budgetItemId, financeAccountId, departmentId, locationId);
             await dbContext.SaveChangesAsync(cancellationToken);
             return RedirectToAction("Details", "PurchaseOrders", new { id = purchaseOrderId, saved = true });
         }
