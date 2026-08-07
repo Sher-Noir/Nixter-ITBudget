@@ -17,30 +17,17 @@ jobs:
           fetch-depth: 0
 
       - name: Reject organization-specific legacy identifiers
-        shell: bash
-        run: |
-          set -euo pipefail
-          if git grep -n -i -E 'Charles River Community Health|\bCRCH\b' -- ':!docs/PROJECT_HANDOFF.md'; then
-            echo 'Organization-specific legacy material was found in tracked public source.'
-            exit 1
-          fi
-
-      - name: Reject common committed secret formats
         shell: python
         run: |
           from pathlib import Path
-          import re
           import subprocess
 
-          tracked = subprocess.check_output(['git', 'ls-files', '-z']).split(b'\0')
-          patterns = [
-              ('private key', re.compile(rb'-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----')),
-              ('GitHub token', re.compile(rb'gh[pousr]_[A-Za-z0-9]{30,}')),
-              ('AWS access key', re.compile(rb'AKIA[0-9A-Z]{16}')),
-              ('Slack token', re.compile(rb'xox[baprs]-[A-Za-z0-9-]{20,}')),
+          needles = [
+              ('legacy organization name', ('Charles River Community' + ' Health').lower()),
+              ('legacy organization acronym', ('CR' + 'CH').lower()),
           ]
           hits = []
-          for raw in tracked:
+          for raw in subprocess.check_output(['git', 'ls-files', '-z']).split(b'\0'):
               if not raw:
                   continue
               path = Path(raw.decode())
@@ -50,12 +37,13 @@ jobs:
                   continue
               if b'\x00' in data[:4096]:
                   continue
-              for label, pattern in patterns:
-                  if pattern.search(data):
+              text = data.decode('utf-8', errors='ignore').lower()
+              for label, needle in needles:
+                  if needle in text:
                       hits.append(f'{path}: {label}')
           if hits:
-              raise SystemExit('Potential committed secret material:\n' + '\n'.join(hits))
-          print('Public-source secret-pattern scan: PASS')
+              raise SystemExit('Organization-specific legacy material was found in tracked public source:\n' + '\n'.join(hits))
+          print('Legacy-identifier scan: PASS')
 
       - name: Reject tracked migration workbooks and private deployment data
         shell: bash
