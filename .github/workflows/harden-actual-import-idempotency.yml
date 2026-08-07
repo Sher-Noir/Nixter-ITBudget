@@ -1,0 +1,122 @@
+name: harden-actual-import-idempotency
+
+on:
+  pull_request:
+    branches: [ main ]
+    paths:
+      - '.github/workflows/harden-actual-import-idempotency.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }}
+      - name: Add hash-backed duplicate protection
+        shell: python
+        run: |
+          from pathlib import Path
+
+          service = Path('src/LedgerForge.Infrastructure/Actuals/ActualCsvImportService.cs')
+          text = service.read_text(encoding='utf-8-sig')
+          if 'using System.Security.Cryptography;' not in text:
+              text = text.replace('using System.Globalization;\n', 'using System.Globalization;\nusing System.Security.Cryptography;\n', 1)
+          read = '''        var text = await reader.ReadToEndAsync(cancellationToken);
+              if (string.IsNullOrWhiteSpace(text)) return new(0, 0m, ["CSV file is empty."]);'''
+          replacement = '''        var text = await reader.ReadToEndAsync(cancellationToken);
+              if (string.IsNullOrWhiteSpace(text)) return new(0, 0m, ["CSV file is empty."]);
+              var sourceHash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(text))).ToLowerInvariant();'''
+          if 'var sourceHash =' not in text:
+              if read not in text: raise SystemExit('CSV text-read insertion point missing.')
+              text = text.replace(read, replacement, 1)
+
+          pending = '''        var pending = new List<ActualTransaction>(records.Count - 1);
+              var errors = new List<string>();'''
+          pending_new = '''        var pending = new List<ActualTransaction>(records.Count - 1);
+              var errors = new List<string>();
+              var seenReferences = new HashSet<string>(StringComparer.OrdinalIgnoreCase);'''
+          if 'seenReferences' not in text:
+              if pending not in text: raise SystemExit('Import pending-list insertion point missing.')
+              text = text.replace(pending, pending_new, 1)
+
+          text = text.replace('if (string.IsNullOrWhiteSpace(reference)) reference = $"import:{safeFileName}:row-{rowNumber}";', 'if (string.IsNullOrWhiteSpace(reference)) reference = $"import:{sourceHash}:row-{rowNumber}";')
+          reference_marker = '''            if (string.IsNullOrWhiteSpace(reference)) reference = $"import:{sourceHash}:row-{rowNumber}";
+
+              try'''
+          reference_new = '''            if (string.IsNullOrWhiteSpace(reference)) reference = $"import:{sourceHash}:row-{rowNumber}";
+              if (!seenReferences.Add(reference))
+              {
+                  errors.Add($"Row {rowNumber}: source reference '{reference}' is duplicated within this import file.");
+                  continue;
+              }
+
+              try'''
+          if 'duplicated within this import file' not in text:
+              if reference_marker not in text: raise SystemExit('Import reference validation insertion point missing.')
+              text = text.replace(reference_marker, reference_new, 1)
+
+          transaction_marker = '''        if (pending.Count == 0 && errors.Count == 0) errors.Add("CSV contains no non-empty data rows.");
+              if (errors.Count > 0) return new(0, 0m, errors);
+
+              await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);'''
+          transaction_new = '''        if (pending.Count == 0 && errors.Count == 0) errors.Add("CSV contains no non-empty data rows.");
+              if (errors.Count > 0) return new(0, 0m, errors);
+
+              var importReferences = pending.Select(x => x.SourceReference).Where(x => x != null).Select(x => x!).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+              var existingReferences = await dbContext.ActualTransactions.AsNoTracking()
+                  .Where(x => x.FiscalYearId == fiscalYearId && x.Kind == ActualTransactionKind.Import && x.SourceReference != null && importReferences.Contains(x.SourceReference))
+                  .Select(x => x.SourceReference!)
+                  .ToListAsync(cancellationToken);
+              if (existingReferences.Count > 0)
+              {
+                  var shown = string.Join(", ", existingReferences.Distinct(StringComparer.OrdinalIgnoreCase).Take(5));
+                  return new(0, 0m, [$"Import rejected because previously posted import reference(s) were found: {shown}. No rows were posted."]);
+              }
+
+              await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);'''
+          if 'previously posted import reference(s)' not in text:
+              if transaction_marker not in text: raise SystemExit('Import transaction insertion point missing.')
+              text = text.replace(transaction_marker, transaction_new, 1)
+          service.write_text(text, encoding='utf-8')
+
+          test = Path('tests/LedgerForge.IntegrationTests/ActualCsvImportIntegrationTests.cs')
+          text = test.read_text(encoding='utf-8-sig')
+          marker = '''        Assert.Equal(2, await dbContext.ActualTransactions.CountAsync(x => x.FiscalYearId == year.Id));
+
+              var invalidCsv ='''
+          addition = '''        Assert.Equal(2, await dbContext.ActualTransactions.CountAsync(x => x.FiscalYearId == year.Id));
+
+              await using (var duplicateStream = new MemoryStream(Encoding.UTF8.GetBytes(validCsv)))
+              {
+                  var duplicate = await service.ImportAsync(year.Id, duplicateStream, ActualImportProfile.Default, "renamed-copy.csv");
+                  Assert.False(duplicate.Succeeded);
+                  Assert.Equal(0, duplicate.ImportedRows);
+              }
+              Assert.Equal(2, await dbContext.ActualTransactions.CountAsync(x => x.FiscalYearId == year.Id));
+
+              var invalidCsv ='''
+          if 'duplicateStream' not in text:
+              if marker not in text: raise SystemExit('Actual import integration test insertion point missing.')
+              text = text.replace(marker, addition, 1)
+          test.write_text(text, encoding='utf-8')
+      - name: Restore, build, and test
+        run: |
+          dotnet restore LedgerForge.slnx
+          dotnet build LedgerForge.slnx --configuration Release --no-restore
+          dotnet test tests/LedgerForge.UnitTests/LedgerForge.UnitTests.csproj --configuration Release --no-build
+          dotnet test tests/LedgerForge.IntegrationTests/LedgerForge.IntegrationTests.csproj --configuration Release --no-build
+          dotnet test tests/LedgerForge.UiTests/LedgerForge.UiTests.csproj --configuration Release --no-build
+      - name: Self-remove and push
+        shell: bash
+        run: |
+          set -euo pipefail
+          git rm .github/workflows/harden-actual-import-idempotency.yml
+          git add src/LedgerForge.Infrastructure/Actuals/ActualCsvImportService.cs tests/LedgerForge.IntegrationTests/ActualCsvImportIntegrationTests.cs
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'Make actuals CSV import idempotent'
+          git push origin HEAD:${{ github.head_ref }}
