@@ -46,6 +46,7 @@
         </a>
         <nav class="lf-nav">
             <a href="/" class="@(Context.Request.Path == "/" ? "active" : null)"><span class="lf-nav-icon">⌂</span><span>Dashboard</span></a>
+            <a href="/work" class="@(IsActive("/work") ? "active" : null)"><span class="lf-nav-icon">◎</span><span>Work Center</span></a>
             <a href="/budget" class="@(IsActive("/budget") ? "active" : null)"><span class="lf-nav-icon">◔</span><span>Budget</span></a>
             <a href="/actuals" class="@(IsActive("/actuals") ? "active" : null)"><span class="lf-nav-icon">▥</span><span>Actuals</span></a>
             <a href="/purchase-orders" class="@(IsActive("/purchase-orders") ? "active" : null)"><span class="lf-nav-icon">◫</span><span>Purchase Orders</span></a>
@@ -65,7 +66,7 @@
             }
             @if (canManageImports)
             {
-                <a href="/imports" class="@(IsActive("/imports") ? "active" : null)"><span class="lf-nav-icon">⇅</span><span>Imports &amp; Exports</span></a>
+                <a href="/imports" class="@(IsActive("/imports") ? "active" : null)"><span class="lf-nav-icon">⇅</span><span>Imports</span></a>
             }
             @if (canAdminister)
             {
