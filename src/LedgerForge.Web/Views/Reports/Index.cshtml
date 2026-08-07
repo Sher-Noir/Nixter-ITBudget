@@ -27,11 +27,12 @@
     <article class="lf-card lf-kpi"><div class="lf-kpi-icon blue">P</div><div><div class="lf-card-title">Planned</div><div class="lf-kpi-value">@Model.PlannedBudget.ToString("C2")</div><div class="lf-kpi-note">@Model.BudgetVersionName</div></div></article>
     <article class="lf-card lf-kpi"><div class="lf-kpi-icon blue">✓</div><div><div class="lf-card-title">Approved</div><div class="lf-kpi-value">@Model.ApprovedBudget.ToString("C2")</div><div class="lf-kpi-note">Approved budget-item totals</div></div></article>
     <article class="lf-card lf-kpi"><div class="lf-kpi-icon purple">R</div><div><div class="lf-card-title">Revised</div><div class="lf-kpi-value">@Model.RevisedBudget.ToString("C2")</div><div class="lf-kpi-note">Current revised baseline</div></div></article>
-    <article class="lf-card lf-kpi"><div class="lf-kpi-icon orange">↔</div><div><div class="lf-card-title">Committed</div><div class="lf-kpi-value">@Model.Committed.ToString("C2")</div><div class="lf-kpi-note">Issued purchase-order lines</div></div></article>
+    <article class="lf-card lf-kpi"><div class="lf-kpi-icon orange">↔</div><div><div class="lf-card-title">Committed</div><div class="lf-kpi-value">@Model.Committed.ToString("C2")</div><div class="lf-kpi-note">Issued POs less posted linked invoices</div></div></article>
     <article class="lf-card lf-kpi"><div class="lf-kpi-icon green">A</div><div><div class="lf-card-title">Actual</div><div class="lf-kpi-value">@Model.Actual.ToString("C2")</div><div class="lf-kpi-note">Posted actual ledger</div></div></article>
-    <article class="lf-card lf-kpi"><div class="lf-kpi-icon teal">□</div><div><div class="lf-card-title">Available</div><div class="lf-kpi-value">@Model.Available.ToString("C2")</div><div class="lf-kpi-note">Revised less commitments and actuals</div></div></article>
-    <article class="lf-card lf-kpi"><div class="lf-kpi-icon gold">!</div><div><div class="lf-card-title">Pending Approvals</div><div class="lf-kpi-value">@Model.PendingApprovals</div><div class="lf-kpi-note">Budget items plus purchase orders</div></div></article>
-    <article class="lf-card lf-kpi"><div class="lf-kpi-icon red">↻</div><div><div class="lf-card-title">Renewals in 30 Days</div><div class="lf-kpi-value">@Model.RenewalsDueIn30Days</div><div class="lf-kpi-note">Upcoming budget renewal dates</div></div></article>
+    <article class="lf-card lf-kpi"><div class="lf-kpi-icon teal">□</div><div><div class="lf-card-title">Available</div><div class="lf-kpi-value">@Model.Available.ToString("C2")</div><div class="lf-kpi-note">Revised less open commitments and actuals</div></div></article>
+    <article class="lf-card lf-kpi"><div class="lf-kpi-icon blue">F</div><div><div class="lf-card-title">Forecast</div><div class="lf-kpi-value">@Model.Forecast.ToString("C2")</div><div class="lf-kpi-note">@(Model.ForecastIsPublished ? "Latest published forecast" : "Calculated fallback")</div></div></article>
+    <article class="lf-card lf-kpi"><div class="lf-kpi-icon gold">!</div><div><div class="lf-card-title">Pending Approvals</div><div class="lf-kpi-value">@Model.PendingApprovals</div><div class="lf-kpi-note">All financial approval workflows</div></div></article>
+    <article class="lf-card lf-kpi"><div class="lf-kpi-icon red">↻</div><div><div class="lf-card-title">Renewals in 30 Days</div><div class="lf-kpi-value">@Model.RenewalsDueIn30Days</div><div class="lf-kpi-note">Contract-first renewal schedule</div></div></article>
 </div>
 
 <section class="lf-card" id="exports" aria-labelledby="exports-title">
@@ -52,7 +53,7 @@
         <div class="lf-report-grid">
             <article class="lf-report-card">
                 <h3>Budget detail</h3>
-                <p>Latest budget-version item amounts, status, planned/approved/revised values, purchase dates, and renewal dates.</p>
+                <p>Latest budget-version item amounts, status, planned/approved/revised values, purchase dates, and fallback renewal dates.</p>
                 <a class="button primary" href="/exports/budget.csv?fiscalYearId=@Model.SelectedFiscalYearId">Download budget CSV</a>
             </article>
             <article class="lf-report-card">
@@ -62,13 +63,18 @@
             </article>
             <article class="lf-report-card">
                 <h3>Open commitments</h3>
-                <p>Issued purchase-order lines with vendor, budget-item, finance-account, department, and location coding.</p>
+                <p>Issued purchase orders reconciled against posted linked invoices, with gross, invoiced, and outstanding totals.</p>
                 <a class="button primary" href="/exports/commitments.csv?fiscalYearId=@Model.SelectedFiscalYearId">Download commitments CSV</a>
             </article>
             <article class="lf-report-card">
                 <h3>Renewal calendar</h3>
-                <p>Budget items with renewal dates and current estimated amounts from the latest planning version.</p>
+                <p>Contract renewals first, contract-end fallback second, and budget-item fallback only when no linked contract is authoritative.</p>
                 <a class="button primary" href="/exports/renewals.csv?fiscalYearId=@Model.SelectedFiscalYearId">Download renewals CSV</a>
+            </article>
+            <article class="lf-report-card">
+                <h3>Published forecast</h3>
+                <p>Latest published scenario with immutable baseline, forecast amount, variance, and line notes.</p>
+                <a class="button primary" href="/exports/forecast.csv?fiscalYearId=@Model.SelectedFiscalYearId">Download forecast CSV</a>
             </article>
         </div>
     }
@@ -82,5 +88,4 @@
         <div><dt>Actual ledger rows</dt><dd>@Model.ActualTransactionCount</dd></div>
         <div><dt>Fiscal year</dt><dd>@Model.FiscalYearName</dd></div>
     </dl>
-    <p class="lf-muted">Forecast variance, audit activity, finance-export preview, and fiscal-year close checklist will become available as those underlying workflows are completed.</p>
 </section>
