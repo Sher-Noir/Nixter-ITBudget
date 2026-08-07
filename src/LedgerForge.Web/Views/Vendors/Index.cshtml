@@ -1,0 +1,121 @@
+@model IReadOnlyList<LedgerForge.Infrastructure.Procurement.VendorSummary>
+@{
+    ViewData["Title"] = "Vendors";
+    var canManage = ViewData["CanManageProcurement"] as bool? == true;
+    var errorMessage = ViewData["ErrorMessage"] as string;
+    var saved = ViewData["Saved"] as bool? == true;
+}
+
+<div class="lf-page-header">
+    <div>
+        <h1 class="lf-page-title">Vendors</h1>
+        <p class="lf-subtitle">Maintain vendor identities used by purchase orders and future contracts/invoices. Vendor codes remain stable for historical references.</p>
+    </div>
+</div>
+
+@if (!string.IsNullOrWhiteSpace(errorMessage))
+{
+    <div class="lf-card lf-alert lf-alert-danger" role="alert">@errorMessage</div>
+}
+@if (saved)
+{
+    <div class="lf-card lf-alert lf-alert-success" role="status">Vendor saved.</div>
+}
+
+@if (canManage)
+{
+    <section class="lf-card" aria-labelledby="add-vendor-title">
+        <h2 id="add-vendor-title">Add vendor</h2>
+        <form method="post" action="/vendors">
+            @Html.AntiForgeryToken()
+            <div class="lf-form-grid">
+                <div>
+                    <label for="code"><strong>Vendor code</strong></label>
+                    <input id="code" name="code" maxlength="100" required autocomplete="off" />
+                </div>
+                <div>
+                    <label for="name"><strong>Vendor name</strong></label>
+                    <input id="name" name="name" maxlength="250" required />
+                </div>
+                <div>
+                    <label for="contactName">Contact name</label>
+                    <input id="contactName" name="contactName" maxlength="250" />
+                </div>
+                <div>
+                    <label for="email">Email</label>
+                    <input id="email" name="email" type="email" maxlength="320" />
+                </div>
+                <div>
+                    <label for="phone">Phone</label>
+                    <input id="phone" name="phone" maxlength="100" />
+                </div>
+            </div>
+            <p><button class="primary" type="submit">Add vendor</button></p>
+        </form>
+    </section>
+}
+
+<section class="lf-card" aria-labelledby="vendor-list-title">
+    <div class="lf-panel-header">
+        <div>
+            <h2 id="vendor-list-title">Vendor directory</h2>
+            <p class="lf-muted">Inactive vendors remain visible for history but cannot be selected for new purchase orders.</p>
+        </div>
+        <span class="badge">@Model.Count vendor@(Model.Count == 1 ? string.Empty : "s")</span>
+    </div>
+
+    @if (Model.Count == 0)
+    {
+        <div class="lf-empty-state"><p>No vendors have been configured.</p></div>
+    }
+    else if (canManage)
+    {
+        <div class="lf-admin-stack">
+            @foreach (var vendor in Model)
+            {
+                <form method="post" action="/vendors/@vendor.Id" class="lf-admin-row">
+                    @Html.AntiForgeryToken()
+                    <div class="lf-admin-code">
+                        <strong>@vendor.Code</strong>
+                        <span class="lf-muted">@(vendor.IsActive ? "Active" : "Inactive")</span>
+                    </div>
+                    <div>
+                        <label for="name-@vendor.Id">Name</label>
+                        <input id="name-@vendor.Id" name="name" value="@vendor.Name" maxlength="250" required />
+                    </div>
+                    <div>
+                        <label for="contact-@vendor.Id">Contact</label>
+                        <input id="contact-@vendor.Id" name="contactName" value="@vendor.ContactName" maxlength="250" />
+                    </div>
+                    <div>
+                        <label for="email-@vendor.Id">Email</label>
+                        <input id="email-@vendor.Id" name="email" type="email" value="@vendor.Email" maxlength="320" />
+                    </div>
+                    <div>
+                        <label for="phone-@vendor.Id">Phone</label>
+                        <input id="phone-@vendor.Id" name="phone" value="@vendor.Phone" maxlength="100" />
+                    </div>
+                    <div class="lf-admin-state">
+                        <label for="active-@vendor.Id">Active</label>
+                        <input id="active-@vendor.Id" name="isActive" type="checkbox" value="true" checked="@(vendor.IsActive ? "checked" : null)" />
+                    </div>
+                    <div class="lf-admin-action"><button type="submit">Save</button></div>
+                </form>
+            }
+        </div>
+    }
+    else
+    {
+        <div class="lf-table-wrap">
+            <table class="lf-table">
+                <thead><tr><th>Code</th><th>Name</th><th>Contact</th><th>Email</th><th>Phone</th><th>Status</th></tr></thead>
+                <tbody>
+                @foreach (var vendor in Model)
+                {
+                    <tr><td><strong>@vendor.Code</strong></td><td>@vendor.Name</td><td>@(vendor.ContactName ?? "—")</td><td>@(vendor.Email ?? "—")</td><td>@(vendor.Phone ?? "—")</td><td><span class="badge">@(vendor.IsActive ? "Active" : "Inactive")</span></td></tr>
+                }
+                </tbody>
+            </table>
+        </div>
+    }
+</section>
