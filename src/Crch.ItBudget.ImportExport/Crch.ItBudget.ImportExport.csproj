@@ -3,4 +3,7 @@
     <ProjectReference Include="../Crch.ItBudget.Application/Crch.ItBudget.Application.csproj" />
     <ProjectReference Include="../Crch.ItBudget.Domain/Crch.ItBudget.Domain.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="ClosedXML" Version="0.105.1" />
+  </ItemGroup>
 </Project>
