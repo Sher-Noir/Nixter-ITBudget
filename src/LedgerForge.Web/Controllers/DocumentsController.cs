@@ -24,8 +24,10 @@ public sealed class DocumentsController : Controller
         LedgerForgeDbContext dbContext)
     {
         var configuredLimit = configuration.GetValue<long?>("Documents:MaxFileSizeBytes");
+        var configuredStoragePath = configuration.GetValue<string>("Documents:StoragePath");
         _store = new PhysicalDocumentStore(
             environment.ContentRootPath,
+            configuredStoragePath,
             configuredLimit is > 0 ? configuredLimit.Value : 25L * 1024 * 1024);
         _authorizationService = authorizationService;
         _dbContext = dbContext;
