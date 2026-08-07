@@ -27,6 +27,7 @@
     }
     <link rel="stylesheet" href="~/css/ledgerforge.css" asp-append-version="true" />
     <link rel="stylesheet" href="~/css/ledgerforge-budget.css" asp-append-version="true" />
+    <link rel="stylesheet" href="~/css/ledgerforge-dashboard.css" asp-append-version="true" />
 </head>
 <body>
 <div class="lf-shell">
@@ -64,6 +65,7 @@
             }
             @if (canAdminister)
             {
+                <a href="/admin/finance" class="@(IsActive("/admin/finance") ? "active" : null)"><span class="lf-nav-icon">$</span><span>Finance</span></a>
                 <a href="/admin/lookups" class="@(IsActive("/admin/lookups") ? "active" : null)"><span class="lf-nav-icon">≡</span><span>Managed Lookups</span></a>
                 <a href="/admin/organization" class="@(IsActive("/admin/organization") ? "active" : null)"><span class="lf-nav-icon">✦</span><span>Organization</span></a>
                 <a href="/admin/security" class="@(IsActive("/admin/security") ? "active" : null)"><span class="lf-nav-icon">⚙</span><span>Security</span></a>
