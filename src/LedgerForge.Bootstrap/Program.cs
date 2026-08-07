@@ -1,11 +1,14 @@
+using System.Text.RegularExpressions;
 using LedgerForge.Application.Abstractions;
 using LedgerForge.Infrastructure.Persistence;
 using LedgerForge.Infrastructure.Persistence.Auditing;
 using LedgerForge.Infrastructure.Persistence.Seeding;
+using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 
 const string PrimaryConnectionEnvironmentVariable = "LEDGERFORGE_CONNECTION_STRING";
 const string AspNetConnectionEnvironmentVariable = "ConnectionStrings__LedgerForge";
+const string ApplicationIdentityEnvironmentVariable = "LEDGERFORGE_DATABASE_APP_IDENTITY";
 
 if (args.Length != 1 || args[0] is not ("initialize" or "verify"))
 {
@@ -43,6 +46,13 @@ try
         Console.WriteLine("Initializing generic LedgerForge workflow lookups...");
         var initializer = new ManagedLookupInitializer(dbContext);
         await initializer.InitializeMissingAsync();
+
+        var applicationIdentity = Environment.GetEnvironmentVariable(ApplicationIdentityEnvironmentVariable);
+        if (!string.IsNullOrWhiteSpace(applicationIdentity))
+        {
+            Console.WriteLine("Provisioning the configured Windows application identity for LedgerForge data access...");
+            await ProvisionApplicationIdentityAsync(connectionString, dbContext, applicationIdentity.Trim());
+        }
     }
 
     if (!await dbContext.Database.CanConnectAsync())
@@ -67,6 +77,55 @@ catch (Exception exception)
 {
     Console.Error.WriteLine($"LedgerForge database operation failed: {exception.GetType().Name}: {exception.Message}");
     return 10;
+}
+
+static async Task ProvisionApplicationIdentityAsync(
+    string connectionString,
+    LedgerForgeDbContext applicationDbContext,
+    string applicationIdentity)
+{
+    if (!Regex.IsMatch(applicationIdentity, @"^[A-Za-z0-9_ .\\$@-]{1,256}$", RegexOptions.CultureInvariant))
+        throw new InvalidOperationException("The configured Windows application identity contains unsupported characters.");
+
+    var quotedIdentifier = "[" + applicationIdentity.Replace("]", "]]", StringComparison.Ordinal) + "]";
+    var sqlLiteral = applicationIdentity.Replace("'", "''", StringComparison.Ordinal);
+
+    var masterConnection = new SqlConnectionStringBuilder(connectionString)
+    {
+        InitialCatalog = "master"
+    };
+    var masterOptions = new DbContextOptionsBuilder<LedgerForgeDbContext>()
+        .UseSqlServer(masterConnection.ConnectionString)
+        .Options;
+
+    await using (var masterDbContext = new LedgerForgeDbContext(masterOptions))
+    {
+        await masterDbContext.Database.ExecuteSqlRawAsync($"""
+            IF SUSER_ID(N'{sqlLiteral}') IS NULL
+                CREATE LOGIN {quotedIdentifier} FROM WINDOWS;
+            """);
+    }
+
+    await applicationDbContext.Database.ExecuteSqlRawAsync($"""
+        IF DATABASE_PRINCIPAL_ID(N'{sqlLiteral}') IS NULL
+            CREATE USER {quotedIdentifier} FOR LOGIN {quotedIdentifier};
+
+        IF NOT EXISTS (
+            SELECT 1
+            FROM sys.database_role_members drm
+            JOIN sys.database_principals role_principal ON role_principal.principal_id = drm.role_principal_id
+            JOIN sys.database_principals member_principal ON member_principal.principal_id = drm.member_principal_id
+            WHERE role_principal.name = N'db_datareader' AND member_principal.name = N'{sqlLiteral}')
+            ALTER ROLE [db_datareader] ADD MEMBER {quotedIdentifier};
+
+        IF NOT EXISTS (
+            SELECT 1
+            FROM sys.database_role_members drm
+            JOIN sys.database_principals role_principal ON role_principal.principal_id = drm.role_principal_id
+            JOIN sys.database_principals member_principal ON member_principal.principal_id = drm.member_principal_id
+            WHERE role_principal.name = N'db_datawriter' AND member_principal.name = N'{sqlLiteral}')
+            ALTER ROLE [db_datawriter] ADD MEMBER {quotedIdentifier};
+        """);
 }
 
 file sealed class BootstrapAuditRequestContext : IAuditRequestContext
