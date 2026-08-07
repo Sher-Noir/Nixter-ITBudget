@@ -1,5 +1,6 @@
 name: generate-forecast-baseline-migration
 
+# One-shot workflow: generate, review/backfill, commit, then remove this workflow.
 on:
   pull_request:
     branches: [ main ]
