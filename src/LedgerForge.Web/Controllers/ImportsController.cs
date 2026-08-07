@@ -1,3 +1,4 @@
+using LedgerForge.Domain.Importing;
 using LedgerForge.ImportExport.Spreadsheets;
 using LedgerForge.Infrastructure.Importing;
 using LedgerForge.Web.Configuration;
@@ -13,32 +14,34 @@ namespace LedgerForge.Web.Controllers;
 [Route("imports")]
 public sealed class ImportsController(
     LegacyBudgetImportPreviewService previewService,
+    ImportReviewService reviewService,
     IOptions<LegacyImportOptions> legacyImportOptions,
     IConfiguration configuration) : Controller
 {
     private const long DefaultMaxFileSizeBytes = 25 * 1024 * 1024;
 
     [HttpGet("")]
-    public IActionResult Index() => View(new ImportPreviewViewModel());
+    public async Task<IActionResult> Index(CancellationToken cancellationToken)
+        => View(await BuildIndexAsync(TempData["ImportError"] as string, cancellationToken));
 
     [HttpPost("legacy-budget/preview")]
     public async Task<IActionResult> Preview(IFormFile? workbook, CancellationToken cancellationToken)
     {
         if (workbook is null || workbook.Length == 0)
-            return View("Index", new ImportPreviewViewModel(ErrorMessage: "Select a non-empty .xlsx workbook."));
+            return View("Index", await BuildIndexAsync("Select a non-empty .xlsx workbook.", cancellationToken));
 
         var configuredMaxFileSize = configuration.GetValue<long?>("Imports:MaxFileSizeBytes");
         var maxFileSize = configuredMaxFileSize is > 0 ? configuredMaxFileSize.Value : DefaultMaxFileSizeBytes;
         if (workbook.Length > maxFileSize)
-            return View("Index", new ImportPreviewViewModel(ErrorMessage: $"The workbook exceeds the configured upload limit of {maxFileSize / (1024 * 1024)} MB."));
+            return View("Index", await BuildIndexAsync($"The workbook exceeds the configured upload limit of {maxFileSize / (1024 * 1024)} MB.", cancellationToken));
 
         if (!string.Equals(Path.GetExtension(workbook.FileName), ".xlsx", StringComparison.OrdinalIgnoreCase))
-            return View("Index", new ImportPreviewViewModel(ErrorMessage: "Only .xlsx workbooks are accepted for this import adapter."));
+            return View("Index", await BuildIndexAsync("Only .xlsx workbooks are accepted for this import adapter.", cancellationToken));
 
         await using var uploaded = new MemoryStream();
         await workbook.CopyToAsync(uploaded, cancellationToken);
         if (!HasZipSignature(uploaded))
-            return View("Index", new ImportPreviewViewModel(ErrorMessage: "The uploaded file is not a valid Office Open XML workbook container."));
+            return View("Index", await BuildIndexAsync("The uploaded file is not a valid Office Open XML workbook container.", cancellationToken));
 
         uploaded.Position = 0;
         var options = legacyImportOptions.Value;
@@ -47,9 +50,159 @@ public sealed class ImportsController(
             ? new ImportReconciliationExpectation(options.ExpectedItemCount, options.ExpectedPlannedTotal, options.PriorityNeedLevel, options.ExpectedPriorityNeedLevelCount)
             : null;
 
-        var result = await previewService.CreatePreviewAsync(uploaded, Path.GetFileName(workbook.FileName), expectation, cancellationToken);
-        return View("Index", new ImportPreviewViewModel(Result: result));
+        var result = await previewService.CreatePreviewAsync(
+            uploaded,
+            Path.GetFileName(workbook.FileName),
+            expectation,
+            cancellationToken);
+
+        return RedirectToAction(nameof(Details), new { id = result.ImportBatchId });
     }
+
+    [HttpGet("{id:guid}")]
+    public async Task<IActionResult> Details(Guid id, CancellationToken cancellationToken)
+    {
+        var detail = await reviewService.GetBatchAsync(id, cancellationToken);
+        if (detail is null) return NotFound();
+
+        return View(new ImportBatchDetailViewModel(
+            detail,
+            TempData["ImportReviewError"] as string,
+            Request.Query.ContainsKey("saved"),
+            Request.Query.ContainsKey("accepted")));
+    }
+
+    [HttpPost("{batchId:guid}/exceptions/{exceptionId:guid}/resolve")]
+    public async Task<IActionResult> ResolveException(
+        Guid batchId,
+        Guid exceptionId,
+        string resolutionStatus,
+        string resolutionNote,
+        CancellationToken cancellationToken)
+    {
+        if (!Enum.TryParse<ImportExceptionResolutionStatus>(resolutionStatus, false, out var parsedStatus) ||
+            !Enum.IsDefined(parsedStatus) || parsedStatus == ImportExceptionResolutionStatus.Open)
+        {
+            TempData["ImportReviewError"] = "Select a valid exception resolution status.";
+            return RedirectToAction(nameof(Details), new { id = batchId });
+        }
+
+        try
+        {
+            await reviewService.ResolveExceptionAsync(
+                exceptionId,
+                parsedStatus,
+                resolutionNote,
+                RequireActor(),
+                cancellationToken);
+            return RedirectToAction(nameof(Details), new { id = batchId, saved = true });
+        }
+        catch (KeyNotFoundException)
+        {
+            return NotFound();
+        }
+        catch (Exception exception) when (exception is ArgumentException or InvalidOperationException)
+        {
+            TempData["ImportReviewError"] = exception.Message;
+            return RedirectToAction(nameof(Details), new { id = batchId });
+        }
+    }
+
+    [HttpPost("{batchId:guid}/exceptions/{exceptionId:guid}/assign")]
+    public async Task<IActionResult> AssignException(
+        Guid batchId,
+        Guid exceptionId,
+        string? assignedTo,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await reviewService.AssignExceptionAsync(exceptionId, assignedTo, cancellationToken);
+            return RedirectToAction(nameof(Details), new { id = batchId, saved = true });
+        }
+        catch (KeyNotFoundException)
+        {
+            return NotFound();
+        }
+        catch (InvalidOperationException exception)
+        {
+            TempData["ImportReviewError"] = exception.Message;
+            return RedirectToAction(nameof(Details), new { id = batchId });
+        }
+    }
+
+    [HttpPost("{batchId:guid}/exceptions/{exceptionId:guid}/reopen")]
+    public async Task<IActionResult> ReopenException(
+        Guid batchId,
+        Guid exceptionId,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await reviewService.ReopenExceptionAsync(exceptionId, cancellationToken);
+            return RedirectToAction(nameof(Details), new { id = batchId, saved = true });
+        }
+        catch (KeyNotFoundException)
+        {
+            return NotFound();
+        }
+        catch (InvalidOperationException exception)
+        {
+            TempData["ImportReviewError"] = exception.Message;
+            return RedirectToAction(nameof(Details), new { id = batchId });
+        }
+    }
+
+    [HttpPost("{id:guid}/accept")]
+    public async Task<IActionResult> Accept(
+        Guid id,
+        string? acceptanceReason,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await reviewService.AcceptPreviewAsync(id, RequireActor(), acceptanceReason, cancellationToken);
+            return RedirectToAction(nameof(Details), new { id, accepted = true });
+        }
+        catch (KeyNotFoundException)
+        {
+            return NotFound();
+        }
+        catch (Exception exception) when (exception is ArgumentException or InvalidOperationException)
+        {
+            TempData["ImportReviewError"] = exception.Message;
+            return RedirectToAction(nameof(Details), new { id });
+        }
+    }
+
+    [HttpPost("{id:guid}/reject")]
+    public async Task<IActionResult> Reject(Guid id, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await reviewService.RejectBatchAsync(id, cancellationToken);
+            return RedirectToAction(nameof(Details), new { id, saved = true });
+        }
+        catch (KeyNotFoundException)
+        {
+            return NotFound();
+        }
+        catch (InvalidOperationException exception)
+        {
+            TempData["ImportReviewError"] = exception.Message;
+            return RedirectToAction(nameof(Details), new { id });
+        }
+    }
+
+    private async Task<ImportIndexViewModel> BuildIndexAsync(
+        string? errorMessage,
+        CancellationToken cancellationToken)
+        => new(await reviewService.ListBatchesAsync(cancellationToken: cancellationToken), errorMessage);
+
+    private string RequireActor()
+        => string.IsNullOrWhiteSpace(User.Identity?.Name)
+            ? throw new InvalidOperationException("An authenticated directory identity is required for this action.")
+            : User.Identity.Name;
 
     private static bool HasZipSignature(MemoryStream stream)
     {
