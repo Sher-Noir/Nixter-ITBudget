@@ -45,17 +45,29 @@ public sealed class ForecastScenarioTests
     {
         Assert.Throws<ArgumentOutOfRangeException>(() =>
             new ForecastLine(Guid.NewGuid(), Guid.NewGuid(), -1m));
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            new ForecastLine(Guid.NewGuid(), Guid.NewGuid(), -1m, 1m));
     }
 
     [Fact]
-    public void ForecastLine_UpdatesAmountAndNote()
+    public void ForecastLine_PreservesBaselineWhenForecastChanges()
     {
-        var line = new ForecastLine(Guid.NewGuid(), Guid.NewGuid(), 1000m);
+        var line = new ForecastLine(Guid.NewGuid(), Guid.NewGuid(), 1000m, 1100m);
 
         line.Update(1250m, "Expected rate increase");
 
+        Assert.Equal(1000m, line.BaselineTotal);
         Assert.Equal(1250m, line.ForecastTotal);
         Assert.Equal("Expected rate increase", line.Note);
+    }
+
+    [Fact]
+    public void LegacyForecastLineConstructor_UsesInitialForecastAsBaseline()
+    {
+        var line = new ForecastLine(Guid.NewGuid(), Guid.NewGuid(), 1000m);
+
+        Assert.Equal(1000m, line.BaselineTotal);
+        Assert.Equal(1000m, line.ForecastTotal);
     }
 
     private static ForecastScenario NewScenario()
