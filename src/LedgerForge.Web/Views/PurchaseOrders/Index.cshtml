@@ -1,0 +1,95 @@
+@model LedgerForge.Infrastructure.Procurement.PurchaseOrderIndexSnapshot
+@{
+    ViewData["Title"] = "Purchase Orders";
+    var canManage = ViewData["CanManageProcurement"] as bool? == true;
+    var errorMessage = ViewData["ErrorMessage"] as string;
+    var saved = ViewData["Saved"] as bool? == true;
+}
+
+<div class="lf-page-header">
+    <div>
+        <h1 class="lf-page-title">Purchase Orders</h1>
+        <p class="lf-subtitle">Track planned commitments from draft through approval, issue, and closure.</p>
+    </div>
+</div>
+
+@if (!string.IsNullOrWhiteSpace(errorMessage))
+{
+    <div class="lf-card lf-alert lf-alert-danger" role="alert">@errorMessage</div>
+}
+@if (saved)
+{
+    <div class="lf-card lf-alert lf-alert-success" role="status">Purchase order saved.</div>
+}
+
+@if (canManage)
+{
+    <section class="lf-card" aria-labelledby="create-po-title">
+        <h2 id="create-po-title">Create purchase order</h2>
+        @if (Model.FiscalYears.Count == 0 || Model.Vendors.Count == 0)
+        {
+            <p class="lf-muted">Create a fiscal year and at least one active vendor before creating a purchase order.</p>
+        }
+        else
+        {
+            <form method="post" action="/purchase-orders">
+                @Html.AntiForgeryToken()
+                <div class="lf-form-grid">
+                    <div>
+                        <label for="fiscalYearId"><strong>Fiscal year</strong></label>
+                        <select id="fiscalYearId" name="fiscalYearId" required>
+                            @foreach (var option in Model.FiscalYears) { <option value="@option.Id">@option.Label</option> }
+                        </select>
+                    </div>
+                    <div>
+                        <label for="vendorId"><strong>Vendor</strong></label>
+                        <select id="vendorId" name="vendorId" required>
+                            @foreach (var option in Model.Vendors) { <option value="@option.Id">@option.Label</option> }
+                        </select>
+                    </div>
+                    <div>
+                        <label for="number"><strong>PO number</strong></label>
+                        <input id="number" name="number" maxlength="100" required autocomplete="off" />
+                    </div>
+                    <div class="lf-span-all">
+                        <label for="description"><strong>Description</strong></label>
+                        <input id="description" name="description" maxlength="500" required />
+                    </div>
+                </div>
+                <p><button class="primary" type="submit">Create draft purchase order</button></p>
+            </form>
+        }
+    </section>
+}
+
+<section class="lf-card" aria-labelledby="po-list-title">
+    <div class="lf-panel-header">
+        <div><h2 id="po-list-title">Purchase orders</h2><p class="lf-muted">Issued orders contribute to committed spend.</p></div>
+        <span class="badge">@Model.Orders.Count order@(Model.Orders.Count == 1 ? string.Empty : "s")</span>
+    </div>
+    @if (Model.Orders.Count == 0)
+    {
+        <div class="lf-empty-state"><p>No purchase orders have been created.</p></div>
+    }
+    else
+    {
+        <div class="lf-table-wrap">
+            <table class="lf-table">
+                <thead><tr><th>PO</th><th>Fiscal year</th><th>Vendor</th><th>Description</th><th>Status</th><th class="lf-number">Total</th></tr></thead>
+                <tbody>
+                @foreach (var order in Model.Orders)
+                {
+                    <tr>
+                        <td><a href="/purchase-orders/@order.Id"><strong>@order.Number</strong></a></td>
+                        <td>@order.FiscalYear</td>
+                        <td>@order.Vendor</td>
+                        <td>@order.Description</td>
+                        <td><span class="badge">@order.State</span></td>
+                        <td class="lf-number">@order.Total.ToString("C2")</td>
+                    </tr>
+                }
+                </tbody>
+            </table>
+        </div>
+    }
+</section>
