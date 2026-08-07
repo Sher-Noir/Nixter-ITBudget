@@ -140,22 +140,13 @@ public sealed class BudgetPlanningService(
             .AsNoTracking()
             .SingleAsync(x => x.Id == item.BudgetVersionId, cancellationToken);
 
-        var budgetSectionsTask = LoadOptionsAsync(dbContext.BudgetSections, cancellationToken);
-        var financeTypesTask = LoadOptionsAsync(dbContext.FinanceTypes, cancellationToken);
-        var departmentsTask = LoadOptionsAsync(dbContext.Departments, cancellationToken);
-        var locationsTask = LoadOptionsAsync(dbContext.Locations, cancellationToken);
-        var needLevelsTask = LoadOptionsAsync(dbContext.NeedLevels, cancellationToken);
-        var categoriesTask = LoadOptionsAsync(dbContext.InternalCategories, cancellationToken);
-        var frequenciesTask = LoadOptionsAsync(dbContext.Frequencies, cancellationToken);
-
-        await Task.WhenAll(
-            budgetSectionsTask,
-            financeTypesTask,
-            departmentsTask,
-            locationsTask,
-            needLevelsTask,
-            categoriesTask,
-            frequenciesTask);
+        var budgetSections = await LoadOptionsAsync(dbContext.BudgetSections, cancellationToken);
+        var financeTypes = await LoadOptionsAsync(dbContext.FinanceTypes, cancellationToken);
+        var departments = await LoadOptionsAsync(dbContext.Departments, cancellationToken);
+        var locations = await LoadOptionsAsync(dbContext.Locations, cancellationToken);
+        var needLevels = await LoadOptionsAsync(dbContext.NeedLevels, cancellationToken);
+        var categories = await LoadOptionsAsync(dbContext.InternalCategories, cancellationToken);
+        var frequencies = await LoadOptionsAsync(dbContext.Frequencies, cancellationToken);
 
         return new(
             item.Id,
@@ -184,13 +175,13 @@ public sealed class BudgetPlanningService(
             item.EstimatedPurchaseDate,
             item.RenewalDate,
             item.Status,
-            await budgetSectionsTask,
-            await financeTypesTask,
-            await departmentsTask,
-            await locationsTask,
-            await needLevelsTask,
-            await categoriesTask,
-            await frequenciesTask);
+            budgetSections,
+            financeTypes,
+            departments,
+            locations,
+            needLevels,
+            categories,
+            frequencies);
     }
 
     public async Task<Guid> AddItemAsync(
