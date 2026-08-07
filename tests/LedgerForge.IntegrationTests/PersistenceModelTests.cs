@@ -75,8 +75,8 @@ public sealed class PersistenceModelTests
         {
             var property = context.Model.FindEntityType(entityType)?.FindProperty(propertyName);
             Assert.NotNull(property);
-            Assert.Equal(19, property!.GetPrecision());
-            Assert.Equal(4, property.GetScale());
+            Assert.Equal(19, property!.GetPrecision().GetValueOrDefault());
+            Assert.Equal(4, property.GetScale().GetValueOrDefault());
         }
     }
 
