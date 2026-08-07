@@ -51,10 +51,15 @@ public sealed class NeedLevel : ManagedLookupEntity
     private NeedLevel() { }
     public NeedLevel(string code, string name, int numericValue, int sortOrder = 0) : base(code, name, sortOrder)
     {
+        SetNumericValue(numericValue);
+    }
+    public int NumericValue { get; private set; }
+
+    public void SetNumericValue(int numericValue)
+    {
         if (numericValue < 0) throw new ArgumentOutOfRangeException(nameof(numericValue));
         NumericValue = numericValue;
     }
-    public int NumericValue { get; private set; }
 }
 
 public sealed class PriorityLookup : ManagedLookupEntity
