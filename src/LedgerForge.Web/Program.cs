@@ -72,6 +72,7 @@ builder.Services.AddScoped<OutstandingCommitmentService>();
 builder.Services.AddScoped<ApprovalQueueService>();
 builder.Services.AddScoped<RenewalProjectionService>();
 builder.Services.AddScoped<ReportingService>();
+builder.Services.AddScoped<FinanceExportService>();
 builder.Services.AddScoped<RenewalCalendarService>();
 builder.Services.AddScoped<DashboardService>();
 builder.Services.AddScoped<WorkQueueService>();
