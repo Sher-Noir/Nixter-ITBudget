@@ -5,6 +5,7 @@ using Crch.ItBudget.Infrastructure.Persistence.Seeding;
 using Crch.ItBudget.Web.Security;
 using Microsoft.AspNetCore.Authentication.Negotiate;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Http.Features;
 using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -16,6 +17,9 @@ builder.Services.AddControllersWithViews(options =>
 {
     options.Filters.Add(new Microsoft.AspNetCore.Mvc.AutoValidateAntiforgeryTokenAttribute());
 });
+
+var maxImportFileSize = builder.Configuration.GetValue<long?>("Imports:MaxFileSizeBytes") ?? 25L * 1024 * 1024;
+builder.Services.Configure<FormOptions>(options => options.MultipartBodyLengthLimit = maxImportFileSize);
 
 var connectionString = builder.Configuration.GetConnectionString("ItBudget")
     ?? throw new InvalidOperationException("Connection string 'ItBudget' is required.");
