@@ -60,7 +60,7 @@ public sealed class ActualLedgerService(LedgerForgeDbContext dbContext)
             .Select(x => (Guid?)x.Id)
             .FirstOrDefaultAsync(cancellationToken);
 
-        var budgetItems = latestVersionId is null
+        IReadOnlyList<ActualEntryOption> budgetItems = latestVersionId is null
             ? []
             : await dbContext.BudgetItems
                 .AsNoTracking()
