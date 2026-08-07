@@ -32,4 +32,38 @@ public sealed class ImportException : AuditableEntity
     public string? ResolutionNote { get; private set; }
     public string? ResolvedBy { get; private set; }
     public DateTimeOffset? ResolvedAtUtc { get; private set; }
+
+    public void Assign(string? assignedTo)
+    {
+        if (ResolutionStatus != ImportExceptionResolutionStatus.Open)
+            throw new InvalidOperationException("Resolved import exceptions cannot be reassigned.");
+        AssignedTo = string.IsNullOrWhiteSpace(assignedTo) ? null : assignedTo.Trim();
+    }
+
+    public void Resolve(
+        ImportExceptionResolutionStatus resolutionStatus,
+        string resolutionNote,
+        string actor,
+        DateTimeOffset resolvedAtUtc)
+    {
+        if (resolutionStatus == ImportExceptionResolutionStatus.Open)
+            throw new ArgumentException("A resolved exception must use Accepted, Corrected, or Rejected status.", nameof(resolutionStatus));
+        if (ResolutionStatus != ImportExceptionResolutionStatus.Open)
+            throw new InvalidOperationException("Import exception is already resolved.");
+        if (string.IsNullOrWhiteSpace(resolutionNote)) throw new ArgumentException("Resolution note is required.", nameof(resolutionNote));
+        if (string.IsNullOrWhiteSpace(actor)) throw new ArgumentException("Resolving actor is required.", nameof(actor));
+
+        ResolutionStatus = resolutionStatus;
+        ResolutionNote = resolutionNote.Trim();
+        ResolvedBy = actor.Trim();
+        ResolvedAtUtc = resolvedAtUtc;
+    }
+
+    public void Reopen()
+    {
+        ResolutionStatus = ImportExceptionResolutionStatus.Open;
+        ResolutionNote = null;
+        ResolvedBy = null;
+        ResolvedAtUtc = null;
+    }
 }
