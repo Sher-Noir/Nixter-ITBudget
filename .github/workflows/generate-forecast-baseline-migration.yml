@@ -1,6 +1,10 @@
 name: generate-forecast-baseline-migration
 
 on:
+  pull_request:
+    branches: [ main ]
+    paths:
+      - '.github/workflows/generate-forecast-baseline-migration.yml'
   push:
     branches: [ 'agent/**' ]
     paths:
