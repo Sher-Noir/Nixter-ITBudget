@@ -99,18 +99,20 @@ public sealed class WorkQueueService(
         var importBatches = await dbContext.ImportBatches.AsNoTracking()
             .Where(x => x.Status == ImportBatchStatus.PreviewReady && x.AcceptedBy == null)
             .OrderBy(x => x.CreatedAtUtc)
-            .Select(x => new { x.Id, x.SourceFileName, x.CreatedAtUtc, x.WarningCount, x.ErrorCount })
+            .Select(x => new { x.Id, x.SourceFileName, x.CreatedAtUtc, x.ExceptionCount, x.ReconciledToExpectedTargets })
             .ToListAsync(cancellationToken);
         foreach (var batch in importBatches)
         {
+            var exceptionCount = batch.ExceptionCount ?? 0;
+            var reconciliation = batch.ReconciledToExpectedTargets == true ? "reconciliation targets met" : "reconciliation requires review";
             items.Add(new(
                 WorkItemCategory.ImportReview,
                 $"Review import {batch.SourceFileName}",
-                $"{batch.ErrorCount} error(s), {batch.WarningCount} warning(s)",
+                $"{exceptionCount} exception(s) · {reconciliation}",
                 DateOnly.FromDateTime(batch.CreatedAtUtc.UtcDateTime),
                 $"/imports/{batch.Id}",
                 null,
-                IsUrgent: batch.ErrorCount > 0 || batch.CreatedAtUtc < DateTimeOffset.UtcNow.AddDays(-3)));
+                IsUrgent: exceptionCount > 0 || batch.ReconciledToExpectedTargets != true || batch.CreatedAtUtc < DateTimeOffset.UtcNow.AddDays(-3)));
         }
 
         var ordered = items
