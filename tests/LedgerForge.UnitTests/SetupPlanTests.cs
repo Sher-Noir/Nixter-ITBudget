@@ -24,6 +24,19 @@ public sealed class SetupPlanTests
     }
 
     [Fact]
+    public void OptionalAdministratorGroup_CanRemainEmptyForFirstUserBootstrap()
+    {
+        var plan = CreatePlan() with { SystemAdministratorGroup = null };
+
+        var json = DeploymentConfigurationRenderer.RenderProductionSettings(plan);
+        using var document = JsonDocument.Parse(json);
+
+        Assert.Equal(
+            0,
+            document.RootElement.GetProperty("Security").GetProperty("AdGroups").GetProperty("SystemAdministrator").GetArrayLength());
+    }
+
+    [Fact]
     public void ConnectionString_UsesIntegratedSecurityAndEscapesValues()
     {
         var plan = CreatePlan() with { SqlServer = @".\SQLEXPRESS", DatabaseName = "LedgerForge Preview" };
@@ -44,14 +57,14 @@ public sealed class SetupPlanTests
         {
             SiteName = "bad/site",
             HttpPort = 70000,
-            SystemAdministratorGroup = ""
+            InitialAdministratorIdentity = ""
         };
 
         var errors = SetupPlanValidator.Validate(plan);
 
         Assert.Contains(errors, x => x.Contains("Site name", StringComparison.OrdinalIgnoreCase));
         Assert.Contains(errors, x => x.Contains("HTTP port", StringComparison.OrdinalIgnoreCase));
-        Assert.Contains(errors, x => x.Contains("Administrator", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(errors, x => x.Contains("administrator", StringComparison.OrdinalIgnoreCase));
         Assert.Throws<ArgumentException>(() => DeploymentConfigurationRenderer.RenderProductionSettings(plan));
     }
 
@@ -69,6 +82,7 @@ public sealed class SetupPlanTests
             @"D:\LedgerForgeData\Documents",
             @".\SQLEXPRESS",
             "LedgerForge",
+            @"EXAMPLE\setup-admin",
             @"EXAMPLE\LedgerForge Admins",
             8080);
 }
