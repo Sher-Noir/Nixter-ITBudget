@@ -2,16 +2,16 @@ using Crch.ItBudget.ImportExport.Fy2027;
 using Crch.ItBudget.Infrastructure.Importing;
 using Crch.ItBudget.Infrastructure.Persistence;
 using Crch.ItBudget.Infrastructure.Persistence.Seeding;
+using Crch.ItBudget.Web.Security;
 using Microsoft.AspNetCore.Authentication.Negotiate;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddAuthentication(NegotiateDefaults.AuthenticationScheme).AddNegotiate();
-builder.Services.AddAuthorization(options =>
-{
-    options.FallbackPolicy = options.DefaultPolicy;
-});
+builder.Services.AddAuthorization(AuthorizationPolicies.Configure);
+builder.Services.AddScoped<IAuthorizationHandler, ApplicationRoleAuthorizationHandler>();
 builder.Services.AddControllersWithViews(options =>
 {
     options.Filters.Add(new Microsoft.AspNetCore.Mvc.AutoValidateAntiforgeryTokenAttribute());
@@ -33,6 +33,7 @@ if (!app.Environment.IsDevelopment())
 }
 
 app.UseHttpsRedirection();
+app.UseStatusCodePagesWithReExecute("/Home/AccessDenied", "?code={0}");
 app.Use(async (context, next) =>
 {
     context.Response.Headers["Content-Security-Policy"] = "default-src 'self'; img-src 'self' data:; object-src 'none'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'";
