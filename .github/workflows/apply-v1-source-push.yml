@@ -1,0 +1,64 @@
+name: apply-v1-source-push
+
+on:
+  push:
+    branches: [ 'agent/initial-scaffold' ]
+    paths:
+      - '.github/workflows/apply-v1-source-push.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  reconcile:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/initial-scaffold
+          fetch-depth: 0
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      - name: Apply source fixes
+        shell: python
+        run: |
+          from pathlib import Path
+          workflow = Path('.github/workflows/apply-v1-source-fixes.yml').read_text(encoding='utf-8')
+          start_marker = '      - name: Apply source and documentation fixes\n        shell: python\n        run: |\n'
+          end_marker = '\n      - name: Build and test source\n'
+          start = workflow.find(start_marker)
+          end = workflow.find(end_marker, start + len(start_marker))
+          if start < 0 or end < 0:
+              raise SystemExit('Unable to extract source reconciliation script.')
+          block = workflow[start + len(start_marker):end]
+          script = '\n'.join(line[10:] if line.startswith('          ') else line for line in block.splitlines()) + '\n'
+          compile(script, 'apply_v1_source.py', 'exec')
+          exec(script, {'__name__': '__main__'})
+
+      - name: Build and test source
+        shell: bash
+        run: |
+          set -euo pipefail
+          dotnet tool restore
+          dotnet restore LedgerForge.slnx
+          dotnet build LedgerForge.slnx --configuration Release --no-restore
+          dotnet ef migrations has-pending-model-changes --project src/LedgerForge.Infrastructure/LedgerForge.Infrastructure.csproj --startup-project src/LedgerForge.Web/LedgerForge.Web.csproj --context LedgerForgeDbContext
+          dotnet test tests/LedgerForge.UnitTests/LedgerForge.UnitTests.csproj --configuration Release --no-build
+          dotnet test tests/LedgerForge.IntegrationTests/LedgerForge.IntegrationTests.csproj --configuration Release --no-build
+          dotnet test tests/LedgerForge.UiTests/LedgerForge.UiTests.csproj --configuration Release --no-build
+
+      - name: Push source-only reconciliation
+        shell: bash
+        run: |
+          set -euo pipefail
+          git add src tests docs README.md
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          if git diff --cached --quiet; then
+            echo 'No source changes remain to commit.'
+            exit 0
+          fi
+          git commit -m 'Reconcile LedgerForge v1 source safeguards'
+          git push origin HEAD:agent/initial-scaffold
