@@ -1,6 +1,7 @@
 using LedgerForge.ImportExport.Spreadsheets;
 using LedgerForge.Infrastructure.Actuals;
 using LedgerForge.Infrastructure.Budgeting;
+using LedgerForge.Infrastructure.Dashboard;
 using LedgerForge.Infrastructure.Importing;
 using LedgerForge.Infrastructure.MasterData;
 using LedgerForge.Infrastructure.Persistence;
@@ -44,6 +45,7 @@ builder.Services.AddScoped<SecurityAdministrationService>();
 builder.Services.AddScoped<FiscalYearAdministrationService>();
 builder.Services.AddScoped<BudgetPlanningService>();
 builder.Services.AddScoped<ActualLedgerService>();
+builder.Services.AddScoped<DashboardService>();
 
 var app = builder.Build();
 
