@@ -1,0 +1,186 @@
+@model LedgerForge.Infrastructure.Actuals.ActualLedgerSnapshot
+@using LedgerForge.Domain.Actuals
+@{
+    ViewData["Title"] = "Actuals";
+    var canPost = ViewData["CanPostActuals"] as bool? == true;
+    var errorMessage = ViewData["ErrorMessage"] as string;
+    var saved = ViewData["Saved"] as bool? == true;
+    var reversed = ViewData["Reversed"] as bool? == true;
+}
+
+<div class="lf-page-header">
+    <div>
+        <h1 class="lf-page-title">Actual Ledger</h1>
+        <p class="lf-subtitle">Posted spend is append-only. Corrections create linked reversal transactions instead of modifying financial history.</p>
+    </div>
+</div>
+
+@if (!string.IsNullOrWhiteSpace(errorMessage))
+{
+    <div class="lf-card lf-alert lf-alert-danger" role="alert">@errorMessage</div>
+}
+@if (saved)
+{
+    <div class="lf-card lf-alert lf-alert-success" role="status">Actual transaction posted.</div>
+}
+@if (reversed)
+{
+    <div class="lf-card lf-alert lf-alert-success" role="status">Reversal transaction posted.</div>
+}
+
+<form method="get" action="/actuals" class="lf-toolbar lf-budget-selector" aria-label="Actual ledger fiscal year">
+    <div>
+        <label for="fiscalYearId"><strong>Fiscal year</strong></label>
+        <select id="fiscalYearId" name="fiscalYearId">
+            @foreach (var year in Model.FiscalYears)
+            {
+                <option value="@year.Id" selected="@(Model.SelectedFiscalYearId == year.Id ? "selected" : null)">@year.Name@(year.IsCurrent ? " · Current" : string.Empty)</option>
+            }
+        </select>
+    </div>
+    <div class="lf-toolbar-action"><button type="submit">Load ledger</button></div>
+</form>
+
+<div class="lf-kpi-grid">
+    <article class="lf-card lf-kpi">
+        <div class="lf-kpi-icon green">$</div>
+        <div><div class="lf-card-title">Net Actual</div><div class="lf-kpi-value">@Model.NetActualTotal.ToString("C2")</div><div class="lf-kpi-note">Posted transactions including reversals</div></div>
+    </article>
+    <article class="lf-card lf-kpi">
+        <div class="lf-kpi-icon blue">#</div>
+        <div><div class="lf-card-title">Ledger Rows</div><div class="lf-kpi-value">@Model.Transactions.Count</div><div class="lf-kpi-note">Immutable financial entries</div></div>
+    </article>
+</div>
+
+@if (canPost && Model.SelectedFiscalYearId is not null)
+{
+    <section class="lf-card" aria-labelledby="manual-actual-title">
+        <h2 id="manual-actual-title">Post manual actual</h2>
+        <p class="lf-muted">Use manual entries for source transactions that are not posted through an invoice integration. Fiscal period is auto-resolved from the date when omitted.</p>
+        <form method="post" action="/actuals/manual">
+            @Html.AntiForgeryToken()
+            <input type="hidden" name="fiscalYearId" value="@Model.SelectedFiscalYearId" />
+            <div class="lf-form-grid">
+                <div>
+                    <label for="transactionDate"><strong>Transaction date</strong></label>
+                    <input id="transactionDate" name="transactionDate" type="date" required />
+                </div>
+                <div>
+                    <label for="amount"><strong>Amount</strong></label>
+                    <input id="amount" name="amount" type="number" min="0.0001" step="0.0001" required />
+                </div>
+                <div class="lf-span-all">
+                    <label for="description"><strong>Description</strong></label>
+                    <input id="description" name="description" maxlength="500" required />
+                </div>
+                <div>
+                    <label for="sourceReference">Source reference</label>
+                    <input id="sourceReference" name="sourceReference" maxlength="200" placeholder="Check, journal, card, or source ID" />
+                </div>
+                <div>
+                    <label for="budgetItemId">Budget item</label>
+                    <select id="budgetItemId" name="budgetItemId">
+                        <option value="">Unallocated</option>
+                        @foreach (var option in Model.BudgetItems) { <option value="@option.Id">@option.Label</option> }
+                    </select>
+                </div>
+                <div>
+                    <label for="financeAccountId">Finance account</label>
+                    <select id="financeAccountId" name="financeAccountId">
+                        <option value="">Unallocated</option>
+                        @foreach (var option in Model.FinanceAccounts) { <option value="@option.Id">@option.Label</option> }
+                    </select>
+                </div>
+                <div>
+                    <label for="departmentId">Department</label>
+                    <select id="departmentId" name="departmentId">
+                        <option value="">Unallocated</option>
+                        @foreach (var option in Model.Departments) { <option value="@option.Id">@option.Label</option> }
+                    </select>
+                </div>
+                <div>
+                    <label for="locationId">Location</label>
+                    <select id="locationId" name="locationId">
+                        <option value="">Unallocated</option>
+                        @foreach (var option in Model.Locations) { <option value="@option.Id">@option.Label</option> }
+                    </select>
+                </div>
+                <div>
+                    <label for="fiscalPeriodId">Fiscal period override</label>
+                    <select id="fiscalPeriodId" name="fiscalPeriodId">
+                        <option value="">Auto-resolve from date</option>
+                        @foreach (var option in Model.FiscalPeriods) { <option value="@option.Id">@option.Label</option> }
+                    </select>
+                </div>
+            </div>
+            <p><button class="primary" type="submit">Post actual transaction</button></p>
+        </form>
+    </section>
+}
+
+<section class="lf-card" aria-labelledby="ledger-title">
+    <div class="lf-panel-header">
+        <div>
+            <h2 id="ledger-title">Transactions</h2>
+            <p class="lf-muted">Positive values are posted spend. Negative values are linked reversals.</p>
+        </div>
+    </div>
+
+    @if (Model.Transactions.Count == 0)
+    {
+        <div class="lf-empty-state"><p>No actual transactions have been posted for this fiscal year.</p></div>
+    }
+    else
+    {
+        <div class="lf-table-wrap">
+            <table class="lf-table">
+                <thead>
+                    <tr><th>Date</th><th>Description</th><th>Kind</th><th>Budget item</th><th>Account</th><th>Department</th><th>Location</th><th>Period</th><th class="lf-number">Amount</th><th>Correction</th></tr>
+                </thead>
+                <tbody>
+                @foreach (var transaction in Model.Transactions)
+                {
+                    <tr>
+                        <td>@transaction.TransactionDate.ToString("yyyy-MM-dd")</td>
+                        <td><strong>@transaction.Description</strong>@if (!string.IsNullOrWhiteSpace(transaction.SourceReference)) { <br /><span class="lf-muted">@transaction.SourceReference</span> }</td>
+                        <td><span class="badge">@transaction.Kind</span></td>
+                        <td>@(transaction.BudgetItem ?? "—")</td>
+                        <td>@(transaction.FinanceAccount ?? "—")</td>
+                        <td>@(transaction.Department ?? "—")</td>
+                        <td>@(transaction.Location ?? "—")</td>
+                        <td>@(transaction.FiscalPeriod ?? "—")</td>
+                        <td class="lf-number">@transaction.Amount.ToString("C2")</td>
+                        <td>
+                            @if (transaction.Kind == ActualTransactionKind.Reversal)
+                            {
+                                <span class="lf-muted">Reversal@if (!string.IsNullOrWhiteSpace(transaction.ReversalReason)) { <text>: @transaction.ReversalReason</text> }</span>
+                            }
+                            else if (canPost && transaction.CanReverse && Model.SelectedFiscalYearId is not null)
+                            {
+                                <details>
+                                    <summary>Reverse</summary>
+                                    <form method="post" action="/actuals/@transaction.Id/reverse">
+                                        @Html.AntiForgeryToken()
+                                        <input type="hidden" name="fiscalYearId" value="@Model.SelectedFiscalYearId" />
+                                        <p><label for="reverse-date-@transaction.Id">Reversal date</label><input id="reverse-date-@transaction.Id" name="reversalDate" type="date" required /></p>
+                                        <p><label for="reverse-reason-@transaction.Id">Reason</label><input id="reverse-reason-@transaction.Id" name="reason" maxlength="1000" required /></p>
+                                        <button type="submit">Post reversal</button>
+                                    </form>
+                                </details>
+                            }
+                            else if (!transaction.CanReverse)
+                            {
+                                <span class="lf-muted">Reversed</span>
+                            }
+                            else
+                            {
+                                <span class="lf-muted">—</span>
+                            }
+                        </td>
+                    </tr>
+                }
+                </tbody>
+            </table>
+        </div>
+    }
+</section>
