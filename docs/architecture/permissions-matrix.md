@@ -1,4 +1,4 @@
-# Permissions matrix
+# LedgerForge permissions matrix
 
 | Capability | System Admin | Budget Admin | Budget Editor | Approver | Read Only | Auditor |
 |---|:---:|:---:|:---:|:---:|:---:|:---:|
@@ -13,8 +13,9 @@
 | Run exports | ✓ | ✓ | Configurable | View only | Configurable | Audit view |
 | Manage fiscal years | ✓ | ✓ | — | — | — | — |
 | Manage lookups/configuration | ✓ | Limited | — | — | — | — |
-| AD group mapping / role exceptions | ✓ | — | — | — | — | View |
+| Organization branding/appearance | ✓ | — | — | — | — | View |
+| Directory group mapping / role exceptions | ✓ | — | — | — | — | View |
 | Audit search/detail | ✓ | Limited | Own activity | Approval history | — | ✓ |
 | Authorized data correction | ✓ | Configurable | — | — | — | Observe |
 
-`*` Separation-of-duties rules can prohibit self-approval and can require multiple approvers or dollar thresholds.
+`*` Separation-of-duties rules can prohibit self-approval and can require multiple approvers or monetary thresholds.
