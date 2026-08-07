@@ -1,8 +1,10 @@
 using LedgerForge.Domain.Budgeting;
 using LedgerForge.Domain.Importing;
-using LedgerForge.Domain.Procurement;
+using LedgerForge.Infrastructure.Approvals;
+using LedgerForge.Infrastructure.Budgeting;
 using LedgerForge.Infrastructure.Persistence;
 using LedgerForge.Infrastructure.Procurement;
+using LedgerForge.Infrastructure.Reporting;
 using Microsoft.EntityFrameworkCore;
 
 namespace LedgerForge.Infrastructure.Dashboard;
@@ -17,7 +19,10 @@ public sealed record DashboardRecentBudgetItem(
 
 public sealed record DashboardRenewalItem(
     Guid Id,
-    string ItemNumber,
+    string Source,
+    Guid? BudgetItemId,
+    Guid? ContractId,
+    string Reference,
     string Description,
     DateOnly RenewalDate,
     decimal EstimatedAmount);
@@ -34,6 +39,7 @@ public sealed record DashboardSnapshot(
     decimal Actual,
     decimal Available,
     decimal Forecast,
+    bool ForecastIsPublished,
     int PendingApprovals,
     int RenewalsDueIn30Days,
     int BudgetItemCount,
@@ -43,7 +49,10 @@ public sealed record DashboardSnapshot(
 
 public sealed class DashboardService(
     LedgerForgeDbContext dbContext,
-    OutstandingCommitmentService outstandingCommitmentService)
+    OutstandingCommitmentService outstandingCommitmentService,
+    ForecastService forecastService,
+    ApprovalQueueService approvalQueueService,
+    RenewalProjectionService renewalProjectionService)
 {
     public async Task<DashboardSnapshot> GetAsync(CancellationToken cancellationToken = default)
     {
@@ -63,12 +72,8 @@ public sealed class DashboardService(
             .AsNoTracking()
             .Where(x => x.FiscalYearId == fiscalYear.Id)
             .SumAsync(x => (decimal?)x.Amount, cancellationToken) ?? 0m;
-
         var committed = await outstandingCommitmentService.GetTotalForFiscalYearAsync(fiscalYear.Id, cancellationToken);
-
-        var pendingPurchaseOrders = await dbContext.PurchaseOrders
-            .AsNoTracking()
-            .CountAsync(x => x.FiscalYearId == fiscalYear.Id && x.State == PurchaseOrderState.PendingApproval, cancellationToken);
+        var pendingApprovals = (await approvalQueueService.GetAsync(fiscalYear.Id, cancellationToken)).TotalCount;
 
         var version = await dbContext.BudgetVersions
             .AsNoTracking()
@@ -87,7 +92,7 @@ public sealed class DashboardService(
                 Actual = actual,
                 Available = -committed - actual,
                 Forecast = committed + actual,
-                PendingApprovals = pendingPurchaseOrders
+                PendingApprovals = pendingApprovals
             };
         }
 
@@ -103,7 +108,6 @@ public sealed class DashboardService(
                 x.PlannedTotal,
                 x.ApprovedTotal,
                 x.RevisedTotal,
-                x.RenewalDate,
                 x.CreatedAtUtc
             })
             .ToListAsync(cancellationToken);
@@ -112,12 +116,13 @@ public sealed class DashboardService(
         var approved = items.Sum(x => x.ApprovedTotal ?? 0m);
         var revised = items.Sum(x => x.RevisedTotal ?? x.ApprovedTotal ?? x.PlannedTotal);
         var available = revised - committed - actual;
-        var forecast = Math.Max(revised, committed + actual);
+        var publishedForecast = await forecastService.GetLatestPublishedTotalAsync(fiscalYear.Id, version.Id, cancellationToken);
+        var forecast = publishedForecast ?? Math.Max(revised, committed + actual);
 
         var today = DateOnly.FromDateTime(DateTime.UtcNow);
         var renewalCutoff = today.AddDays(30);
-        var renewalMatches = items
-            .Where(x => x.RenewalDate is not null && x.RenewalDate.Value >= today && x.RenewalDate.Value <= renewalCutoff)
+        var renewalMatches = (await renewalProjectionService.GetForFiscalYearAsync(fiscalYear.Id, cancellationToken))
+            .Where(x => x.RenewalDate >= today && x.RenewalDate <= renewalCutoff)
             .OrderBy(x => x.RenewalDate)
             .ToArray();
 
@@ -125,10 +130,13 @@ public sealed class DashboardService(
             .Take(5)
             .Select(x => new DashboardRenewalItem(
                 x.Id,
-                x.ItemNumber,
+                x.Source,
+                x.BudgetItemId,
+                x.ContractId,
+                x.Reference,
                 x.Description,
-                x.RenewalDate!.Value,
-                x.RevisedTotal ?? x.ApprovedTotal ?? x.PlannedTotal))
+                x.RenewalDate,
+                x.EstimatedAmount))
             .ToArray();
 
         var recentItems = items
@@ -156,7 +164,8 @@ public sealed class DashboardService(
             actual,
             available,
             forecast,
-            items.Count(x => x.Status == BudgetItemStatus.Submitted) + pendingPurchaseOrders,
+            publishedForecast is not null,
+            pendingApprovals,
             renewalMatches.Length,
             items.Count,
             await CountImportReviewAsync(cancellationToken),
@@ -182,6 +191,7 @@ public sealed class DashboardService(
             0m,
             0m,
             0m,
+            false,
             0,
             0,
             0,
