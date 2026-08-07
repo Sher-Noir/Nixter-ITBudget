@@ -1,13 +1,15 @@
+using LedgerForge.Infrastructure.Dashboard;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace LedgerForge.Web.Controllers;
 
 [Authorize]
-public sealed class HomeController : Controller
+public sealed class HomeController(DashboardService dashboardService) : Controller
 {
     [HttpGet]
-    public IActionResult Index() => View();
+    public async Task<IActionResult> Index(CancellationToken cancellationToken)
+        => View(await dashboardService.GetAsync(cancellationToken));
 
     [AllowAnonymous]
     [HttpGet]
