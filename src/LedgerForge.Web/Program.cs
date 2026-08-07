@@ -6,6 +6,7 @@ using LedgerForge.Infrastructure.Importing;
 using LedgerForge.Infrastructure.MasterData;
 using LedgerForge.Infrastructure.Persistence;
 using LedgerForge.Infrastructure.Persistence.Seeding;
+using LedgerForge.Infrastructure.Procurement;
 using LedgerForge.Infrastructure.Security;
 using LedgerForge.Web.Configuration;
 using LedgerForge.Web.Security;
@@ -45,6 +46,7 @@ builder.Services.AddScoped<SecurityAdministrationService>();
 builder.Services.AddScoped<FiscalYearAdministrationService>();
 builder.Services.AddScoped<BudgetPlanningService>();
 builder.Services.AddScoped<ActualLedgerService>();
+builder.Services.AddScoped<ProcurementService>();
 builder.Services.AddScoped<DashboardService>();
 
 var app = builder.Build();
