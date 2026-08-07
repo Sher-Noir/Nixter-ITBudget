@@ -43,4 +43,38 @@ public sealed class ImportRow : AuditableEntity
     public ImportRowOutcome Outcome { get; private set; }
     public string? TargetEntityType { get; private set; }
     public Guid? TargetEntityId { get; private set; }
+
+    public void Accept(bool withWarning = false)
+    {
+        EnsurePending();
+        Outcome = withWarning ? ImportRowOutcome.AcceptedWithWarning : ImportRowOutcome.Accepted;
+    }
+
+    public void Reject()
+    {
+        EnsurePending();
+        Outcome = ImportRowOutcome.Rejected;
+    }
+
+    public void MarkCommitted(string targetEntityType, Guid targetEntityId)
+    {
+        if (Outcome is not (ImportRowOutcome.Accepted or ImportRowOutcome.AcceptedWithWarning))
+        {
+            throw new InvalidOperationException($"Import row cannot be committed from outcome {Outcome}.");
+        }
+        if (string.IsNullOrWhiteSpace(targetEntityType)) throw new ArgumentException("Target entity type is required.", nameof(targetEntityType));
+        if (targetEntityId == Guid.Empty) throw new ArgumentException("Target entity ID is required.", nameof(targetEntityId));
+
+        TargetEntityType = targetEntityType.Trim();
+        TargetEntityId = targetEntityId;
+        Outcome = ImportRowOutcome.Committed;
+    }
+
+    private void EnsurePending()
+    {
+        if (Outcome != ImportRowOutcome.Pending)
+        {
+            throw new InvalidOperationException($"Import row cannot change outcome from {Outcome}.");
+        }
+    }
 }
