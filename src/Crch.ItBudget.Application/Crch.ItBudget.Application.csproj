@@ -1,5 +1,0 @@
-<Project Sdk="Microsoft.NET.Sdk">
-  <ItemGroup>
-    <ProjectReference Include="../Crch.ItBudget.Domain/Crch.ItBudget.Domain.csproj" />
-  </ItemGroup>
-</Project>
