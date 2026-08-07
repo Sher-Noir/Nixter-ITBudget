@@ -1,3 +1,4 @@
+using LedgerForge.Domain.Budgeting;
 using LedgerForge.Infrastructure.Budgeting;
 using LedgerForge.Web.Models.Budgeting;
 using LedgerForge.Web.Security;
@@ -61,6 +62,75 @@ public sealed class BudgetController(
         {
             TempData["BudgetError"] = exception.Message;
             return RedirectToAction(nameof(Index), new { fiscalYearId, versionId });
+        }
+    }
+
+    [HttpGet("items/{id:guid}")]
+    public async Task<IActionResult> Item(Guid id, CancellationToken cancellationToken)
+    {
+        var snapshot = await planningService.GetItemAsync(id, cancellationToken);
+        if (snapshot is null) return NotFound();
+
+        var canEditRole = (await authorizationService.AuthorizeAsync(User, AuthorizationPolicies.EditPlanningBudget)).Succeeded;
+        return View("Item", new BudgetItemEditViewModel(
+            snapshot,
+            canEditRole && !snapshot.VersionLocked,
+            TempData["BudgetItemError"] as string,
+            Request.Query.ContainsKey("saved")));
+    }
+
+    [Authorize(Policy = AuthorizationPolicies.EditPlanningBudget)]
+    [HttpPost("items/{id:guid}")]
+    public async Task<IActionResult> UpdateItem(
+        Guid id,
+        string itemNumber,
+        string description,
+        string? reasonPurpose,
+        PurchaseType purchaseType,
+        decimal quantity,
+        decimal unitCost,
+        DateOnly? estimatedPurchaseDate,
+        DateOnly? renewalDate,
+        Guid? budgetSectionId,
+        Guid? financeTypeId,
+        Guid? departmentId,
+        Guid? locationId,
+        Guid? needLevelId,
+        Guid? internalCategoryId,
+        Guid? frequencyId,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await planningService.UpdateItemAsync(
+                id,
+                itemNumber,
+                description,
+                reasonPurpose,
+                purchaseType,
+                quantity,
+                unitCost,
+                estimatedPurchaseDate,
+                renewalDate,
+                budgetSectionId,
+                financeTypeId,
+                departmentId,
+                locationId,
+                needLevelId,
+                internalCategoryId,
+                frequencyId,
+                cancellationToken);
+
+            return RedirectToAction(nameof(Item), new { id, saved = true });
+        }
+        catch (KeyNotFoundException)
+        {
+            return NotFound();
+        }
+        catch (Exception exception) when (exception is ArgumentException or InvalidOperationException)
+        {
+            TempData["BudgetItemError"] = exception.Message;
+            return RedirectToAction(nameof(Item), new { id });
         }
     }
 }
