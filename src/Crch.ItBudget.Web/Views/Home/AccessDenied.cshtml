@@ -1,0 +1,17 @@
+@{
+    ViewData["Title"] = "Access not authorized";
+    var statusCode = ViewData["StatusCode"] as int? ?? 403;
+}
+
+<section class="card" aria-labelledby="access-title">
+    <h1 id="access-title">Access not authorized</h1>
+    @if (statusCode == 401)
+    {
+        <p>Your Windows identity could not be authenticated for this application.</p>
+    }
+    else
+    {
+        <p>Your Windows account is signed in, but it is not assigned a role that permits this action.</p>
+    }
+    <p class="muted">If you believe you should have access, contact a CRCH IT Budget system administrator and provide your domain username: <strong>@User.Identity?.Name</strong>.</p>
+</section>
