@@ -2,6 +2,7 @@ using LedgerForge.Domain.Actuals;
 using LedgerForge.Domain.Budgeting;
 using LedgerForge.Domain.Importing;
 using LedgerForge.Domain.MasterData;
+using LedgerForge.Domain.Procurement;
 using LedgerForge.Domain.Security;
 using Microsoft.EntityFrameworkCore;
 
@@ -15,6 +16,9 @@ public sealed class LedgerForgeDbContext(DbContextOptions<LedgerForgeDbContext> 
     public DbSet<BudgetItem> BudgetItems => Set<BudgetItem>();
     public DbSet<BudgetItemAllocation> BudgetItemAllocations => Set<BudgetItemAllocation>();
     public DbSet<ActualTransaction> ActualTransactions => Set<ActualTransaction>();
+    public DbSet<Vendor> Vendors => Set<Vendor>();
+    public DbSet<PurchaseOrder> PurchaseOrders => Set<PurchaseOrder>();
+    public DbSet<PurchaseOrderLine> PurchaseOrderLines => Set<PurchaseOrderLine>();
     public DbSet<ImportBatch> ImportBatches => Set<ImportBatch>();
     public DbSet<ImportRow> ImportRows => Set<ImportRow>();
     public DbSet<ImportException> ImportExceptions => Set<ImportException>();
@@ -151,6 +155,7 @@ public sealed class LedgerForgeDbContext(DbContextOptions<LedgerForgeDbContext> 
         });
 
         ConfigureActuals(modelBuilder);
+        ConfigureProcurement(modelBuilder);
         ConfigureManagedLookups(modelBuilder);
         ConfigureImports(modelBuilder);
         ConfigureSecurity(modelBuilder);
@@ -185,6 +190,69 @@ public sealed class LedgerForgeDbContext(DbContextOptions<LedgerForgeDbContext> 
             entity.HasOne<Location>().WithMany().HasForeignKey(x => x.LocationId).OnDelete(DeleteBehavior.Restrict);
             entity.HasOne<FiscalPeriod>().WithMany().HasForeignKey(x => x.FiscalPeriodId).OnDelete(DeleteBehavior.Restrict);
             entity.HasOne<ActualTransaction>().WithMany().HasForeignKey(x => x.ReversesTransactionId).OnDelete(DeleteBehavior.Restrict);
+        });
+    }
+
+    private static void ConfigureProcurement(ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<Vendor>(entity =>
+        {
+            entity.ToTable("Vendor");
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.Code).HasMaxLength(100).IsRequired();
+            entity.Property(x => x.Name).HasMaxLength(250).IsRequired();
+            entity.Property(x => x.ContactName).HasMaxLength(250);
+            entity.Property(x => x.Email).HasMaxLength(320);
+            entity.Property(x => x.Phone).HasMaxLength(100);
+            entity.Property(x => x.RowVersion).IsRowVersion();
+            entity.HasIndex(x => x.Code).IsUnique();
+            entity.HasIndex(x => new { x.IsActive, x.Name });
+        });
+
+        modelBuilder.Entity<PurchaseOrder>(entity =>
+        {
+            entity.ToTable("PurchaseOrder");
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.Number).HasMaxLength(100).IsRequired();
+            entity.Property(x => x.Description).HasMaxLength(500).IsRequired();
+            entity.Property(x => x.SubmittedBy).HasMaxLength(256);
+            entity.Property(x => x.ApprovedBy).HasMaxLength(256);
+            entity.Property(x => x.IssuedBy).HasMaxLength(256);
+            entity.Property(x => x.ClosedBy).HasMaxLength(256);
+            entity.Property(x => x.CancelledBy).HasMaxLength(256);
+            entity.Property(x => x.CancellationReason).HasMaxLength(1000);
+            entity.Property(x => x.RowVersion).IsRowVersion();
+            entity.HasIndex(x => new { x.FiscalYearId, x.Number }).IsUnique();
+            entity.HasIndex(x => new { x.State, x.FiscalYearId });
+            entity.HasIndex(x => x.VendorId);
+            entity.HasOne<FiscalYear>().WithMany().HasForeignKey(x => x.FiscalYearId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<Vendor>().WithMany().HasForeignKey(x => x.VendorId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<PurchaseOrderLine>(entity =>
+        {
+            entity.ToTable("PurchaseOrderLine", table =>
+            {
+                table.HasCheckConstraint("CK_PurchaseOrderLine_Quantity", "[Quantity] > 0");
+                table.HasCheckConstraint("CK_PurchaseOrderLine_UnitCost", "[UnitCost] >= 0");
+                table.HasCheckConstraint("CK_PurchaseOrderLine_Total", "[LineTotal] >= 0");
+            });
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.Description).HasMaxLength(500).IsRequired();
+            entity.Property(x => x.Quantity).HasPrecision(19, 4);
+            entity.Property(x => x.UnitCost).HasPrecision(19, 4);
+            entity.Property(x => x.LineTotal).HasPrecision(19, 4);
+            entity.Property(x => x.RowVersion).IsRowVersion();
+            entity.HasIndex(x => new { x.PurchaseOrderId, x.LineNumber }).IsUnique();
+            entity.HasIndex(x => x.BudgetItemId);
+            entity.HasIndex(x => x.FinanceAccountId);
+            entity.HasIndex(x => x.DepartmentId);
+            entity.HasIndex(x => x.LocationId);
+            entity.HasOne<PurchaseOrder>().WithMany().HasForeignKey(x => x.PurchaseOrderId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<BudgetItem>().WithMany().HasForeignKey(x => x.BudgetItemId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<FinanceAccount>().WithMany().HasForeignKey(x => x.FinanceAccountId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<Department>().WithMany().HasForeignKey(x => x.DepartmentId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<Location>().WithMany().HasForeignKey(x => x.LocationId).OnDelete(DeleteBehavior.Restrict);
         });
     }
 
