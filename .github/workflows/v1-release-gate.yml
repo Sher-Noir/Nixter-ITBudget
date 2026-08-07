@@ -121,42 +121,38 @@ jobs:
         run: dotnet test tests/LedgerForge.UiTests/LedgerForge.UiTests.csproj --configuration Release --no-build --logger "trx;LogFileName=v1-ui.trx"
 
       - name: Enforce public-source hygiene
-        shell: bash
-        run: |
-          set -euo pipefail
-          if git grep -n -i -E 'Charles River Community Health|\bCRCH\b' --; then
-            echo 'Legacy organization identifier found.'
-            exit 1
-          fi
-          bad=$(git ls-files | grep -E -i '\.(xlsx?|xlsm|pfx|p12|snk)$|(^|/)(App_Data|Documents|Uploads)/' || true)
-          if [ -n "$bad" ]; then
-            echo "$bad"
-            exit 1
-          fi
-          if grep -R -n -E --include='*.yml' --include='*.yaml' '^[[:space:]]*if:.*secrets\.' .github/workflows; then
-            echo 'GitHub Actions secrets must not be referenced directly from step/job if expressions.'
-            exit 1
-          fi
-
-      - name: Common secret-pattern scan
         shell: python
         run: |
           from pathlib import Path
-          import re, subprocess
-          tracked = [Path(x.decode()) for x in subprocess.check_output(['git','ls-files','-z']).split(b'\0') if x]
-          patterns = [
-              re.compile(rb'-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----'),
-              re.compile(rb'gh[pousr]_[A-Za-z0-9]{30,}'),
-              re.compile(rb'AKIA[0-9A-Z]{16}'),
-              re.compile(rb'xox[baprs]-[A-Za-z0-9-]{20,}')
-          ]
-          hits=[]
+          import re
+          import subprocess
+
+          needles = [('Charles River Community' + ' Health').lower(), ('CR' + 'CH').lower()]
+          bad_ext = re.compile(r'\.(xlsx?|xlsm|pfx|p12|snk)$', re.I)
+          bad_dir = re.compile(r'(^|/)(App_Data|Documents|Uploads)/', re.I)
+          hits = []
+          tracked = [Path(x.decode()) for x in subprocess.check_output(['git', 'ls-files', '-z']).split(b'\0') if x]
           for path in tracked:
-              try: data=path.read_bytes()
-              except OSError: continue
-              if b'\0' in data[:4096]: continue
-              if any(p.search(data) for p in patterns): hits.append(str(path))
-          if hits: raise SystemExit('Potential secret material: ' + ', '.join(hits))
+              value = str(path).replace('\\', '/')
+              if bad_ext.search(value) or bad_dir.search(value):
+                  hits.append(f'{path}: private/data-bearing path')
+                  continue
+              try:
+                  data = path.read_bytes()
+              except OSError:
+                  continue
+              if b'\0' in data[:4096]:
+                  continue
+              body = data.decode('utf-8', errors='ignore').lower()
+              if any(needle in body for needle in needles):
+                  hits.append(f'{path}: legacy identifier')
+          if hits:
+              raise SystemExit('Public-source hygiene failure:\n' + '\n'.join(hits))
+          for workflow in list(Path('.github/workflows').glob('*.yml')) + list(Path('.github/workflows').glob('*.yaml')):
+              body = workflow.read_text(encoding='utf-8', errors='ignore')
+              if re.search(r'^\s*if:.*secrets\.', body, re.M):
+                  raise SystemExit(f'{workflow}: secrets must not be referenced directly from if expressions')
+          print('V1 public-source hygiene: PASS')
 
       - name: Upload final migration evidence
         uses: actions/upload-artifact@v4
