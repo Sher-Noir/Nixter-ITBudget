@@ -1,0 +1,17 @@
+@{
+    ViewData["Title"] = "Access not authorized";
+    var statusCode = ViewData["StatusCode"] as int? ?? 403;
+}
+
+<section class="card" aria-labelledby="access-title">
+    <h1 id="access-title">Access not authorized</h1>
+    @if (statusCode == 401)
+    {
+        <p>Your identity could not be authenticated for this LedgerForge deployment.</p>
+    }
+    else
+    {
+        <p>You are signed in, but your account is not assigned a LedgerForge role that permits this action.</p>
+    }
+    <p class="muted">If you believe you should have access, contact a LedgerForge system administrator and provide your account name: <strong>@User.Identity?.Name</strong>.</p>
+</section>
