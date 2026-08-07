@@ -17,15 +17,29 @@ public sealed class PurchaseOrder : AuditableEntity
 {
     private PurchaseOrder() { }
 
-    public PurchaseOrder(Guid fiscalYearId, Guid vendorId, string number, string description)
+    public PurchaseOrder(
+        Guid fiscalYearId,
+        Guid vendorId,
+        string number,
+        string description,
+        Guid? supersedesPurchaseOrderId = null,
+        int changeOrderSequence = 0)
     {
         if (fiscalYearId == Guid.Empty) throw new ArgumentException("Fiscal year is required.", nameof(fiscalYearId));
         if (vendorId == Guid.Empty) throw new ArgumentException("Vendor is required.", nameof(vendorId));
         if (string.IsNullOrWhiteSpace(number)) throw new ArgumentException("Purchase order number is required.", nameof(number));
         if (number.Trim().Length > 100) throw new ArgumentException("Purchase order number cannot exceed 100 characters.", nameof(number));
+        if (supersedesPurchaseOrderId == Guid.Empty) throw new ArgumentException("Superseded purchase order ID cannot be empty.", nameof(supersedesPurchaseOrderId));
+        if (supersedesPurchaseOrderId is null && changeOrderSequence != 0)
+            throw new ArgumentException("A base purchase order cannot have a change-order sequence.", nameof(changeOrderSequence));
+        if (supersedesPurchaseOrderId is not null && changeOrderSequence < 1)
+            throw new ArgumentOutOfRangeException(nameof(changeOrderSequence), "A change order must have a positive sequence.");
+
         FiscalYearId = fiscalYearId;
         VendorId = vendorId;
         Number = number.Trim();
+        SupersedesPurchaseOrderId = supersedesPurchaseOrderId;
+        ChangeOrderSequence = changeOrderSequence;
         State = PurchaseOrderState.Draft;
         UpdateDescription(description);
     }
@@ -35,6 +49,9 @@ public sealed class PurchaseOrder : AuditableEntity
     public string Number { get; private set; } = string.Empty;
     public string Description { get; private set; } = string.Empty;
     public PurchaseOrderState State { get; private set; }
+    public Guid? SupersedesPurchaseOrderId { get; private set; }
+    public int ChangeOrderSequence { get; private set; }
+    public bool IsChangeOrder => SupersedesPurchaseOrderId is not null;
     public string? SubmittedBy { get; private set; }
     public DateTimeOffset? SubmittedAtUtc { get; private set; }
     public string? ApprovedBy { get; private set; }
