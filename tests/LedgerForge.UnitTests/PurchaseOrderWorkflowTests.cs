@@ -52,4 +52,19 @@ public sealed class PurchaseOrderWorkflowTests
         Assert.Equal(PurchaseOrderState.Cancelled, order.State);
         Assert.Throws<InvalidOperationException>(() => order.Submit("DOMAIN\\editor", DateTimeOffset.UtcNow));
     }
+
+    [Fact]
+    public void PendingPurchaseOrder_CanBeRejectedWithReason()
+    {
+        var order = new PurchaseOrder(Guid.NewGuid(), Guid.NewGuid(), "PO-1004", "Rejected order");
+        var now = DateTimeOffset.UtcNow;
+        order.Submit("DOMAIN\\editor", now);
+
+        order.Reject("DOMAIN\\approver", "Funding source changed.", now.AddMinutes(1));
+
+        Assert.Equal(PurchaseOrderState.Rejected, order.State);
+        Assert.Equal("DOMAIN\\approver", order.RejectedBy);
+        Assert.Equal("Funding source changed.", order.RejectionReason);
+        Assert.Throws<InvalidOperationException>(() => order.Approve("DOMAIN\\approver", now.AddMinutes(2)));
+    }
 }
