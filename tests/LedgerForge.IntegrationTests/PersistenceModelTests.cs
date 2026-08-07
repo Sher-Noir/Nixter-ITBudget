@@ -36,6 +36,8 @@ public sealed class PersistenceModelTests
             typeof(Vendor),
             typeof(PurchaseOrder),
             typeof(PurchaseOrderLine),
+            typeof(PurchaseReceipt),
+            typeof(PurchaseReceiptLine),
             typeof(Invoice),
             typeof(InvoiceAllocation),
             typeof(Contract),
@@ -60,11 +62,13 @@ public sealed class PersistenceModelTests
             (typeof(BudgetItemAllocation), nameof(BudgetItemAllocation.Amount)),
             (typeof(BudgetAmendment), nameof(BudgetAmendment.AmountDelta)),
             (typeof(BudgetAmendment), nameof(BudgetAmendment.ResultingRevisedTotal)),
+            (typeof(ForecastLine), nameof(ForecastLine.BaselineTotal)),
             (typeof(ForecastLine), nameof(ForecastLine.ForecastTotal)),
             (typeof(ActualTransaction), nameof(ActualTransaction.Amount)),
             (typeof(PurchaseOrderLine), nameof(PurchaseOrderLine.Quantity)),
             (typeof(PurchaseOrderLine), nameof(PurchaseOrderLine.UnitCost)),
             (typeof(PurchaseOrderLine), nameof(PurchaseOrderLine.LineTotal)),
+            (typeof(PurchaseReceiptLine), nameof(PurchaseReceiptLine.QuantityReceived)),
             (typeof(Invoice), nameof(Invoice.TotalAmount)),
             (typeof(InvoiceAllocation), nameof(InvoiceAllocation.Amount)),
             (typeof(Contract), nameof(Contract.EstimatedAnnualAmount)),
@@ -92,5 +96,17 @@ public sealed class PersistenceModelTests
             .ToArray();
 
         Assert.Empty(unexpected);
+    }
+
+    [Fact]
+    public void PurchaseOrderChangeOrderLineage_IsRestrictiveAndUnique()
+    {
+        using var context = CreateContext();
+        var entity = context.Model.FindEntityType(typeof(PurchaseOrder));
+        Assert.NotNull(entity);
+        var foreignKey = entity!.GetForeignKeys().Single(x => x.Properties.Single().Name == nameof(PurchaseOrder.SupersedesPurchaseOrderId));
+        Assert.Equal(DeleteBehavior.Restrict, foreignKey.DeleteBehavior);
+        var lineageIndex = entity.GetIndexes().Single(x => x.Properties.Count == 1 && x.Properties[0].Name == nameof(PurchaseOrder.SupersedesPurchaseOrderId));
+        Assert.True(lineageIndex.IsUnique);
     }
 }
