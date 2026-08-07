@@ -1,0 +1,248 @@
+name: final-doc-refresh
+
+on:
+  pull_request:
+    branches: [ main ]
+    paths:
+      - '.github/workflows/final-doc-refresh.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }}
+
+      - name: Refresh v1 public documentation
+        shell: python
+        run: |
+          from pathlib import Path
+
+          Path('README.md').write_text('''# LedgerForge
+
+LedgerForge is a free and open-source budget, procurement, actuals, contracts, renewals, approvals, forecasting, reporting, and financial-operations application for organizations using Windows/IIS and SQL Server.
+
+It is deliberately organization-neutral. Branding, directory groups, fiscal years, finance dimensions, departments, locations, account structures, and import/export mappings are configuration or master data rather than source-code constants.
+
+## What LedgerForge includes
+
+- Versioned fiscal-year budget planning, allocations, approvals, amendments, close, and rollover.
+- Forecast scenarios with immutable baselines and published-forecast reporting.
+- Vendors, purchase orders, approval/issue workflow, change orders, quantitative receiving, and outstanding-commitment accounting.
+- Invoices, allocations, posting to the actual ledger, manual actuals, reversals, and all-or-nothing CSV actual imports.
+- Contracts and contract-first renewals with fallback budget renewal dates.
+- Unified approvals and a Work Center for approvals, renewals, import review, and fiscal close.
+- Adapter-based budget imports with preview, reconciliation, lineage, exceptions, administrator decisions, and transactional commit.
+- Budget, actual, finance-posting, commitment, renewal, and forecast CSV exports.
+- Windows Authentication, logical application roles, directory-group mappings, explicit audited role exceptions, strict CSP, antiforgery protection, and fail-closed authorization.
+- Authorized document storage outside the public web root with hashes and signature validation.
+- Administrator diagnostics for SQL connectivity, migrations, document storage, and deployment state.
+- A field-tested Windows Setup application for the supported IIS + local SQL Server/SQL Express deployment path.
+
+## Technology
+
+- .NET 10 LTS / ASP.NET Core MVC + Razor
+- EF Core 10 / SQL Server
+- IIS / Integrated Windows Authentication
+- WPF Windows Setup application
+
+Financial amounts are persisted as `decimal(19,4)` unless a field is intentionally a rate/percentage. Production database migrations are explicit deployment steps; the web application never auto-migrates at startup.
+
+## Getting started
+
+Read [`docs/GETTING_STARTED.md`](docs/GETTING_STARTED.md).
+
+The fully automated v1 Setup path expects these prerequisites on the Windows host:
+
+1. IIS with Windows Authentication.
+2. .NET 10 ASP.NET Core Hosting Bundle / ASP.NET Core Module V2.
+3. Local SQL Server or SQL Server Express reachable with Windows Integrated Security.
+
+The initial Setup binding is intended for validation. Before production exposure, configure an approved DNS name and HTTPS certificate using [`docs/deployment/production-deployment.md`](docs/deployment/production-deployment.md).
+
+## Releases
+
+Tagged `v*` builds produce:
+
+- `LedgerForge.Setup.exe`
+- a server payload ZIP
+- SHA-256 checksum files
+- a release manifest
+
+Maintainers may configure an Authenticode signing certificate; otherwise the release remains checksum-verifiable and unsigned.
+
+## Operations
+
+Production operators should read:
+
+- [`docs/deployment/production-deployment.md`](docs/deployment/production-deployment.md)
+- [`docs/deployment/backup-restore-upgrade.md`](docs/deployment/backup-restore-upgrade.md)
+- [`docs/deployment/setup-plan.md`](docs/deployment/setup-plan.md)
+
+## Development and validation
+
+The repository pins the .NET SDK in `global.json` and `dotnet-ef` in `.config/dotnet-tools.json`.
+
+```bash
+dotnet tool restore
+dotnet restore LedgerForge.slnx
+dotnet build LedgerForge.slnx --configuration Release --no-restore
+dotnet test LedgerForge.slnx --configuration Release --no-build
+```
+
+CI additionally validates committed EF migrations against disposable SQL Server 2022, schema invariants, deployment bootstrap, SQL-backed actual-import atomicity, UI/security/navigation smoke tests, Windows Setup packaging, and public-source hygiene.
+
+See [`docs/architecture/v1-completion.md`](docs/architecture/v1-completion.md) for the release completion contract.
+
+## Open-source data boundary
+
+Do not commit adopter workbooks, production credentials, private documents, directory-group identities, internal infrastructure information, organization-specific finance mappings, or real financial data. Public defaults and examples remain generic.
+
+## License
+
+LedgerForge is released under the [MIT License](LICENSE).
+''', encoding='utf-8')
+
+          Path('docs/architecture/implementation-checklist.md').write_text('''# LedgerForge implementation checklist
+
+This checklist is superseded by [`v1-completion.md`](v1-completion.md), which is the authoritative v1 feature and validation contract.
+
+The original milestone checklist was useful while LedgerForge was being scaffolded, but it became misleading once modules such as amendments, forecasts, contracts, invoices, unified approvals, commitment reconciliation, fiscal rollover, transactional imports, change orders, receipts, deployment diagnostics, and Windows packaging were completed.
+
+For current implementation status, use:
+
+- `docs/architecture/v1-completion.md` — product/release completion contract.
+- `docs/PROJECT_HANDOFF.md` — current engineering checkpoint.
+- `docs/GETTING_STARTED.md` — adopter workflow.
+- `docs/deployment/production-deployment.md` — supported production topology.
+- `docs/deployment/backup-restore-upgrade.md` — operator recovery/upgrade procedure.
+
+A feature is considered complete only when its source, persistence/migration needs, authorization boundary, UI/API path, tests, and relevant deployment/documentation requirements are all represented and the release gates are green.
+''', encoding='utf-8')
+
+          Path('docs/PROJECT_HANDOFF.md').write_text('''# LedgerForge project handoff
+
+This file is the authoritative continuation checkpoint for LedgerForge. Always verify the live GitHub branch/PR head and CI state before changing source.
+
+## Repository
+
+- Repository: `Sher-Noir/Nixter-ITBudget`
+- Product: LedgerForge
+- License: MIT
+- v1 development branch during this checkpoint: `agent/initial-scaffold`
+- Foundation PR: #1
+- Stack: .NET 10 LTS, ASP.NET Core MVC/Razor, EF Core 10, SQL Server, IIS, Integrated Windows Authentication
+
+## Non-negotiable rules
+
+- LedgerForge remains organization-neutral and safe for public source control.
+- Adopter branding, identity groups, finance dimensions, fiscal structure, mappings, and import/export conventions are configuration/master data.
+- SQL Server/EF Core is authoritative for financial records.
+- Financial values use `decimal(19,4)` unless intentionally a rate/percentage.
+- Browser-computed totals are never authoritative.
+- Approved/posted history is preserved through workflow history, amendments, reversals, revisions, and lineage rather than destructive edits.
+- Financial FKs remain restrictive/no-cascade.
+- Authorization fails closed.
+- Strict CSP/antiforgery protections remain enabled.
+- Sensitive documents remain outside `wwwroot` and are streamed only through authorization.
+- Production EF migrations remain explicit deployment operations; never auto-migrate from normal web startup.
+
+## Implemented v1 product surface
+
+### Planning and forecasting
+
+- Fiscal years and periods.
+- Versioned budget items and allocations.
+- Submit/approve/deny/defer budget workflow.
+- Audited budget amendments.
+- Forecast scenarios with immutable per-line baseline snapshots, draft updates, publish/archive workflow, latest-published dashboard/report selection, and forecast CSV.
+- Fiscal close readiness and controlled rollover into a fresh planning year/version.
+
+### Procurement and actuals
+
+- Vendors.
+- Purchase orders and coded financial lines.
+- PO approval/issue/close/cancel workflow.
+- Issued-PO change orders with explicit supersession lineage and atomic superseded-PO closure when a revision is issued.
+- Quantitative receipt history with over-receipt prevention.
+- Invoices, allocations, approval/rejection/posting, and actual-ledger integration.
+- Outstanding commitment = issued PO gross - posted linked invoices, floored at zero; reused by dashboard/report/export.
+- Manual actuals, immutable reversals, and transactional CSV actual import.
+- Configurable neutral finance-posting CSV export.
+
+### Contracts, workflow, import/export
+
+- Contracts and explicit contract renewals.
+- Contract-first renewal projections with budget-item fallback only when no linked contract is authoritative.
+- Unified approval queue for budget items, POs, invoices, and amendments.
+- Work Center for approvals, upcoming renewals, import review, and fiscal close.
+- Adapter-based budget import with source hash, preview persistence, row lineage, reconciliation, exceptions, assignment/resolution/reopen, row disposition overrides, explicit acceptance/rejection, target selection, and transactional authoritative commit.
+- Budget, actual, finance, commitment, renewal, and forecast CSV exports with spreadsheet-injection protection.
+
+### Administration and security
+
+- Windows Authentication and logical application roles.
+- Directory-group mappings plus explicit audited user grant/deny exceptions.
+- Organization/appearance configuration.
+- Finance and managed lookup administration.
+- Administrator deployment diagnostics.
+- Audit event history.
+- Authorized non-web-root documents with metadata/signature/hash validation.
+- Strict CSP, antiforgery validation, secure file-name handling, and fail-closed authorization.
+
+## Persistence migrations
+
+Committed migrations include:
+
+1. `InitialCreate`
+2. `AddForecastBaselineSnapshot` — safely backfills existing forecast baseline from the prior forecast amount before making the new baseline non-null.
+3. `AddProcurementHistory` — additive PO revision lineage plus receipt/receipt-line tables, restrictive FKs, uniqueness/check constraints, and `decimal(19,4)` receipt quantities.
+
+CI must continue to run `dotnet ef migrations has-pending-model-changes` and apply the full migration chain to disposable SQL Server before a release is accepted.
+
+## Deployment status
+
+The Windows Setup path has completed a real on-machine IIS/SQL Express installation through `/health` HTTP 200. Field validation covered prerequisite detection, payload extraction, ACLs, production configuration, explicit migrations/bootstrap, first-admin provisioning, app-pool SQL access, IIS Windows Authentication, site/app-pool startup, worker process, database verification, and application health.
+
+The supported automated v1 topology is documented in `docs/deployment/production-deployment.md`: IIS + Windows Authentication + .NET 10 Hosting Bundle + local SQL Server/SQL Express prerequisites are installed through the organization's server-management process before LedgerForge Setup runs. Production exposure requires HTTPS/certificate configuration.
+
+Tagged releases build a self-contained Setup EXE and server payload, generate SHA-256 files and a release manifest, optionally Authenticode-sign when maintainer signing secrets are configured, and publish a GitHub Release.
+
+Backup/restore/upgrade procedures are documented in `docs/deployment/backup-restore-upgrade.md`.
+
+## Release gates
+
+Do not call a release complete unless the same release-candidate head passes:
+
+- Release build with warnings as errors.
+- Unit tests.
+- Integration/model tests.
+- UI/security/navigation smoke tests.
+- No pending EF model changes.
+- Full migration SQL destructive/cascade scan.
+- Full migration application to disposable SQL Server 2022.
+- Bootstrap `initialize` and `verify`.
+- Applied-schema decimal/no-cascade invariants.
+- SQL-backed actual CSV import atomicity test.
+- Windows Setup/payload packaging.
+- Public-source legacy/private-data/common-secret scan.
+
+## Continuation priorities after v1
+
+After the release gates are green, ongoing work is normal product maintenance: field-test defects, UX/accessibility refinements, additional import/export adapters contributed by adopters, deployment topologies beyond the supported single-server path, and optional integrations. Do not reopen already-authoritative financial semantics without regression tests and migration review.
+''', encoding='utf-8')
+
+      - name: Remove one-shot workflow and commit documentation
+        shell: bash
+        run: |
+          set -euo pipefail
+          git rm .github/workflows/final-doc-refresh.yml
+          git add README.md docs/PROJECT_HANDOFF.md docs/architecture/implementation-checklist.md
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'Refresh LedgerForge v1 public documentation'
+          git push origin HEAD:${{ github.head_ref }}
