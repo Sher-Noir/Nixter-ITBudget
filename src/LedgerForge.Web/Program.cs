@@ -34,6 +34,7 @@ var connectionString = builder.Configuration.GetConnectionString("LedgerForge")
 builder.Services.AddDbContext<LedgerForgeDbContext>(options => options.UseSqlServer(connectionString));
 builder.Services.AddSingleton<LegacyBudgetWorkbookReader>();
 builder.Services.AddScoped<LegacyBudgetImportPreviewService>();
+builder.Services.AddScoped<ImportReviewService>();
 builder.Services.AddScoped<ManagedLookupInitializer>();
 builder.Services.AddScoped<LookupAdministrationService>();
 builder.Services.AddScoped<SecurityAdministrationService>();
