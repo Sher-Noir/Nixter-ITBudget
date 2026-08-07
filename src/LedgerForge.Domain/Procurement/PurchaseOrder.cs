@@ -9,7 +9,8 @@ public enum PurchaseOrderState
     Approved,
     Issued,
     Closed,
-    Cancelled
+    Cancelled,
+    Rejected
 }
 
 public sealed class PurchaseOrder : AuditableEntity
@@ -25,8 +26,8 @@ public sealed class PurchaseOrder : AuditableEntity
         FiscalYearId = fiscalYearId;
         VendorId = vendorId;
         Number = number.Trim();
-        UpdateDescription(description);
         State = PurchaseOrderState.Draft;
+        UpdateDescription(description);
     }
 
     public Guid FiscalYearId { get; private set; }
@@ -38,6 +39,9 @@ public sealed class PurchaseOrder : AuditableEntity
     public DateTimeOffset? SubmittedAtUtc { get; private set; }
     public string? ApprovedBy { get; private set; }
     public DateTimeOffset? ApprovedAtUtc { get; private set; }
+    public string? RejectedBy { get; private set; }
+    public DateTimeOffset? RejectedAtUtc { get; private set; }
+    public string? RejectionReason { get; private set; }
     public string? IssuedBy { get; private set; }
     public DateTimeOffset? IssuedAtUtc { get; private set; }
     public string? ClosedBy { get; private set; }
@@ -71,6 +75,15 @@ public sealed class PurchaseOrder : AuditableEntity
         State = PurchaseOrderState.Approved;
     }
 
+    public void Reject(string actor, string reason, DateTimeOffset atUtc)
+    {
+        RequireState(PurchaseOrderState.PendingApproval, "rejected");
+        RejectedBy = NormalizeActor(actor);
+        RejectedAtUtc = atUtc;
+        RejectionReason = NormalizeReason(reason, "Rejection reason");
+        State = PurchaseOrderState.Rejected;
+    }
+
     public void Issue(string actor, DateTimeOffset atUtc)
     {
         RequireState(PurchaseOrderState.Approved, "issued");
@@ -89,13 +102,11 @@ public sealed class PurchaseOrder : AuditableEntity
 
     public void Cancel(string actor, string reason, DateTimeOffset atUtc)
     {
-        if (State is PurchaseOrderState.Closed or PurchaseOrderState.Cancelled)
+        if (State is PurchaseOrderState.Closed or PurchaseOrderState.Cancelled or PurchaseOrderState.Rejected)
             throw new InvalidOperationException($"Purchase order cannot be cancelled from state {State}.");
-        if (string.IsNullOrWhiteSpace(reason)) throw new ArgumentException("Cancellation reason is required.", nameof(reason));
-        if (reason.Trim().Length > 1000) throw new ArgumentException("Cancellation reason cannot exceed 1000 characters.", nameof(reason));
         CancelledBy = NormalizeActor(actor);
         CancelledAtUtc = atUtc;
-        CancellationReason = reason.Trim();
+        CancellationReason = NormalizeReason(reason, "Cancellation reason");
         State = PurchaseOrderState.Cancelled;
     }
 
@@ -109,6 +120,13 @@ public sealed class PurchaseOrder : AuditableEntity
         if (string.IsNullOrWhiteSpace(actor)) throw new ArgumentException("Actor is required.", nameof(actor));
         if (actor.Trim().Length > 256) throw new ArgumentException("Actor cannot exceed 256 characters.", nameof(actor));
         return actor.Trim();
+    }
+
+    private static string NormalizeReason(string reason, string label)
+    {
+        if (string.IsNullOrWhiteSpace(reason)) throw new ArgumentException($"{label} is required.", nameof(reason));
+        if (reason.Trim().Length > 1000) throw new ArgumentException($"{label} cannot exceed 1000 characters.", nameof(reason));
+        return reason.Trim();
     }
 }
 
