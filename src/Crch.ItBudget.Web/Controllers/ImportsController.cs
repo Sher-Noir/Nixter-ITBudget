@@ -27,7 +27,8 @@ public sealed class ImportsController(
             return View("Index", new ImportPreviewViewModel(ErrorMessage: "Select a non-empty FY2027 .xlsx workbook."));
         }
 
-        var maxFileSize = configuration.GetValue<long?>("Imports:MaxFileSizeBytes") ?? DefaultMaxFileSizeBytes;
+        var configuredMaxFileSize = configuration.GetValue<long?>("Imports:MaxFileSizeBytes");
+        var maxFileSize = configuredMaxFileSize is > 0 ? configuredMaxFileSize.Value : DefaultMaxFileSizeBytes;
         if (workbook.Length > maxFileSize)
         {
             return View("Index", new ImportPreviewViewModel(
@@ -39,7 +40,7 @@ public sealed class ImportsController(
             return View("Index", new ImportPreviewViewModel(ErrorMessage: "Only .xlsx workbooks are accepted for the FY2027 migration."));
         }
 
-        await using var uploaded = new MemoryStream(capacity: checked((int)workbook.Length));
+        await using var uploaded = new MemoryStream();
         await workbook.CopyToAsync(uploaded, cancellationToken);
 
         if (!HasZipSignature(uploaded))
