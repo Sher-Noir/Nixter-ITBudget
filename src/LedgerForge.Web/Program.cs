@@ -36,6 +36,7 @@ builder.Services.AddScoped<LegacyBudgetImportPreviewService>();
 builder.Services.AddScoped<ManagedLookupInitializer>();
 builder.Services.AddScoped<SecurityAdministrationService>();
 builder.Services.AddScoped<FiscalYearAdministrationService>();
+builder.Services.AddScoped<BudgetPlanningService>();
 
 var app = builder.Build();
 
