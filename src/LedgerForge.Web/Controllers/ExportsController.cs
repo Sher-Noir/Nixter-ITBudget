@@ -62,11 +62,11 @@ public sealed class ExportsController(ReportingService reportingService) : Contr
         {
             var rows = await reportingService.GetCommitmentExportAsync(fiscalYearId, cancellationToken);
             var bytes = CsvExportWriter.Write(
-                ["Fiscal Year", "Purchase Order", "Vendor", "State", "Line Number", "Description", "Budget Item", "Finance Account", "Department", "Location", "Quantity", "Unit Cost", "Line Total"],
+                ["Fiscal Year", "Purchase Order", "Vendor", "State", "Issued PO Total", "Posted Linked Invoices", "Outstanding Commitment"],
                 rows.Select(x => (IReadOnlyList<object?>)new object?[]
                 {
-                    x.FiscalYear, x.PurchaseOrder, x.Vendor, x.State, x.LineNumber, x.Description, x.BudgetItem,
-                    x.FinanceAccount, x.Department, x.Location, x.Quantity, x.UnitCost, x.LineTotal
+                    x.FiscalYear, x.PurchaseOrder, x.Vendor, x.State, x.IssuedTotal,
+                    x.PostedLinkedInvoices, x.OutstandingCommitment
                 }));
             return File(bytes, "text/csv; charset=utf-8", "ledgerforge-open-commitments.csv");
         }
