@@ -1,3 +1,4 @@
+using LedgerForge.Application.Abstractions;
 using LedgerForge.ImportExport.Spreadsheets;
 using LedgerForge.Infrastructure.Actuals;
 using LedgerForge.Infrastructure.Approvals;
@@ -6,10 +7,12 @@ using LedgerForge.Infrastructure.Dashboard;
 using LedgerForge.Infrastructure.Importing;
 using LedgerForge.Infrastructure.MasterData;
 using LedgerForge.Infrastructure.Persistence;
+using LedgerForge.Infrastructure.Persistence.Auditing;
 using LedgerForge.Infrastructure.Persistence.Seeding;
 using LedgerForge.Infrastructure.Procurement;
 using LedgerForge.Infrastructure.Reporting;
 using LedgerForge.Infrastructure.Security;
+using LedgerForge.Web.Auditing;
 using LedgerForge.Web.Configuration;
 using LedgerForge.Web.Security;
 using Microsoft.AspNetCore.Authentication.Negotiate;
@@ -29,6 +32,7 @@ builder.Services.AddControllersWithViews(options =>
 {
     options.Filters.Add(new Microsoft.AspNetCore.Mvc.AutoValidateAntiforgeryTokenAttribute());
 });
+builder.Services.AddHttpContextAccessor();
 
 var configuredMaxImportFileSize = builder.Configuration.GetValue<long?>("Imports:MaxFileSizeBytes");
 var maxImportFileSize = configuredMaxImportFileSize is > 0 ? configuredMaxImportFileSize.Value : 25L * 1024 * 1024;
@@ -36,7 +40,13 @@ builder.Services.Configure<FormOptions>(options => options.MultipartBodyLengthLi
 
 var connectionString = builder.Configuration.GetConnectionString("LedgerForge")
     ?? throw new InvalidOperationException("Connection string 'LedgerForge' is required.");
-builder.Services.AddDbContext<LedgerForgeDbContext>(options => options.UseSqlServer(connectionString));
+builder.Services.AddScoped<IAuditRequestContext, HttpAuditRequestContext>();
+builder.Services.AddScoped<AuditSaveChangesInterceptor>();
+builder.Services.AddDbContext<LedgerForgeDbContext>((serviceProvider, options) =>
+{
+    options.UseSqlServer(connectionString);
+    options.AddInterceptors(serviceProvider.GetRequiredService<AuditSaveChangesInterceptor>());
+});
 builder.Services.AddSingleton<LegacyBudgetWorkbookReader>();
 builder.Services.AddScoped<LegacyBudgetImportPreviewService>();
 builder.Services.AddScoped<ImportReviewService>();
@@ -47,8 +57,13 @@ builder.Services.AddScoped<FinanceAdministrationService>();
 builder.Services.AddScoped<SecurityAdministrationService>();
 builder.Services.AddScoped<FiscalYearAdministrationService>();
 builder.Services.AddScoped<BudgetPlanningService>();
+builder.Services.AddScoped<BudgetAmendmentService>();
+builder.Services.AddScoped<ForecastService>();
 builder.Services.AddScoped<ActualLedgerService>();
 builder.Services.AddScoped<ProcurementService>();
+builder.Services.AddScoped<InvoiceQueryService>();
+builder.Services.AddScoped<InvoiceWorkflowService>();
+builder.Services.AddScoped<ContractService>();
 builder.Services.AddScoped<ApprovalQueueService>();
 builder.Services.AddScoped<ReportingService>();
 builder.Services.AddScoped<RenewalCalendarService>();
