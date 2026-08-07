@@ -49,11 +49,10 @@ Completed foundation:
 - Per-user role grant/deny model; active deny exceptions override grants/group membership.
 - AD membership/configuration failures fail closed and are logged.
 - Friendly 401/403 application page.
-- System Administrator AD group mapping screen with activate/deactivate support.
+- System Administrator security page for AD group mappings and per-user grant/deny exceptions.
 - AD bootstrap/deployment documentation.
 
 Remaining before milestone completion:
-- User-role exception administration UI.
 - Automated authorization tests with test Windows principals.
 - IIS-hosted Windows Authentication verification against CRCH AD.
 
@@ -86,12 +85,12 @@ Remaining before milestone completion:
 ### Milestone 17 — administration
 
 Completed foundation:
-- System Administrator security mapping page uses friendly forms rather than raw JSON.
+- System Administrator security page uses friendly forms rather than raw JSON for group mappings and user-role exceptions.
 - Deployment-config bootstrap group mappings are documented and separated from normal database administration.
 - Managed lookup initializer exists as an explicit service and is not auto-run during production startup.
 
 Remaining before milestone completion:
-- Full lookup management screens, role-exception administration, fiscal settings, import/export profiles, storage/SMTP settings, diagnostics, connection tests, retention, branding, and feature flags.
+- Full lookup management screens, fiscal settings, import/export profiles, storage/SMTP settings, diagnostics, connection tests, retention, branding, and feature flags.
 
 ## Validation blocker
 
