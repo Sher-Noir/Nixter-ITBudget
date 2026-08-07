@@ -1,6 +1,7 @@
 using LedgerForge.ImportExport.Spreadsheets;
 using LedgerForge.Infrastructure.Budgeting;
 using LedgerForge.Infrastructure.Importing;
+using LedgerForge.Infrastructure.MasterData;
 using LedgerForge.Infrastructure.Persistence;
 using LedgerForge.Infrastructure.Persistence.Seeding;
 using LedgerForge.Infrastructure.Security;
@@ -34,6 +35,7 @@ builder.Services.AddDbContext<LedgerForgeDbContext>(options => options.UseSqlSer
 builder.Services.AddSingleton<LegacyBudgetWorkbookReader>();
 builder.Services.AddScoped<LegacyBudgetImportPreviewService>();
 builder.Services.AddScoped<ManagedLookupInitializer>();
+builder.Services.AddScoped<LookupAdministrationService>();
 builder.Services.AddScoped<SecurityAdministrationService>();
 builder.Services.AddScoped<FiscalYearAdministrationService>();
 builder.Services.AddScoped<BudgetPlanningService>();
