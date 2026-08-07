@@ -79,8 +79,17 @@ public sealed class PersistenceModelTests
         {
             var property = context.Model.FindEntityType(entityType)?.FindProperty(propertyName);
             Assert.NotNull(property);
-            Assert.Equal(19, property!.GetPrecision().GetValueOrDefault());
-            Assert.Equal(4, property.GetScale().GetValueOrDefault());
+
+            var precision = property!.GetPrecision();
+            var scale = property.GetScale();
+            var columnType = property.GetColumnType();
+            var isDecimal19Scale4 =
+                (precision == 19 && scale == 4) ||
+                string.Equals(columnType?.Replace(" ", string.Empty, StringComparison.Ordinal), "decimal(19,4)", StringComparison.OrdinalIgnoreCase);
+
+            Assert.True(
+                isDecimal19Scale4,
+                $"{entityType.Name}.{propertyName} must map to decimal(19,4); precision={precision?.ToString() ?? "null"}, scale={scale?.ToString() ?? "null"}, columnType={columnType ?? "null"}.");
         }
     }
 
