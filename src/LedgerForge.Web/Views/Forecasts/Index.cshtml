@@ -1,0 +1,92 @@
+@model LedgerForge.Infrastructure.Budgeting.ForecastIndexSnapshot
+@{
+    ViewData["Title"] = "Forecasts";
+    var canEdit = ViewData["CanEdit"] as bool? == true;
+    var errorMessage = ViewData["ErrorMessage"] as string;
+    var saved = ViewData["Saved"] as bool? == true;
+    var today = DateOnly.FromDateTime(DateTime.UtcNow);
+}
+
+<div class="lf-page-header">
+    <div>
+        <h1 class="lf-page-title">Forecast Scenarios</h1>
+        <p class="lf-subtitle">Item-level projected spend snapshots based on the latest budget version and revised baseline.</p>
+    </div>
+</div>
+
+@if (!string.IsNullOrWhiteSpace(errorMessage))
+{
+    <div class="lf-card lf-alert lf-alert-danger" role="alert">@errorMessage</div>
+}
+@if (saved)
+{
+    <div class="lf-card lf-alert lf-alert-success" role="status">Forecast saved.</div>
+}
+
+@if (canEdit)
+{
+    <section class="lf-card" aria-labelledby="create-forecast-title">
+        <h2 id="create-forecast-title">Create forecast scenario</h2>
+        @if (Model.FiscalYears.Count == 0)
+        {
+            <p class="lf-muted">Create a fiscal year and budget version before forecasting.</p>
+        }
+        else
+        {
+            <form method="post" action="/forecasts">
+                @Html.AntiForgeryToken()
+                <div class="lf-form-grid">
+                    <div>
+                        <label for="fiscalYearId"><strong>Fiscal year</strong></label>
+                        <select id="fiscalYearId" name="fiscalYearId" required>
+                            @foreach (var year in Model.FiscalYears)
+                            {
+                                <option value="@year.Id">@year.Name@(year.IsCurrent ? " · Current" : string.Empty)</option>
+                            }
+                        </select>
+                    </div>
+                    <div><label for="asOfDate"><strong>As-of date</strong></label><input id="asOfDate" name="asOfDate" type="date" value="@today.ToString("yyyy-MM-dd")" required /></div>
+                    <div class="lf-span-all"><label for="name"><strong>Scenario name</strong></label><input id="name" name="name" maxlength="150" placeholder="Q2 forecast" required /></div>
+                    <div class="lf-span-all"><label for="notes">Notes</label><textarea id="notes" name="notes" rows="3" maxlength="2000"></textarea></div>
+                </div>
+                <p class="lf-muted">Creation copies every eligible item from the latest budget version using revised, approved, or planned total as the starting forecast.</p>
+                <button class="primary" type="submit">Create draft scenario</button>
+            </form>
+        }
+    </section>
+}
+
+<section class="lf-card" aria-labelledby="forecast-register-title">
+    <div class="lf-panel-header">
+        <div><h2 id="forecast-register-title">Forecast register</h2><p class="lf-muted">Published scenarios are immutable planning snapshots and can feed the dashboard Forecast KPI.</p></div>
+        <span class="badge">@Model.Scenarios.Count scenario@(Model.Scenarios.Count == 1 ? string.Empty : "s")</span>
+    </div>
+
+    @if (Model.Scenarios.Count == 0)
+    {
+        <div class="lf-empty-state"><p>No forecast scenarios have been created.</p></div>
+    }
+    else
+    {
+        <div class="lf-table-wrap">
+            <table class="lf-table">
+                <thead><tr><th>Scenario</th><th>Fiscal year</th><th>Budget version</th><th>As of</th><th>State</th><th>Lines</th><th class="lf-number">Forecast</th><th>Published</th></tr></thead>
+                <tbody>
+                @foreach (var scenario in Model.Scenarios)
+                {
+                    <tr>
+                        <td><a href="/forecasts/@scenario.Id"><strong>@scenario.Name</strong></a></td>
+                        <td>@scenario.FiscalYear</td>
+                        <td>@scenario.BudgetVersion</td>
+                        <td>@scenario.AsOfDate.ToString("yyyy-MM-dd")</td>
+                        <td><span class="badge">@scenario.State</span></td>
+                        <td>@scenario.LineCount</td>
+                        <td class="lf-number">@scenario.ForecastTotal.ToString("C2")</td>
+                        <td>@(scenario.PublishedAtUtc?.ToString("u") ?? "—")</td>
+                    </tr>
+                }
+                </tbody>
+            </table>
+        </div>
+    }
+</section>
