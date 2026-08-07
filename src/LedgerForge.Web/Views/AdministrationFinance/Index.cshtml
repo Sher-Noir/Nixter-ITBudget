@@ -1,0 +1,121 @@
+@model LedgerForge.Infrastructure.MasterData.FinanceAdministrationSnapshot
+@{
+    ViewData["Title"] = "Finance Configuration";
+    var errorMessage = ViewData["ErrorMessage"] as string;
+    var saved = ViewData["Saved"] as bool? == true;
+    var activeCategories = Model.Categories.Where(x => x.IsActive).ToArray();
+}
+
+<div class="lf-page-header">
+    <div>
+        <h1 class="lf-page-title">Finance Configuration</h1>
+        <p class="lf-subtitle">Manage stable finance account codes and their finance-category relationships.</p>
+    </div>
+    <a class="button" href="/admin/lookups?type=FinanceCategory">Manage finance categories</a>
+</div>
+
+@if (!string.IsNullOrWhiteSpace(errorMessage))
+{
+    <div class="lf-card lf-alert lf-alert-danger" role="alert">@errorMessage</div>
+}
+@if (saved)
+{
+    <div class="lf-card lf-alert lf-alert-success" role="status">Finance configuration saved.</div>
+}
+
+<section class="lf-card" aria-labelledby="add-account-title">
+    <h2 id="add-account-title">Add finance account</h2>
+    <p class="lf-muted">Account codes are permanent identifiers. Labels, descriptions, sort order, category assignment, and active state can be changed later.</p>
+    <form method="post" action="/admin/finance/accounts">
+        @Html.AntiForgeryToken()
+        <div class="lf-form-grid">
+            <div>
+                <label for="code"><strong>Account code</strong></label>
+                <input id="code" name="code" maxlength="100" required autocomplete="off" />
+            </div>
+            <div>
+                <label for="name"><strong>Account name</strong></label>
+                <input id="name" name="name" maxlength="250" required />
+            </div>
+            <div>
+                <label for="financeCategoryId"><strong>Finance category</strong></label>
+                <select id="financeCategoryId" name="financeCategoryId">
+                    <option value="">Uncategorized</option>
+                    @foreach (var category in activeCategories)
+                    {
+                        <option value="@category.Id">@category.Code · @category.Name</option>
+                    }
+                </select>
+            </div>
+            <div>
+                <label for="sortOrder"><strong>Sort order</strong></label>
+                <input id="sortOrder" name="sortOrder" type="number" min="0" value="0" required />
+            </div>
+            <div class="lf-span-all">
+                <label for="description">Description</label>
+                <input id="description" name="description" maxlength="1000" />
+            </div>
+        </div>
+        <p><button class="primary" type="submit">Add finance account</button></p>
+    </form>
+</section>
+
+<section class="lf-card" aria-labelledby="accounts-title">
+    <div class="lf-panel-header">
+        <div>
+            <h2 id="accounts-title">Finance accounts</h2>
+            <p class="lf-muted">Deactivating an account preserves historical references while removing it from normal entry choices.</p>
+        </div>
+        <span class="badge">@Model.Accounts.Count account@(Model.Accounts.Count == 1 ? string.Empty : "s")</span>
+    </div>
+
+    @if (Model.Accounts.Count == 0)
+    {
+        <div class="lf-empty-state"><p>No finance accounts have been configured.</p></div>
+    }
+    else
+    {
+        <div class="lf-admin-stack">
+            @foreach (var account in Model.Accounts)
+            {
+                <form method="post" action="/admin/finance/accounts/@account.Id" class="lf-admin-row">
+                    @Html.AntiForgeryToken()
+                    <div class="lf-admin-code">
+                        <strong>@account.Code</strong>
+                        <span class="lf-muted">@(account.IsActive ? "Active" : "Inactive")</span>
+                    </div>
+                    <div>
+                        <label for="name-@account.Id">Name</label>
+                        <input id="name-@account.Id" name="name" value="@account.Name" maxlength="250" required />
+                    </div>
+                    <div>
+                        <label for="description-@account.Id">Description</label>
+                        <input id="description-@account.Id" name="description" value="@account.Description" maxlength="1000" />
+                    </div>
+                    <div>
+                        <label for="category-@account.Id">Category</label>
+                        <select id="category-@account.Id" name="financeCategoryId">
+                            <option value="">Uncategorized</option>
+                            @foreach (var category in Model.Categories)
+                            {
+                                var categoryLabel = category.IsActive ? $"{category.Code} · {category.Name}" : $"{category.Code} · {category.Name} (inactive)";
+                                <option value="@category.Id" selected="@(account.FinanceCategoryId == category.Id ? "selected" : null)">@categoryLabel</option>
+                            }
+                        </select>
+                    </div>
+                    <div>
+                        <label for="sort-@account.Id">Sort</label>
+                        <input id="sort-@account.Id" name="sortOrder" type="number" min="0" value="@account.SortOrder" required />
+                    </div>
+                    <div class="lf-admin-state">
+                        <label for="active-@account.Id">Active</label>
+                        <input id="active-@account.Id" name="isActive" type="checkbox" value="true" checked="@(account.IsActive ? "checked" : null)" />
+                    </div>
+                    <div class="lf-admin-action">
+                        <button type="submit">Save</button>
+                    </div>
+                </form>
+            }
+        </div>
+    }
+</section>
