@@ -1,0 +1,70 @@
+@model LedgerForge.Web.Models.Auditing.AuditIndexViewModel
+@{
+    ViewData["Title"] = "Audit Trail";
+}
+
+<div class="lf-page-header">
+    <div>
+        <h1 class="lf-page-title">Audit Trail</h1>
+        <p class="lf-subtitle">Immutable entity-change history with actor, request context, correlation ID, and before/after values.</p>
+    </div>
+</div>
+
+<form method="get" action="/audit" class="lf-card" aria-labelledby="audit-filter-title">
+    <h2 id="audit-filter-title">Filters</h2>
+    <div class="lf-form-grid">
+        <div><label for="actor">Actor</label><input id="actor" name="actor" value="@Model.Actor" maxlength="256" /></div>
+        <div><label for="entityType">Entity type</label><input id="entityType" name="entityType" value="@Model.EntityType" maxlength="256" /></div>
+        <div><label for="entityId">Entity ID</label><input id="entityId" name="entityId" value="@Model.EntityId" /></div>
+        <div><label for="correlationId">Correlation ID</label><input id="correlationId" name="correlationId" value="@Model.CorrelationId" maxlength="128" /></div>
+        <div><label for="fromUtc">From UTC</label><input id="fromUtc" name="fromUtc" type="datetime-local" value="@(Model.FromUtc?.UtcDateTime.ToString("yyyy-MM-ddTHH:mm"))" /></div>
+        <div><label for="toUtc">To UTC</label><input id="toUtc" name="toUtc" type="datetime-local" value="@(Model.ToUtc?.UtcDateTime.ToString("yyyy-MM-ddTHH:mm"))" /></div>
+        <div><label for="take">Maximum rows</label><input id="take" name="take" type="number" min="1" max="500" value="@Model.Take" /></div>
+    </div>
+    <p><button class="primary" type="submit">Search audit trail</button> <a class="button" href="/audit">Clear filters</a></p>
+</form>
+
+<section class="lf-card" aria-labelledby="audit-results-title">
+    <div class="lf-panel-header">
+        <div><h2 id="audit-results-title">Events</h2><p class="lf-muted">Newest matching events first. Result count is deliberately bounded.</p></div>
+        <span class="badge">@Model.Events.Count event@(Model.Events.Count == 1 ? string.Empty : "s")</span>
+    </div>
+
+    @if (Model.Events.Count == 0)
+    {
+        <div class="lf-empty-state"><p>No audit events match the selected filters.</p></div>
+    }
+    else
+    {
+        <div class="lf-import-rows">
+            @foreach (var audit in Model.Events)
+            {
+                <details class="lf-import-row">
+                    <summary>
+                        <strong>@audit.OccurredAtUtc.ToString("u") · @audit.Action · @audit.EntityType</strong>
+                        @if (audit.EntityId is not null) { <span> · <code>@audit.EntityId</code></span> }
+                        <span> · @audit.Actor</span>
+                    </summary>
+                    <div class="lf-audit-meta">
+                        <dl class="lf-detail-grid">
+                            <div><dt>Correlation ID</dt><dd><code>@audit.CorrelationId</code></dd></div>
+                            <div><dt>Request</dt><dd>@(audit.RequestMethod ?? "—") @(audit.RequestPath ?? string.Empty)</dd></div>
+                            <div><dt>Remote address</dt><dd>@(audit.RemoteAddress ?? "—")</dd></div>
+                            <div><dt>User agent</dt><dd class="lf-break">@(audit.UserAgent ?? "—")</dd></div>
+                        </dl>
+                        @if (!string.IsNullOrWhiteSpace(audit.BeforeJson))
+                        {
+                            <h3>Before</h3>
+                            <pre class="lf-json-snapshot">@audit.BeforeJson</pre>
+                        }
+                        @if (!string.IsNullOrWhiteSpace(audit.AfterJson))
+                        {
+                            <h3>After</h3>
+                            <pre class="lf-json-snapshot">@audit.AfterJson</pre>
+                        }
+                    </div>
+                </details>
+            }
+        </div>
+    }
+</section>
