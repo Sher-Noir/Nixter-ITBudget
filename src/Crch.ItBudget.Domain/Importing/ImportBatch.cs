@@ -45,4 +45,94 @@ public sealed class ImportBatch : AuditableEntity
     public DateTimeOffset? CommittedAtUtc { get; private set; }
     public string? AcceptedBy { get; private set; }
     public string? AcceptanceReason { get; private set; }
+
+    public void BeginValidation()
+    {
+        if (Status != ImportBatchStatus.Uploaded)
+        {
+            throw new InvalidOperationException($"Import batch cannot begin validation from status {Status}.");
+        }
+
+        Status = ImportBatchStatus.Validating;
+    }
+
+    public void CompletePreview(
+        int sourceRowCount,
+        int acceptedRowCount,
+        int exceptionCount,
+        decimal recalculatedPlannedTotal,
+        int mustHaveCount,
+        bool reconciledToExpectedTargets,
+        DateTimeOffset generatedAtUtc)
+    {
+        if (Status != ImportBatchStatus.Validating)
+        {
+            throw new InvalidOperationException($"Import preview cannot complete from status {Status}.");
+        }
+        if (sourceRowCount < 0) throw new ArgumentOutOfRangeException(nameof(sourceRowCount));
+        if (acceptedRowCount < 0 || acceptedRowCount > sourceRowCount) throw new ArgumentOutOfRangeException(nameof(acceptedRowCount));
+        if (exceptionCount < 0) throw new ArgumentOutOfRangeException(nameof(exceptionCount));
+        if (recalculatedPlannedTotal < 0m) throw new ArgumentOutOfRangeException(nameof(recalculatedPlannedTotal));
+        if (mustHaveCount < 0 || mustHaveCount > sourceRowCount) throw new ArgumentOutOfRangeException(nameof(mustHaveCount));
+
+        SourceRowCount = sourceRowCount;
+        AcceptedRowCount = acceptedRowCount;
+        ExceptionCount = exceptionCount;
+        RecalculatedPlannedTotal = recalculatedPlannedTotal;
+        MustHaveCount = mustHaveCount;
+        ReconciledToExpectedTargets = reconciledToExpectedTargets;
+        PreviewGeneratedAtUtc = generatedAtUtc;
+        Status = ImportBatchStatus.PreviewReady;
+    }
+
+    public void MarkValidationFailed()
+    {
+        if (Status is not (ImportBatchStatus.Uploaded or ImportBatchStatus.Validating))
+        {
+            throw new InvalidOperationException($"Import batch cannot fail validation from status {Status}.");
+        }
+
+        Status = ImportBatchStatus.ValidationFailed;
+    }
+
+    public void AcceptForCommit(string actor, string? acceptanceReason = null)
+    {
+        if (Status != ImportBatchStatus.PreviewReady)
+        {
+            throw new InvalidOperationException($"Import batch cannot be accepted from status {Status}.");
+        }
+        if (string.IsNullOrWhiteSpace(actor)) throw new ArgumentException("Actor is required.", nameof(actor));
+        if (ReconciledToExpectedTargets != true && string.IsNullOrWhiteSpace(acceptanceReason))
+        {
+            throw new InvalidOperationException("A reason is required when reconciliation targets are not met.");
+        }
+
+        AcceptedBy = actor.Trim();
+        AcceptanceReason = string.IsNullOrWhiteSpace(acceptanceReason) ? null : acceptanceReason.Trim();
+    }
+
+    public void MarkCommitted(DateTimeOffset committedAtUtc)
+    {
+        if (Status != ImportBatchStatus.PreviewReady)
+        {
+            throw new InvalidOperationException($"Import batch cannot be committed from status {Status}.");
+        }
+        if (string.IsNullOrWhiteSpace(AcceptedBy))
+        {
+            throw new InvalidOperationException("Import batch must be explicitly accepted before commit.");
+        }
+
+        CommittedAtUtc = committedAtUtc;
+        Status = ImportBatchStatus.Committed;
+    }
+
+    public void Reject()
+    {
+        if (Status == ImportBatchStatus.Committed)
+        {
+            throw new InvalidOperationException("Committed import batches cannot be rejected.");
+        }
+
+        Status = ImportBatchStatus.Rejected;
+    }
 }
