@@ -6,6 +6,12 @@ public sealed class BudgetSection : ManagedLookupEntity
     public BudgetSection(string code, string name, int sortOrder = 0) : base(code, name, sortOrder) { }
 }
 
+public sealed class FinanceType : ManagedLookupEntity
+{
+    private FinanceType() { }
+    public FinanceType(string code, string name, int sortOrder = 0) : base(code, name, sortOrder) { }
+}
+
 public sealed class FinanceCategory : ManagedLookupEntity
 {
     private FinanceCategory() { }
