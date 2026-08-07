@@ -1,0 +1,100 @@
+@model LedgerForge.Web.Models.Administration.LookupAdministrationViewModel
+@{
+    ViewData["Title"] = "Managed Lookups";
+    var snapshot = Model.Snapshot;
+    var selectedDefinition = snapshot.Types.Single(x => x.Key == snapshot.SelectedType);
+}
+
+<div class="lf-page-header">
+    <div>
+        <h1 class="lf-page-title">Managed Lookups</h1>
+        <p class="lf-subtitle">Maintain stable codes and organization-facing labels without changing source code.</p>
+    </div>
+    <form method="post" action="/admin/lookups/initialize-defaults">
+        @Html.AntiForgeryToken()
+        <input type="hidden" name="type" value="@snapshot.SelectedType" />
+        <button type="submit">Initialize generic defaults</button>
+    </form>
+</div>
+
+@if (!string.IsNullOrWhiteSpace(Model.ErrorMessage))
+{
+    <div class="card lf-alert lf-alert-danger" role="alert">@Model.ErrorMessage</div>
+}
+@if (Model.Saved)
+{
+    <div class="card lf-alert lf-alert-success" role="status">Lookup configuration saved.</div>
+}
+@if (Model.Initialized)
+{
+    <div class="card lf-alert lf-alert-info" role="status">Missing LedgerForge generic defaults were initialized. Existing labels were not overwritten.</div>
+}
+
+<form method="get" action="/admin/lookups" class="lf-toolbar lf-budget-selector" aria-label="Lookup type selector">
+    <div>
+        <label for="type"><strong>Lookup type</strong></label>
+        <select id="type" name="type">
+            @foreach (var type in snapshot.Types)
+            {
+                <option value="@type.Key" selected="@(type.Key == snapshot.SelectedType)">@type.DisplayName</option>
+            }
+        </select>
+    </div>
+    <div class="lf-toolbar-action"><button type="submit">Open</button></div>
+</form>
+
+<div class="lf-settings-grid">
+    <section class="card" aria-labelledby="lookup-values-title">
+        <div class="lf-panel-header">
+            <div>
+                <h2 id="lookup-values-title">@selectedDefinition.DisplayName</h2>
+                <p class="muted">Codes are immutable identifiers. Rename display labels instead of changing a code that may already be referenced.</p>
+            </div>
+            <span class="badge">@snapshot.Values.Count value@(snapshot.Values.Count == 1 ? string.Empty : "s")</span>
+        </div>
+
+        @if (snapshot.Values.Count == 0)
+        {
+            <div class="lf-empty-state"><p>No values have been configured for this lookup type.</p></div>
+        }
+        else
+        {
+            <div class="lf-admin-stack">
+                @foreach (var value in snapshot.Values)
+                {
+                    <form method="post" action="/admin/lookups/values/@value.Id" class="lf-admin-row">
+                        @Html.AntiForgeryToken()
+                        <input type="hidden" name="type" value="@snapshot.SelectedType" />
+                        <div class="lf-admin-code"><span class="muted">Code</span><strong><code>@value.Code</code></strong></div>
+                        <div><label for="name-@value.Id">Name</label><input id="name-@value.Id" name="name" value="@value.Name" maxlength="250" required /></div>
+                        <div><label for="description-@value.Id">Description</label><input id="description-@value.Id" name="description" value="@value.Description" maxlength="1000" /></div>
+                        <div><label for="sort-@value.Id">Sort</label><input id="sort-@value.Id" name="sortOrder" type="number" min="0" value="@value.SortOrder" required /></div>
+                        @if (selectedDefinition.HasNumericValue)
+                        {
+                            <div><label for="numeric-@value.Id">Rank</label><input id="numeric-@value.Id" name="numericValue" type="number" min="0" value="@value.NumericValue" required /></div>
+                        }
+                        <div class="lf-admin-state"><label><input type="checkbox" name="isActive" value="true" checked="@value.IsActive" /> Active</label></div>
+                        <div class="lf-admin-action"><button type="submit">Save</button></div>
+                    </form>
+                }
+            </div>
+        }
+    </section>
+
+    <aside class="card lf-setting-preview" aria-labelledby="new-lookup-title">
+        <h2 id="new-lookup-title">Add @selectedDefinition.DisplayName.TrimEnd('s')</h2>
+        <form method="post" action="/admin/lookups/values">
+            @Html.AntiForgeryToken()
+            <input type="hidden" name="type" value="@snapshot.SelectedType" />
+            <p><label for="code"><strong>Stable code</strong></label><input id="code" name="code" maxlength="100" required /></p>
+            <p><label for="name"><strong>Name</strong></label><input id="name" name="name" maxlength="250" required /></p>
+            <p><label for="description">Description</label><textarea id="description" name="description" rows="3" maxlength="1000"></textarea></p>
+            <p><label for="sortOrder"><strong>Sort order</strong></label><input id="sortOrder" name="sortOrder" type="number" min="0" value="0" required /></p>
+            @if (selectedDefinition.HasNumericValue)
+            {
+                <p><label for="numericValue"><strong>Numeric rank</strong></label><input id="numericValue" name="numericValue" type="number" min="0" value="0" required /></p>
+            }
+            <button class="primary" type="submit">Add value</button>
+        </form>
+    </aside>
+</div>
