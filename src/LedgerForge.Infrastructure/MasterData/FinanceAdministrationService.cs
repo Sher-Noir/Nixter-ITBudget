@@ -36,23 +36,42 @@ public sealed class FinanceAdministrationService(LedgerForgeDbContext dbContext)
             .Select(x => new FinanceCategoryOption(x.Id, x.Code, x.Name, x.IsActive))
             .ToListAsync(cancellationToken);
 
-        var accounts = await (
-            from account in dbContext.FinanceAccounts.AsNoTracking()
-            join category in dbContext.FinanceCategories.AsNoTracking()
-                on account.FinanceCategoryId equals category.Id into categoriesJoin
-            from category in categoriesJoin.DefaultIfEmpty()
-            orderby account.SortOrder, account.Code
-            select new FinanceAccountSummary(
-                account.Id,
-                account.Code,
-                account.Name,
-                account.Description,
-                account.SortOrder,
-                account.IsActive,
-                account.FinanceCategoryId,
-                category == null ? null : category.Code,
-                category == null ? null : category.Name))
+        var categoryById = categories.ToDictionary(x => x.Id);
+        var accountRows = await dbContext.FinanceAccounts
+            .AsNoTracking()
+            .OrderBy(x => x.SortOrder)
+            .ThenBy(x => x.Code)
+            .Select(x => new
+            {
+                x.Id,
+                x.Code,
+                x.Name,
+                x.Description,
+                x.SortOrder,
+                x.IsActive,
+                x.FinanceCategoryId
+            })
             .ToListAsync(cancellationToken);
+
+        var accounts = accountRows
+            .Select(account =>
+            {
+                FinanceCategoryOption? category = null;
+                if (account.FinanceCategoryId is Guid categoryId)
+                    categoryById.TryGetValue(categoryId, out category);
+
+                return new FinanceAccountSummary(
+                    account.Id,
+                    account.Code,
+                    account.Name,
+                    account.Description,
+                    account.SortOrder,
+                    account.IsActive,
+                    account.FinanceCategoryId,
+                    category?.Code,
+                    category?.Name);
+            })
+            .ToArray();
 
         return new(categories, accounts);
     }
