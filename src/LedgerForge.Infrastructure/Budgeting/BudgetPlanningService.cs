@@ -263,7 +263,7 @@ public sealed class BudgetPlanningService(
 
         item.ChangeCost(quantity, unitCost);
         item.UpdatePlanningDetails(
-            itemNumber,
+            normalizedNumber,
             description,
             reasonPurpose,
             purchaseType,
