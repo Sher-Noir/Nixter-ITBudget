@@ -17,7 +17,7 @@ public sealed class ImportRowReviewTests
         row.Reject();
         var reviewedAt = DateTimeOffset.UtcNow;
 
-        row.ReviewDisposition(
+        row.OverrideReviewOutcome(
             ImportRowOutcome.Accepted,
             "DOMAIN\\reviewer",
             "Lookup mapping was corrected and the row was revalidated.",
@@ -40,13 +40,13 @@ public sealed class ImportRowReviewTests
             "{\"itemNumber\":4}");
         row.Reject();
 
-        Assert.Throws<ArgumentException>(() => row.ReviewDisposition(
+        Assert.Throws<ArgumentException>(() => row.OverrideReviewOutcome(
             ImportRowOutcome.Accepted,
             "",
             "Reviewed",
             DateTimeOffset.UtcNow));
 
-        Assert.Throws<ArgumentException>(() => row.ReviewDisposition(
+        Assert.Throws<ArgumentException>(() => row.OverrideReviewOutcome(
             ImportRowOutcome.Accepted,
             "DOMAIN\\reviewer",
             "",
@@ -65,7 +65,7 @@ public sealed class ImportRowReviewTests
         row.Accept();
         row.MarkCommitted("BudgetItem", Guid.NewGuid());
 
-        Assert.Throws<InvalidOperationException>(() => row.ReviewDisposition(
+        Assert.Throws<InvalidOperationException>(() => row.OverrideReviewOutcome(
             ImportRowOutcome.Rejected,
             "DOMAIN\\reviewer",
             "Attempted reversal.",
