@@ -26,6 +26,7 @@ public sealed class ApplicationRoleAuthorizationHandler(
             return;
         }
 
+        var requestedRoles = requirement.AllowedRoles.ToArray();
         List<UserRoleException> exceptions;
         List<AdGroupMapping> databaseMappings;
         try
@@ -41,7 +42,7 @@ public sealed class ApplicationRoleAuthorizationHandler(
 
             databaseMappings = await dbContext.AdGroupMappings
                 .AsNoTracking()
-                .Where(x => x.IsActive && requirement.AllowedRoles.Contains(x.Role))
+                .Where(x => x.IsActive && requestedRoles.Contains(x.Role))
                 .ToListAsync();
         }
         catch (Exception exception)
@@ -64,13 +65,13 @@ public sealed class ApplicationRoleAuthorizationHandler(
             .Where(role => !deniedRoles.Contains(role))
             .ToHashSet();
 
-        if (requirement.AllowedRoles.Any(grantedRoles.Contains))
+        if (requestedRoles.Any(grantedRoles.Contains))
         {
             context.Succeed(requirement);
             return;
         }
 
-        var allowedRoles = requirement.AllowedRoles
+        var allowedRoles = requestedRoles
             .Where(role => !deniedRoles.Contains(role))
             .ToHashSet();
 
