@@ -36,7 +36,6 @@ public sealed class ImportsController(
         var maxFileSize = configuredMaxFileSize is > 0 ? configuredMaxFileSize.Value : DefaultMaxFileSizeBytes;
         if (workbook.Length > maxFileSize)
             return View("Index", await BuildIndexAsync($"The workbook exceeds the configured upload limit of {maxFileSize / (1024 * 1024)} MB.", cancellationToken));
-
         if (!string.Equals(Path.GetExtension(workbook.FileName), ".xlsx", StringComparison.OrdinalIgnoreCase))
             return View("Index", await BuildIndexAsync("Only .xlsx workbooks are accepted for this import adapter.", cancellationToken));
 
@@ -52,12 +51,7 @@ public sealed class ImportsController(
             ? new ImportReconciliationExpectation(options.ExpectedItemCount, options.ExpectedPlannedTotal, options.PriorityNeedLevel, options.ExpectedPriorityNeedLevelCount)
             : null;
 
-        var result = await previewService.CreatePreviewAsync(
-            uploaded,
-            Path.GetFileName(workbook.FileName),
-            expectation,
-            cancellationToken);
-
+        var result = await previewService.CreatePreviewAsync(uploaded, Path.GetFileName(workbook.FileName), expectation, cancellationToken);
         return RedirectToAction(nameof(Details), new { id = result.ImportBatchId });
     }
 
@@ -81,12 +75,7 @@ public sealed class ImportsController(
     }
 
     [HttpPost("{batchId:guid}/exceptions/{exceptionId:guid}/resolve")]
-    public async Task<IActionResult> ResolveException(
-        Guid batchId,
-        Guid exceptionId,
-        string resolutionStatus,
-        string resolutionNote,
-        CancellationToken cancellationToken)
+    public async Task<IActionResult> ResolveException(Guid batchId, Guid exceptionId, string resolutionStatus, string resolutionNote, CancellationToken cancellationToken)
     {
         if (!Enum.TryParse<ImportExceptionResolutionStatus>(resolutionStatus, false, out var parsedStatus) ||
             !Enum.IsDefined(parsedStatus) || parsedStatus == ImportExceptionResolutionStatus.Open)
@@ -95,87 +84,46 @@ public sealed class ImportsController(
             return RedirectToAction(nameof(Details), new { id = batchId });
         }
 
-        try
-        {
-            await reviewService.ResolveExceptionAsync(
-                exceptionId,
-                parsedStatus,
-                resolutionNote,
-                RequireActor(),
-                cancellationToken);
-            return RedirectToAction(nameof(Details), new { id = batchId, saved = true });
-        }
-        catch (KeyNotFoundException)
-        {
-            return NotFound();
-        }
-        catch (Exception exception) when (exception is ArgumentException or InvalidOperationException)
-        {
-            TempData["ImportReviewError"] = exception.Message;
-            return RedirectToAction(nameof(Details), new { id = batchId });
-        }
+        return await RunReviewAction(batchId, () => reviewService.ResolveExceptionAsync(
+            batchId, exceptionId, parsedStatus, resolutionNote, RequireActor(), cancellationToken));
     }
 
     [HttpPost("{batchId:guid}/exceptions/{exceptionId:guid}/assign")]
-    public async Task<IActionResult> AssignException(
-        Guid batchId,
-        Guid exceptionId,
-        string? assignedTo,
-        CancellationToken cancellationToken)
-    {
-        try
-        {
-            await reviewService.AssignExceptionAsync(exceptionId, assignedTo, cancellationToken);
-            return RedirectToAction(nameof(Details), new { id = batchId, saved = true });
-        }
-        catch (KeyNotFoundException)
-        {
-            return NotFound();
-        }
-        catch (InvalidOperationException exception)
-        {
-            TempData["ImportReviewError"] = exception.Message;
-            return RedirectToAction(nameof(Details), new { id = batchId });
-        }
-    }
+    public Task<IActionResult> AssignException(Guid batchId, Guid exceptionId, string? assignedTo, CancellationToken cancellationToken)
+        => RunReviewAction(batchId, () => reviewService.AssignExceptionAsync(batchId, exceptionId, assignedTo, cancellationToken));
 
     [HttpPost("{batchId:guid}/exceptions/{exceptionId:guid}/reopen")]
-    public async Task<IActionResult> ReopenException(
+    public Task<IActionResult> ReopenException(Guid batchId, Guid exceptionId, CancellationToken cancellationToken)
+        => RunReviewAction(batchId, () => reviewService.ReopenExceptionAsync(batchId, exceptionId, cancellationToken));
+
+    [HttpPost("{batchId:guid}/rows/{rowId:guid}/outcome")]
+    public async Task<IActionResult> OverrideRowOutcome(
         Guid batchId,
-        Guid exceptionId,
+        Guid rowId,
+        string outcome,
+        string reviewNote,
         CancellationToken cancellationToken)
     {
-        try
+        if (!Enum.TryParse<ImportRowOutcome>(outcome, false, out var parsedOutcome) ||
+            parsedOutcome is not (ImportRowOutcome.Accepted or ImportRowOutcome.AcceptedWithWarning or ImportRowOutcome.Rejected))
         {
-            await reviewService.ReopenExceptionAsync(exceptionId, cancellationToken);
-            return RedirectToAction(nameof(Details), new { id = batchId, saved = true });
-        }
-        catch (KeyNotFoundException)
-        {
-            return NotFound();
-        }
-        catch (InvalidOperationException exception)
-        {
-            TempData["ImportReviewError"] = exception.Message;
+            TempData["ImportReviewError"] = "Select a valid row disposition.";
             return RedirectToAction(nameof(Details), new { id = batchId });
         }
+
+        return await RunReviewAction(batchId, () => reviewService.OverrideRowOutcomeAsync(
+            batchId, rowId, parsedOutcome, RequireActor(), reviewNote, cancellationToken));
     }
 
     [HttpPost("{id:guid}/accept")]
-    public async Task<IActionResult> Accept(
-        Guid id,
-        string? acceptanceReason,
-        CancellationToken cancellationToken)
+    public async Task<IActionResult> Accept(Guid id, string? acceptanceReason, CancellationToken cancellationToken)
     {
         try
         {
             await reviewService.AcceptPreviewAsync(id, RequireActor(), acceptanceReason, cancellationToken);
             return RedirectToAction(nameof(Details), new { id, accepted = true });
         }
-        catch (KeyNotFoundException)
-        {
-            return NotFound();
-        }
+        catch (KeyNotFoundException) { return NotFound(); }
         catch (Exception exception) when (exception is ArgumentException or InvalidOperationException)
         {
             TempData["ImportReviewError"] = exception.Message;
@@ -184,20 +132,14 @@ public sealed class ImportsController(
     }
 
     [HttpPost("{id:guid}/commit")]
-    public async Task<IActionResult> Commit(
-        Guid id,
-        Guid budgetVersionId,
-        CancellationToken cancellationToken)
+    public async Task<IActionResult> Commit(Guid id, Guid budgetVersionId, CancellationToken cancellationToken)
     {
         try
         {
             await commitService.CommitAsync(id, budgetVersionId, cancellationToken);
             return RedirectToAction(nameof(Details), new { id, committed = true });
         }
-        catch (KeyNotFoundException)
-        {
-            return NotFound();
-        }
+        catch (KeyNotFoundException) { return NotFound(); }
         catch (Exception exception) when (exception is ArgumentException or InvalidOperationException or JsonException)
         {
             TempData["ImportReviewError"] = exception.Message;
@@ -213,10 +155,7 @@ public sealed class ImportsController(
             await reviewService.RejectBatchAsync(id, cancellationToken);
             return RedirectToAction(nameof(Details), new { id, saved = true });
         }
-        catch (KeyNotFoundException)
-        {
-            return NotFound();
-        }
+        catch (KeyNotFoundException) { return NotFound(); }
         catch (InvalidOperationException exception)
         {
             TempData["ImportReviewError"] = exception.Message;
@@ -224,9 +163,22 @@ public sealed class ImportsController(
         }
     }
 
-    private async Task<ImportIndexViewModel> BuildIndexAsync(
-        string? errorMessage,
-        CancellationToken cancellationToken)
+    private async Task<IActionResult> RunReviewAction(Guid batchId, Func<Task> action)
+    {
+        try
+        {
+            await action();
+            return RedirectToAction(nameof(Details), new { id = batchId, saved = true });
+        }
+        catch (KeyNotFoundException) { return NotFound(); }
+        catch (Exception exception) when (exception is ArgumentException or InvalidOperationException)
+        {
+            TempData["ImportReviewError"] = exception.Message;
+            return RedirectToAction(nameof(Details), new { id = batchId });
+        }
+    }
+
+    private async Task<ImportIndexViewModel> BuildIndexAsync(string? errorMessage, CancellationToken cancellationToken)
         => new(await reviewService.ListBatchesAsync(cancellationToken: cancellationToken), errorMessage);
 
     private string RequireActor()
