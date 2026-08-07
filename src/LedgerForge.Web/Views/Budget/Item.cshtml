@@ -3,6 +3,8 @@
 @{
     ViewData["Title"] = $"Budget Item {Model.Item.ItemNumber}";
     var item = Model.Item;
+    var canSubmit = ViewData["CanSubmit"] as bool? == true;
+    var submitted = ViewData["Submitted"] as bool? == true;
 }
 
 <div class="lf-page-header">
@@ -21,9 +23,21 @@
 {
     <div class="card lf-alert lf-alert-success" role="status">Budget item saved.</div>
 }
+@if (submitted)
+{
+    <div class="card lf-alert lf-alert-success" role="status">Budget item submitted for approval. Planning fields are now read-only until an approval decision is made.</div>
+}
 @if (item.VersionLocked)
 {
     <div class="card lf-alert lf-alert-info" role="status">This budget version is locked. Item details are read-only.</div>
+}
+else if (item.Status == BudgetItemStatus.Submitted)
+{
+    <div class="card lf-alert lf-alert-info" role="status">This item is awaiting approval and cannot be edited.</div>
+}
+else if (item.Status == BudgetItemStatus.Approved)
+{
+    <div class="card lf-alert lf-alert-info" role="status">This item has been approved. Use a future amendment workflow for post-approval changes.</div>
 }
 
 <div class="lf-settings-grid">
@@ -156,6 +170,15 @@
                 <p><button class="primary" type="submit">Save planning item</button></p>
             }
         </form>
+
+        @if (canSubmit)
+        {
+            <form method="post" action="/budget/items/@item.Id/submit">
+                @Html.AntiForgeryToken()
+                <p class="muted">Submitting freezes normal planning edits until an approver approves, denies, or defers the item.</p>
+                <button class="primary" type="submit">Submit for approval</button>
+            </form>
+        }
     </section>
 
     <aside class="card lf-setting-preview" aria-labelledby="amount-summary-title">
