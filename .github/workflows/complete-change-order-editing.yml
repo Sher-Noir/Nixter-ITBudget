@@ -1,0 +1,111 @@
+name: complete-change-order-editing
+
+on:
+  pull_request:
+    branches: [ main ]
+    paths:
+      - '.github/workflows/complete-change-order-editing.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }}
+
+      - name: Harden change-order creation and issue transitions
+        shell: python
+        run: |
+          from pathlib import Path
+
+          service = Path('src/LedgerForge.Infrastructure/Procurement/ProcurementService.cs')
+          text = service.read_text(encoding='utf-8-sig')
+
+          active_child = '''        if (await dbContext.PurchaseOrders.AnyAsync(
+                  x => x.SupersedesPurchaseOrderId == source.Id && x.State != PurchaseOrderState.Cancelled && x.State != PurchaseOrderState.Rejected,
+                  cancellationToken))
+              throw new InvalidOperationException("This purchase order already has an active change order. Continue from that revision instead.");
+'''
+          guard = '''
+          if (await dbContext.PurchaseReceipts.AsNoTracking().AnyAsync(x => x.PurchaseOrderId == source.Id, cancellationToken) ||
+              await dbContext.Invoices.AsNoTracking().AnyAsync(
+                  x => x.PurchaseOrderId == source.Id && x.State != InvoiceState.Cancelled && x.State != InvoiceState.Rejected,
+                  cancellationToken))
+              throw new InvalidOperationException("Create a change order before receiving or invoicing begins on the issued purchase order. Once financial/receiving activity exists, close the current PO and create a separately linked procurement record rather than resetting its commitment history.");
+'''
+          if guard.strip() not in text:
+              if active_child not in text:
+                  raise SystemExit('CreateChangeOrder insertion point not found.')
+              text = text.replace(active_child, active_child + guard, 1)
+
+          source_state = '''            if (source.State != PurchaseOrderState.Issued)
+                  throw new InvalidOperationException($"The superseded purchase order must still be Issued when the change order is issued; current state is {source.State}.");
+              source.Close(actor, now);'''
+          issue_guard = '''            if (source.State != PurchaseOrderState.Issued)
+                  throw new InvalidOperationException($"The superseded purchase order must still be Issued when the change order is issued; current state is {source.State}.");
+              if (await dbContext.PurchaseReceipts.AsNoTracking().AnyAsync(x => x.PurchaseOrderId == source.Id, cancellationToken) ||
+                  await dbContext.Invoices.AsNoTracking().AnyAsync(
+                      x => x.PurchaseOrderId == source.Id && x.State != InvoiceState.Cancelled && x.State != InvoiceState.Rejected,
+                      cancellationToken))
+                  throw new InvalidOperationException("The superseded purchase order received receiving/invoice activity after this revision was created. Cancel this draft revision and reconcile the active PO before attempting another change.");
+              source.Close(actor, now);'''
+          if issue_guard not in text:
+              if source_state not in text:
+                  raise SystemExit('Issue change-order insertion point not found.')
+              text = text.replace(source_state, issue_guard, 1)
+          service.write_text(text, encoding='utf-8')
+
+          view = Path('src/LedgerForge.Web/Views/PurchaseOrders/Details.cshtml')
+          text = view.read_text(encoding='utf-8-sig')
+          header = '<thead><tr><th>Line</th><th>Description</th><th>Budget item</th><th>Account</th><th>Department</th><th>Location</th><th class="lf-number">Ordered</th><th class="lf-number">Received</th><th class="lf-number">Remaining</th><th class="lf-number">Unit cost</th><th class="lf-number">Total</th></tr></thead>'
+          new_header = '<thead><tr><th>Line</th><th>Description</th><th>Budget item</th><th>Account</th><th>Department</th><th>Location</th><th class="lf-number">Ordered</th><th class="lf-number">Received</th><th class="lf-number">Remaining</th><th class="lf-number">Unit cost</th><th class="lf-number">Total</th>@if (canManage && isDraft) { <th>Edit</th> }</tr></thead>'
+          if header in text:
+              text = text.replace(header, new_header, 1)
+
+          row = '<tr><td>@line.LineNumber</td><td>@line.Description</td><td>@(line.BudgetItem ?? "—")</td><td>@(line.FinanceAccount ?? "—")</td><td>@(line.Department ?? "—")</td><td>@(line.Location ?? "—")</td><td class="lf-number">@line.Quantity.ToString("N4")</td><td class="lf-number">@line.ReceivedQuantity.ToString("N4")</td><td class="lf-number">@line.RemainingQuantity.ToString("N4")</td><td class="lf-number">@line.UnitCost.ToString("C2")</td><td class="lf-number">@line.LineTotal.ToString("C2")</td></tr>'
+          new_row = '''<tr>
+                          <td>@line.LineNumber</td><td>@line.Description</td><td>@(line.BudgetItem ?? "—")</td><td>@(line.FinanceAccount ?? "—")</td><td>@(line.Department ?? "—")</td><td>@(line.Location ?? "—")</td><td class="lf-number">@line.Quantity.ToString("N4")</td><td class="lf-number">@line.ReceivedQuantity.ToString("N4")</td><td class="lf-number">@line.RemainingQuantity.ToString("N4")</td><td class="lf-number">@line.UnitCost.ToString("C2")</td><td class="lf-number">@line.LineTotal.ToString("C2")</td>
+                          @if (canManage && isDraft)
+                          {
+                              <td>
+                                  <details>
+                                      <summary>Edit</summary>
+                                      <form method="post" action="/purchase-orders/@Model.Order.Id/lines/@line.Id/update">
+                                          @Html.AntiForgeryToken()
+                                          <p><label>Description<input name="description" maxlength="500" required value="@line.Description" /></label></p>
+                                          <p><label>Quantity<input name="quantity" type="number" min="0.0001" step="0.0001" required value="@line.Quantity" /></label></p>
+                                          <p><label>Unit cost<input name="unitCost" type="number" min="0" step="0.0001" required value="@line.UnitCost" /></label></p>
+                                          <p><label>Budget item<select name="budgetItemId"><option value="">Unallocated / unchanged by code</option>@foreach (var option in Model.BudgetItems) { <option value="@option.Id">@option.Label</option> }</select></label></p>
+                                          <p><label>Finance account<select name="financeAccountId"><option value="">Unallocated</option>@foreach (var option in Model.FinanceAccounts) { <option value="@option.Id">@option.Label</option> }</select></label></p>
+                                          <p><label>Department<select name="departmentId"><option value="">Unallocated</option>@foreach (var option in Model.Departments) { <option value="@option.Id">@option.Label</option> }</select></label></p>
+                                          <p><label>Location<select name="locationId"><option value="">Unallocated</option>@foreach (var option in Model.Locations) { <option value="@option.Id">@option.Label</option> }</select></label></p>
+                                          <button type="submit">Save line</button>
+                                      </form>
+                                      <form method="post" action="/purchase-orders/@Model.Order.Id/lines/@line.Id/delete">
+                                          @Html.AntiForgeryToken()
+                                          <button type="submit">Delete draft line</button>
+                                      </form>
+                                  </details>
+                              </td>
+                          }
+                      </tr>'''
+          if row in text:
+              text = text.replace(row, new_row, 1)
+          elif 'action="/purchase-orders/@Model.Order.Id/lines/@line.Id/update"' not in text:
+              raise SystemExit('Draft line table row insertion point not found.')
+          view.write_text(text, encoding='utf-8')
+
+      - name: Remove one-shot workflow and push
+        shell: bash
+        run: |
+          set -euo pipefail
+          git rm .github/workflows/complete-change-order-editing.yml
+          git add src/LedgerForge.Infrastructure/Procurement/ProcurementService.cs src/LedgerForge.Web/Views/PurchaseOrders/Details.cshtml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'Complete safe purchase order change editing'
+          git push origin HEAD:${{ github.head_ref }}
