@@ -51,7 +51,7 @@ try
         if (!string.IsNullOrWhiteSpace(applicationIdentity))
         {
             Console.WriteLine("Provisioning the configured Windows application identity for LedgerForge data access...");
-            await ProvisionApplicationIdentityAsync(connectionString, dbContext, applicationIdentity.Trim());
+            await ProvisionApplicationIdentityAsync(connectionString, applicationIdentity.Trim());
         }
     }
 
@@ -79,53 +79,53 @@ catch (Exception exception)
     return 10;
 }
 
-static async Task ProvisionApplicationIdentityAsync(
-    string connectionString,
-    LedgerForgeDbContext applicationDbContext,
-    string applicationIdentity)
+static async Task ProvisionApplicationIdentityAsync(string connectionString, string applicationIdentity)
 {
     if (!Regex.IsMatch(applicationIdentity, @"^[A-Za-z0-9_ .\\$@-]{1,256}$", RegexOptions.CultureInvariant))
         throw new InvalidOperationException("The configured Windows application identity contains unsupported characters.");
 
     var quotedIdentifier = "[" + applicationIdentity.Replace("]", "]]", StringComparison.Ordinal) + "]";
-    var sqlLiteral = applicationIdentity.Replace("'", "''", StringComparison.Ordinal);
-
-    var masterConnection = new SqlConnectionStringBuilder(connectionString)
+    var masterConnectionString = new SqlConnectionStringBuilder(connectionString)
     {
         InitialCatalog = "master"
-    };
-    var masterOptions = new DbContextOptionsBuilder<LedgerForgeDbContext>()
-        .UseSqlServer(masterConnection.ConnectionString)
-        .Options;
+    }.ConnectionString;
 
-    await using (var masterDbContext = new LedgerForgeDbContext(masterOptions))
+    await using (var masterConnection = new SqlConnection(masterConnectionString))
     {
-        await masterDbContext.Database.ExecuteSqlRawAsync($"""
-            IF SUSER_ID(N'{sqlLiteral}') IS NULL
-                CREATE LOGIN {quotedIdentifier} FROM WINDOWS;
-            """);
+        await masterConnection.OpenAsync();
+        await using var command = masterConnection.CreateCommand();
+        command.CommandText = $"IF SUSER_ID(@identity) IS NULL CREATE LOGIN {quotedIdentifier} FROM WINDOWS;";
+        command.Parameters.AddWithValue("@identity", applicationIdentity);
+        await command.ExecuteNonQueryAsync();
     }
 
-    await applicationDbContext.Database.ExecuteSqlRawAsync($"""
-        IF DATABASE_PRINCIPAL_ID(N'{sqlLiteral}') IS NULL
-            CREATE USER {quotedIdentifier} FOR LOGIN {quotedIdentifier};
+    await using (var applicationConnection = new SqlConnection(connectionString))
+    {
+        await applicationConnection.OpenAsync();
+        await using var command = applicationConnection.CreateCommand();
+        command.CommandText = $"""
+            IF DATABASE_PRINCIPAL_ID(@identity) IS NULL
+                CREATE USER {quotedIdentifier} FOR LOGIN {quotedIdentifier};
 
-        IF NOT EXISTS (
-            SELECT 1
-            FROM sys.database_role_members drm
-            JOIN sys.database_principals role_principal ON role_principal.principal_id = drm.role_principal_id
-            JOIN sys.database_principals member_principal ON member_principal.principal_id = drm.member_principal_id
-            WHERE role_principal.name = N'db_datareader' AND member_principal.name = N'{sqlLiteral}')
-            ALTER ROLE [db_datareader] ADD MEMBER {quotedIdentifier};
+            IF NOT EXISTS (
+                SELECT 1
+                FROM sys.database_role_members drm
+                JOIN sys.database_principals role_principal ON role_principal.principal_id = drm.role_principal_id
+                JOIN sys.database_principals member_principal ON member_principal.principal_id = drm.member_principal_id
+                WHERE role_principal.name = N'db_datareader' AND member_principal.name = @identity)
+                ALTER ROLE [db_datareader] ADD MEMBER {quotedIdentifier};
 
-        IF NOT EXISTS (
-            SELECT 1
-            FROM sys.database_role_members drm
-            JOIN sys.database_principals role_principal ON role_principal.principal_id = drm.role_principal_id
-            JOIN sys.database_principals member_principal ON member_principal.principal_id = drm.member_principal_id
-            WHERE role_principal.name = N'db_datawriter' AND member_principal.name = N'{sqlLiteral}')
-            ALTER ROLE [db_datawriter] ADD MEMBER {quotedIdentifier};
-        """);
+            IF NOT EXISTS (
+                SELECT 1
+                FROM sys.database_role_members drm
+                JOIN sys.database_principals role_principal ON role_principal.principal_id = drm.role_principal_id
+                JOIN sys.database_principals member_principal ON member_principal.principal_id = drm.member_principal_id
+                WHERE role_principal.name = N'db_datawriter' AND member_principal.name = @identity)
+                ALTER ROLE [db_datawriter] ADD MEMBER {quotedIdentifier};
+            """;
+        command.Parameters.AddWithValue("@identity", applicationIdentity);
+        await command.ExecuteNonQueryAsync();
+    }
 }
 
 file sealed class BootstrapAuditRequestContext : IAuditRequestContext
