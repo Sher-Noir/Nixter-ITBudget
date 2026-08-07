@@ -15,6 +15,7 @@ public sealed class ItBudgetDbContext(DbContextOptions<ItBudgetDbContext> option
     public DbSet<ImportException> ImportExceptions => Set<ImportException>();
 
     public DbSet<BudgetSection> BudgetSections => Set<BudgetSection>();
+    public DbSet<FinanceType> FinanceTypes => Set<FinanceType>();
     public DbSet<FinanceAccount> FinanceAccounts => Set<FinanceAccount>();
     public DbSet<FinanceCategory> FinanceCategories => Set<FinanceCategory>();
     public DbSet<InternalCategory> InternalCategories => Set<InternalCategory>();
@@ -103,9 +104,16 @@ public sealed class ItBudgetDbContext(DbContextOptions<ItBudgetDbContext> option
 
     private static void ConfigureManagedLookups(ModelBuilder modelBuilder)
     {
-        modelBuilder.Entity<ManagedLookupEntity>().UseTpcMappingStrategy();
+        var lookupBase = modelBuilder.Entity<ManagedLookupEntity>();
+        lookupBase.UseTpcMappingStrategy();
+        lookupBase.HasKey(x => x.Id);
+        lookupBase.Property(x => x.Code).HasMaxLength(100).IsRequired();
+        lookupBase.Property(x => x.Name).HasMaxLength(250).IsRequired();
+        lookupBase.Property(x => x.Description).HasMaxLength(1000);
+        lookupBase.Property(x => x.RowVersion).IsRowVersion();
 
         ConfigureLookup<BudgetSection>(modelBuilder, "BudgetSection");
+        ConfigureLookup<FinanceType>(modelBuilder, "FinanceType");
         ConfigureLookup<FinanceAccount>(modelBuilder, "FinanceAccount");
         ConfigureLookup<FinanceCategory>(modelBuilder, "FinanceCategory");
         ConfigureLookup<InternalCategory>(modelBuilder, "InternalCategory");
@@ -151,11 +159,6 @@ public sealed class ItBudgetDbContext(DbContextOptions<ItBudgetDbContext> option
         {
             table.HasCheckConstraint($"CK_{tableName}_SortOrder", "[SortOrder] >= 0");
         });
-        entity.HasKey(x => x.Id);
-        entity.Property(x => x.Code).HasMaxLength(100).IsRequired();
-        entity.Property(x => x.Name).HasMaxLength(250).IsRequired();
-        entity.Property(x => x.Description).HasMaxLength(1000);
-        entity.Property(x => x.RowVersion).IsRowVersion();
         entity.HasIndex(x => x.Code).IsUnique();
         entity.HasIndex(x => new { x.IsActive, x.SortOrder, x.Name });
     }
