@@ -224,6 +224,10 @@ public sealed class ImportReviewService(LedgerForgeDbContext dbContext)
         var batch = await dbContext.ImportBatches
             .SingleOrDefaultAsync(x => x.Id == batchId, cancellationToken)
             ?? throw new KeyNotFoundException("Import batch was not found.");
+
+        if (!string.IsNullOrWhiteSpace(batch.AcceptedBy))
+            throw new InvalidOperationException("Accepted import previews cannot be rejected. Use a dedicated cancellation workflow once authoritative commit is implemented.");
+
         batch.Reject();
         await dbContext.SaveChangesAsync(cancellationToken);
     }
