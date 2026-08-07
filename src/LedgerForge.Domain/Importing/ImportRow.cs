@@ -37,6 +37,9 @@ public sealed class ImportRow : AuditableEntity
     public ImportRowOutcome Outcome { get; private set; }
     public string? TargetEntityType { get; private set; }
     public Guid? TargetEntityId { get; private set; }
+    public string? ReviewedBy { get; private set; }
+    public DateTimeOffset? ReviewedAtUtc { get; private set; }
+    public string? ReviewNote { get; private set; }
 
     public void Accept(bool withWarning = false)
     {
@@ -48,6 +51,27 @@ public sealed class ImportRow : AuditableEntity
     {
         EnsurePending();
         Outcome = ImportRowOutcome.Rejected;
+    }
+
+    public void OverrideReviewOutcome(
+        ImportRowOutcome outcome,
+        string actor,
+        string note,
+        DateTimeOffset reviewedAtUtc)
+    {
+        if (Outcome == ImportRowOutcome.Committed)
+            throw new InvalidOperationException("Committed import rows cannot be reclassified.");
+        if (outcome is not (ImportRowOutcome.Accepted or ImportRowOutcome.AcceptedWithWarning or ImportRowOutcome.Rejected))
+            throw new ArgumentOutOfRangeException(nameof(outcome), "Review outcome must be Accepted, AcceptedWithWarning, or Rejected.");
+        if (string.IsNullOrWhiteSpace(actor)) throw new ArgumentException("Reviewer identity is required.", nameof(actor));
+        if (actor.Trim().Length > 256) throw new ArgumentException("Reviewer identity cannot exceed 256 characters.", nameof(actor));
+        if (string.IsNullOrWhiteSpace(note)) throw new ArgumentException("Review note is required.", nameof(note));
+        if (note.Trim().Length > 2000) throw new ArgumentException("Review note cannot exceed 2000 characters.", nameof(note));
+
+        Outcome = outcome;
+        ReviewedBy = actor.Trim();
+        ReviewedAtUtc = reviewedAtUtc;
+        ReviewNote = note.Trim();
     }
 
     public void MarkCommitted(string targetEntityType, Guid targetEntityId)
