@@ -172,6 +172,12 @@ public sealed class InvoiceAllocation : AuditableEntity
     public Guid? LocationId { get; private set; }
     public Guid? FiscalPeriodId { get; private set; }
 
+    public void AssignFiscalPeriod(Guid fiscalPeriodId)
+    {
+        if (fiscalPeriodId == Guid.Empty) throw new ArgumentException("Fiscal period ID cannot be empty.", nameof(fiscalPeriodId));
+        FiscalPeriodId = fiscalPeriodId;
+    }
+
     private static Guid? NormalizeId(Guid? value, string parameterName)
     {
         if (value == Guid.Empty) throw new ArgumentException("Identifier cannot be an empty GUID.", parameterName);
