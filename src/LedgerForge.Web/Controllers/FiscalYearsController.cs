@@ -45,7 +45,7 @@ public sealed class FiscalYearsController(FiscalYearAdministrationService servic
                 cancellationToken);
             return RedirectToAction(nameof(Details), new { id, saved = true });
         }
-        catch (Exception exception) when (exception is ArgumentException or ArgumentOutOfRangeException or InvalidOperationException)
+        catch (Exception exception) when (exception is ArgumentException or InvalidOperationException)
         {
             var years = await service.ListAsync(cancellationToken);
             return View("Index", new FiscalYearIndexViewModel(years, exception.Message));
