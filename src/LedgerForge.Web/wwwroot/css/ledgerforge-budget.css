@@ -60,6 +60,17 @@
 .lf-admin-action { display: flex; align-items: end; }
 .lf-admin-action button { min-height: 40px; }
 
+.lf-approval-card { box-shadow: none; background: var(--lf-surface-2); }
+.lf-approval-card h2 { margin: .45rem 0 .2rem; font-size: 1rem; }
+.lf-approval-amount { font-size: 1.2rem; color: var(--lf-primary); white-space: nowrap; }
+.lf-approval-card > .lf-toolbar { margin: .75rem 0 0; align-items: flex-end; }
+.lf-approval-card > .lf-toolbar form { display: flex; gap: .45rem; align-items: flex-end; }
+.lf-approval-card > .lf-toolbar form input { min-width: 220px; }
+.lf-approval-card details { border: 1px solid var(--lf-border); border-radius: 9px; padding: .55rem .7rem; background: var(--lf-surface); }
+.lf-approval-card details summary { cursor: pointer; }
+.lf-approval-decision-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: .7rem; margin-top: .7rem; }
+.lf-approval-decision-grid form { display: grid !important; grid-template-columns: 1fr; align-items: stretch !important; }
+
 .lf-import-exceptions, .lf-import-rows { display: grid; gap: .7rem; }
 .lf-import-exception { border: 1px solid var(--lf-border); border-left-width: 4px; border-radius: 10px; padding: .85rem; background: var(--lf-surface-2); }
 .lf-import-error { border-left-color: var(--lf-danger); }
@@ -89,7 +100,8 @@
   .lf-admin-code { grid-column: 1 / -1; }
   .lf-form-grid-3 { grid-template-columns: 1fr 1fr; }
   .lf-form-grid-3 .lf-span-all { grid-column: 1 / -1; }
-  .lf-import-exception-actions { grid-template-columns: 1fr; }
+  .lf-import-exception-actions, .lf-approval-decision-grid { grid-template-columns: 1fr; }
+  .lf-approval-card > .lf-toolbar form { width: 100%; }
 }
 
 @media (max-width: 720px) {
@@ -102,4 +114,6 @@
   .lf-admin-code, .lf-admin-state, .lf-admin-action, .lf-form-grid-3 .lf-span-all { grid-column: auto; }
   .lf-inline-form { align-items: stretch; flex-direction: column; }
   .lf-import-exception-head { align-items: flex-start; flex-direction: column; }
+  .lf-approval-card > .lf-toolbar form { flex-direction: column; align-items: stretch; }
+  .lf-approval-card > .lf-toolbar form input { min-width: 0; }
 }
