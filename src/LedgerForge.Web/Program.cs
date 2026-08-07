@@ -14,6 +14,7 @@ using LedgerForge.Infrastructure.Reporting;
 using LedgerForge.Infrastructure.Security;
 using LedgerForge.Web.Auditing;
 using LedgerForge.Web.Configuration;
+using LedgerForge.Web.Diagnostics;
 using LedgerForge.Web.Security;
 using Microsoft.AspNetCore.Authentication.Negotiate;
 using Microsoft.AspNetCore.Authorization;
@@ -71,6 +72,7 @@ builder.Services.AddScoped<RenewalProjectionService>();
 builder.Services.AddScoped<ReportingService>();
 builder.Services.AddScoped<RenewalCalendarService>();
 builder.Services.AddScoped<DashboardService>();
+builder.Services.AddScoped<DeploymentDiagnosticsService>();
 
 var app = builder.Build();
 
