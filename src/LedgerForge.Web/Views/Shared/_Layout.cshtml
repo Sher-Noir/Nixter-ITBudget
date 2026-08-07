@@ -1,7 +1,7 @@
-@using Microsoft.Extensions.Options
-@inject IOptions<LedgerForge.Web.Configuration.BrandingOptions> BrandingOptionsAccessor
+@using LedgerForge.Web.Configuration
+@inject OrganizationSettingsStore OrganizationSettings
 @{
-    var branding = BrandingOptionsAccessor.Value;
+    var branding = await OrganizationSettings.GetAsync(Context.RequestAborted);
     var pageTitle = ViewData["Title"] as string;
     var title = string.IsNullOrWhiteSpace(pageTitle) ? branding.ProductName : $"{pageTitle} - {branding.ProductName}";
     var userName = User.Identity?.Name ?? "Signed-in user";
@@ -14,6 +14,10 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="color-scheme" content="light dark" />
     <title>@title</title>
+    @if (!string.IsNullOrWhiteSpace(branding.IconPath))
+    {
+        <link rel="icon" href="@branding.IconPath" />
+    }
     <link rel="stylesheet" href="~/css/ledgerforge.css" asp-append-version="true" />
 </head>
 <body>
@@ -44,7 +48,8 @@
             <a href="/reports"><span class="lf-nav-icon">▥</span><span>Reports</span></a>
             <a href="/fiscal-years"><span class="lf-nav-icon">▣</span><span>Fiscal Years</span></a>
             <a href="/imports"><span class="lf-nav-icon">⇅</span><span>Imports &amp; Exports</span></a>
-            <a href="/admin/security"><span class="lf-nav-icon">⚙</span><span>Administration</span></a>
+            <a href="/admin/organization"><span class="lf-nav-icon">✦</span><span>Organization</span></a>
+            <a href="/admin/security"><span class="lf-nav-icon">⚙</span><span>Security</span></a>
         </nav>
         <div class="lf-sidebar-footer"><strong>@branding.OrganizationName</strong><br />@branding.ApplicationTitle</div>
     </aside>
