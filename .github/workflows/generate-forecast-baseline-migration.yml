@@ -36,38 +36,41 @@ jobs:
         shell: python
         run: |
           from pathlib import Path
+          import re
 
           migration = next(Path('src/LedgerForge.Infrastructure/Persistence/Migrations').glob('*_AddForecastBaselineSnapshot.cs'))
           text = migration.read_text(encoding='utf-8-sig')
-          generated = '''            migrationBuilder.AddColumn<decimal>(
-                name: "BaselineTotal",
-                table: "ForecastLine",
-                type: "decimal(19,4)",
-                nullable: false,
-                defaultValue: 0m);'''
-          reviewed = '''            migrationBuilder.AddColumn<decimal>(
-                name: "BaselineTotal",
-                table: "ForecastLine",
-                type: "decimal(19,4)",
-                nullable: true);
+          pattern = re.compile(
+              r'(?P<indent>[ \t]*)migrationBuilder\.AddColumn<decimal>\(\s*'
+              r'name: "BaselineTotal",\s*table: "ForecastLine",\s*'
+              r'type: "decimal\(19,4\)",\s*nullable: false'
+              r'(?:,\s*defaultValue: 0m)?\);',
+              re.MULTILINE)
+          match = pattern.search(text)
+          if not match:
+              raise SystemExit('Expected generated BaselineTotal AddColumn operation was not found; review EF output manually.')
+          indent = match.group('indent')
+          reviewed = f'''{indent}migrationBuilder.AddColumn<decimal>(
+          {indent}    name: "BaselineTotal",
+          {indent}    table: "ForecastLine",
+          {indent}    type: "decimal(19,4)",
+          {indent}    nullable: true);
 
-            migrationBuilder.Sql("""
-                UPDATE [ForecastLine]
-                SET [BaselineTotal] = [ForecastTotal]
-                WHERE [BaselineTotal] IS NULL;
-                """);
+          {indent}migrationBuilder.Sql("""
+          {indent}    UPDATE [ForecastLine]
+          {indent}    SET [BaselineTotal] = [ForecastTotal]
+          {indent}    WHERE [BaselineTotal] IS NULL;
+          {indent}    """);
 
-            migrationBuilder.AlterColumn<decimal>(
-                name: "BaselineTotal",
-                table: "ForecastLine",
-                type: "decimal(19,4)",
-                nullable: false,
-                oldClrType: typeof(decimal),
-                oldType: "decimal(19,4)",
-                oldNullable: true);'''
-          if generated not in text:
-              raise SystemExit('Expected generated BaselineTotal AddColumn block was not found; review EF output manually.')
-          migration.write_text(text.replace(generated, reviewed), encoding='utf-8')
+          {indent}migrationBuilder.AlterColumn<decimal>(
+          {indent}    name: "BaselineTotal",
+          {indent}    table: "ForecastLine",
+          {indent}    type: "decimal(19,4)",
+          {indent}    nullable: false,
+          {indent}    oldClrType: typeof(decimal),
+          {indent}    oldType: "decimal(19,4)",
+          {indent}    oldNullable: true);'''
+          migration.write_text(text[:match.start()] + reviewed + text[match.end():], encoding='utf-8')
       - name: Commit generated migration to branch
         if: github.event_name == 'push'
         run: |
