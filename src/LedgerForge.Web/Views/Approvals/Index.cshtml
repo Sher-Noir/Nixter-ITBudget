@@ -1,0 +1,105 @@
+@model LedgerForge.Infrastructure.Approvals.ApprovalQueueSnapshot
+@using LedgerForge.Infrastructure.Approvals
+@{
+    ViewData["Title"] = "Approvals";
+    var errorMessage = ViewData["ErrorMessage"] as string;
+    var saved = ViewData["Saved"] as bool? == true;
+}
+
+<div class="lf-page-header">
+    <div>
+        <h1 class="lf-page-title">Approval Queue</h1>
+        <p class="lf-subtitle">Review submitted budget items and purchase orders from one queue. Approval decisions are stateful and preserve reviewer lineage.</p>
+    </div>
+</div>
+
+@if (!string.IsNullOrWhiteSpace(errorMessage))
+{
+    <div class="lf-card lf-alert lf-alert-danger" role="alert">@errorMessage</div>
+}
+@if (saved)
+{
+    <div class="lf-card lf-alert lf-alert-success" role="status">Approval decision saved.</div>
+}
+
+<div class="lf-kpi-grid">
+    <article class="lf-card lf-kpi"><div class="lf-kpi-icon blue">B</div><div><div class="lf-card-title">Budget Items</div><div class="lf-kpi-value">@Model.BudgetItemCount</div><div class="lf-kpi-note">Submitted planning items</div></div></article>
+    <article class="lf-card lf-kpi"><div class="lf-kpi-icon orange">PO</div><div><div class="lf-card-title">Purchase Orders</div><div class="lf-kpi-value">@Model.PurchaseOrderCount</div><div class="lf-kpi-note">Pending procurement approvals</div></div></article>
+    <article class="lf-card lf-kpi"><div class="lf-kpi-icon gold">$</div><div><div class="lf-card-title">Pending Value</div><div class="lf-kpi-value">@Model.PendingAmount.ToString("C2")</div><div class="lf-kpi-note">Combined queue value</div></div></article>
+</div>
+
+<section class="lf-card" aria-labelledby="approval-list-title">
+    <div class="lf-panel-header">
+        <div><h2 id="approval-list-title">Pending decisions</h2><p class="lf-muted">Oldest submissions appear first.</p></div>
+        <span class="badge">@Model.Items.Count pending</span>
+    </div>
+
+    @if (Model.Items.Count == 0)
+    {
+        <div class="lf-empty-state"><h2>Approval queue is clear</h2><p>No budget items or purchase orders are currently awaiting approval.</p></div>
+    }
+    else
+    {
+        <div class="lf-admin-stack">
+            @foreach (var item in Model.Items)
+            {
+                <article class="lf-card lf-approval-card">
+                    <div class="lf-panel-header">
+                        <div>
+                            <span class="badge">@(item.Type == ApprovalQueueItemType.BudgetItem ? "Budget item" : "Purchase order")</span>
+                            <h2>@item.Reference · @item.Description</h2>
+                            <p class="lf-muted">@item.FiscalYear · submitted by @(item.SubmittedBy ?? "Unknown") @(item.SubmittedAtUtc is null ? string.Empty : $"on {item.SubmittedAtUtc.Value:u}")</p>
+                        </div>
+                        <strong class="lf-approval-amount">@item.Amount.ToString("C2")</strong>
+                    </div>
+
+                    <div class="lf-toolbar">
+                        @if (item.Type == ApprovalQueueItemType.BudgetItem)
+                        {
+                            <a class="button" href="/budget/items/@item.Id">Review item</a>
+                            <form method="post" action="/approvals/budget-items/@item.Id/approve">
+                                @Html.AntiForgeryToken()
+                                <input name="note" maxlength="2000" placeholder="Optional approval note" />
+                                <button class="primary" type="submit">Approve</button>
+                            </form>
+                            <details>
+                                <summary>Deny or defer</summary>
+                                <div class="lf-approval-decision-grid">
+                                    <form method="post" action="/approvals/budget-items/@item.Id/deny">
+                                        @Html.AntiForgeryToken()
+                                        <label for="deny-@item.Id">Denial reason</label>
+                                        <input id="deny-@item.Id" name="reason" maxlength="2000" required />
+                                        <button type="submit">Deny</button>
+                                    </form>
+                                    <form method="post" action="/approvals/budget-items/@item.Id/defer">
+                                        @Html.AntiForgeryToken()
+                                        <label for="defer-@item.Id">Deferral reason</label>
+                                        <input id="defer-@item.Id" name="reason" maxlength="2000" required />
+                                        <button type="submit">Defer</button>
+                                    </form>
+                                </div>
+                            </details>
+                        }
+                        else
+                        {
+                            <a class="button" href="/purchase-orders/@item.Id">Review purchase order</a>
+                            <form method="post" action="/approvals/purchase-orders/@item.Id/approve">
+                                @Html.AntiForgeryToken()
+                                <button class="primary" type="submit">Approve</button>
+                            </form>
+                            <details>
+                                <summary>Reject</summary>
+                                <form method="post" action="/approvals/purchase-orders/@item.Id/reject">
+                                    @Html.AntiForgeryToken()
+                                    <label for="po-reject-@item.Id">Rejection reason</label>
+                                    <input id="po-reject-@item.Id" name="reason" maxlength="1000" required />
+                                    <button type="submit">Reject</button>
+                                </form>
+                            </details>
+                        }
+                    </div>
+                </article>
+            }
+        </div>
+    }
+</section>
