@@ -118,14 +118,15 @@ jobs:
           print('\n'.join(summary))
           PY
 
-      - name: Apply migration to disposable SQL Server
-        shell: bash
-        run: |
-          dotnet ef database update \
-            --project src/LedgerForge.Infrastructure/LedgerForge.Infrastructure.csproj \
-            --startup-project src/LedgerForge.Web/LedgerForge.Web.csproj \
-            --context LedgerForgeDbContext \
-            --connection "$LEDGERFORGE_TEST_CONNECTION"
+      - name: Initialize disposable database with deployment bootstrap
+        run: dotnet run --project src/LedgerForge.Bootstrap/LedgerForge.Bootstrap.csproj --configuration Release --no-build -- initialize
+        env:
+          LEDGERFORGE_CONNECTION_STRING: ${{ env.LEDGERFORGE_TEST_CONNECTION }}
+
+      - name: Verify database with deployment bootstrap
+        run: dotnet run --project src/LedgerForge.Bootstrap/LedgerForge.Bootstrap.csproj --configuration Release --no-build -- verify
+        env:
+          LEDGERFORGE_CONNECTION_STRING: ${{ env.LEDGERFORGE_TEST_CONNECTION }}
 
       - name: Inspect applied schema
         shell: bash
