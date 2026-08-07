@@ -38,6 +38,7 @@ builder.Services.AddScoped<ImportReviewService>();
 builder.Services.AddScoped<LegacyBudgetImportCommitService>();
 builder.Services.AddScoped<ManagedLookupInitializer>();
 builder.Services.AddScoped<LookupAdministrationService>();
+builder.Services.AddScoped<FinanceAdministrationService>();
 builder.Services.AddScoped<SecurityAdministrationService>();
 builder.Services.AddScoped<FiscalYearAdministrationService>();
 builder.Services.AddScoped<BudgetPlanningService>();
