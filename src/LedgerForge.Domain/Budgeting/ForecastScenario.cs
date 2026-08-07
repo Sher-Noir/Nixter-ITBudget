@@ -76,31 +76,44 @@ public sealed class ForecastLine : AuditableEntity
     private ForecastLine() { }
 
     public ForecastLine(Guid forecastScenarioId, Guid budgetItemId, decimal forecastTotal, string? note = null)
+        : this(forecastScenarioId, budgetItemId, forecastTotal, forecastTotal, note)
+    {
+    }
+
+    public ForecastLine(
+        Guid forecastScenarioId,
+        Guid budgetItemId,
+        decimal baselineTotal,
+        decimal forecastTotal,
+        string? note = null)
     {
         if (forecastScenarioId == Guid.Empty) throw new ArgumentException("Forecast scenario is required.", nameof(forecastScenarioId));
         if (budgetItemId == Guid.Empty) throw new ArgumentException("Budget item is required.", nameof(budgetItemId));
-        ValidateAmount(forecastTotal);
+        ValidateAmount(baselineTotal, nameof(baselineTotal), "Forecast baseline cannot be negative.");
+        ValidateAmount(forecastTotal, nameof(forecastTotal), "Forecast total cannot be negative.");
         ForecastScenarioId = forecastScenarioId;
         BudgetItemId = budgetItemId;
+        BaselineTotal = baselineTotal;
         ForecastTotal = forecastTotal;
         Note = Optional(note, 1000, nameof(note));
     }
 
     public Guid ForecastScenarioId { get; private set; }
     public Guid BudgetItemId { get; private set; }
+    public decimal BaselineTotal { get; private set; }
     public decimal ForecastTotal { get; private set; }
     public string? Note { get; private set; }
 
     public void Update(decimal forecastTotal, string? note)
     {
-        ValidateAmount(forecastTotal);
+        ValidateAmount(forecastTotal, nameof(forecastTotal), "Forecast total cannot be negative.");
         ForecastTotal = forecastTotal;
         Note = Optional(note, 1000, nameof(note));
     }
 
-    private static void ValidateAmount(decimal value)
+    private static void ValidateAmount(decimal value, string parameterName, string message)
     {
-        if (value < 0m) throw new ArgumentOutOfRangeException(nameof(value), "Forecast total cannot be negative.");
+        if (value < 0m) throw new ArgumentOutOfRangeException(parameterName, message);
     }
 
     private static string? Optional(string? value, int max, string parameterName)
