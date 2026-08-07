@@ -12,13 +12,16 @@ public sealed class OrganizationSettingsStore
 
     private readonly string _settingsPath;
     private readonly BrandingOptions _defaults;
+    private readonly ILogger<OrganizationSettingsStore> _logger;
     private readonly SemaphoreSlim _gate = new(1, 1);
 
     public OrganizationSettingsStore(
         IWebHostEnvironment environment,
-        IOptions<BrandingOptions> defaults)
+        IOptions<BrandingOptions> defaults,
+        ILogger<OrganizationSettingsStore> logger)
     {
-        _defaults = Clone(defaults.Value);
+        _defaults = ValidateAndNormalize(Clone(defaults.Value));
+        _logger = logger;
         _settingsPath = Path.Combine(environment.ContentRootPath, "App_Data", "organization-settings.json");
     }
 
@@ -29,9 +32,17 @@ public sealed class OrganizationSettingsStore
         {
             if (!File.Exists(_settingsPath)) return Clone(_defaults);
 
-            await using var stream = File.OpenRead(_settingsPath);
-            var stored = await JsonSerializer.DeserializeAsync<BrandingOptions>(stream, JsonOptions, cancellationToken);
-            return stored is null ? Clone(_defaults) : Normalize(stored, _defaults);
+            try
+            {
+                await using var stream = File.OpenRead(_settingsPath);
+                var stored = await JsonSerializer.DeserializeAsync<BrandingOptions>(stream, JsonOptions, cancellationToken);
+                return stored is null ? Clone(_defaults) : Normalize(stored, _defaults);
+            }
+            catch (Exception exception) when (exception is JsonException or IOException or UnauthorizedAccessException or ArgumentException)
+            {
+                _logger.LogWarning(exception, "Organization settings could not be loaded; deployment defaults will be used.");
+                return Clone(_defaults);
+            }
         }
         finally
         {
@@ -88,17 +99,15 @@ public sealed class OrganizationSettingsStore
 
         var theme = value.DefaultTheme?.Trim().ToLowerInvariant();
         if (theme is not ("light" or "dark" or "system"))
-        {
             throw new ArgumentException("Default theme must be light, dark, or system.");
-        }
 
         return new BrandingOptions
         {
             ProductName = value.ProductName.Trim(),
             OrganizationName = value.OrganizationName.Trim(),
             ApplicationTitle = value.ApplicationTitle.Trim(),
-            LogoPath = NormalizeOptional(value.LogoPath),
-            IconPath = NormalizeOptional(value.IconPath),
+            LogoPath = NormalizeAssetPath(value.LogoPath, "Logo path"),
+            IconPath = NormalizeAssetPath(value.IconPath, "Icon path"),
             SupportText = NormalizeOptional(value.SupportText),
             FooterText = NormalizeOptional(value.FooterText),
             TimeZone = value.TimeZone.Trim(),
@@ -138,4 +147,13 @@ public sealed class OrganizationSettingsStore
 
     private static string NormalizeOptional(string? value)
         => string.IsNullOrWhiteSpace(value) ? string.Empty : value.Trim();
+
+    private static string NormalizeAssetPath(string? value, string fieldName)
+    {
+        var normalized = NormalizeOptional(value);
+        if (normalized.Length == 0) return normalized;
+        if (!normalized.StartsWith('/', StringComparison.Ordinal) || normalized.StartsWith("//", StringComparison.Ordinal))
+            throw new ArgumentException($"{fieldName} must be an application-local path beginning with '/'.");
+        return normalized;
+    }
 }
