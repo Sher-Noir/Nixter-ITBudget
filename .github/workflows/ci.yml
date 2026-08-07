@@ -22,8 +22,6 @@ jobs:
 
   migration-gate:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
     services:
       sqlserver:
         image: mcr.microsoft.com/mssql/server:2022-latest
@@ -69,21 +67,13 @@ jobs:
           docker logs "$container_id"
           exit 1
 
-      - name: Generate InitialCreate migration when absent
-        id: migration
+      - name: Require committed InitialCreate migration
         shell: bash
         run: |
           migration_dir='src/LedgerForge.Infrastructure/Persistence/Migrations'
-          if find "$migration_dir" -maxdepth 1 -name '*_InitialCreate.cs' -print -quit 2>/dev/null | grep -q .; then
-            echo 'InitialCreate already exists; validating the committed migration.'
-            echo 'generated=false' >> "$GITHUB_OUTPUT"
-          else
-            dotnet ef migrations add InitialCreate \
-              --project src/LedgerForge.Infrastructure/LedgerForge.Infrastructure.csproj \
-              --startup-project src/LedgerForge.Web/LedgerForge.Web.csproj \
-              --context LedgerForgeDbContext \
-              --output-dir Persistence/Migrations
-            echo 'generated=true' >> "$GITHUB_OUTPUT"
+          if ! find "$migration_dir" -maxdepth 1 -name '*_InitialCreate.cs' -print -quit 2>/dev/null | grep -q .; then
+            echo 'InitialCreate is not committed. Generate and review migrations explicitly before CI.'
+            exit 1
           fi
 
       - name: Verify migration matches the EF model
@@ -214,7 +204,7 @@ jobs:
         env:
           ConnectionStrings__LedgerForge: ${{ env.LEDGERFORGE_TEST_CONNECTION }}
 
-      - name: Upload generated migration review
+      - name: Upload migration review
         uses: actions/upload-artifact@v4
         with:
           name: ledgerforge-initial-migration
@@ -224,13 +214,3 @@ jobs:
             artifacts/InitialCreate.sql
             artifacts/schema-review.txt
             artifacts/schema-inspection.sql
-
-      - name: Commit generated migration after all gates pass
-        if: github.event_name == 'push' && steps.migration.outputs.generated == 'true'
-        shell: bash
-        run: |
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add src/LedgerForge.Infrastructure/Persistence/Migrations
-          git commit -m 'Add reviewed InitialCreate EF migration'
-          git push origin "HEAD:${GITHUB_REF_NAME}"
