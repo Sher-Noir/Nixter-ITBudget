@@ -1,0 +1,79 @@
+name: run-v1-finalizer
+
+on:
+  pull_request:
+    branches: [ main ]
+    paths:
+      - '.github/workflows/run-v1-finalizer.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  finalize:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }}
+          fetch-depth: 0
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      - name: Execute consolidated reconciliation script
+        shell: python
+        run: |
+          from pathlib import Path
+          workflow = Path('.github/workflows/finalize-v1-fixes.yml').read_text(encoding='utf-8')
+          start_marker = '      - name: Reconcile v1 source and permanent gates\n        shell: python\n        run: |\n'
+          end_marker = '\n      - name: Restore, build, and test reconciled source\n'
+          start = workflow.find(start_marker)
+          end = workflow.find(end_marker, start + len(start_marker))
+          if start < 0 or end < 0:
+              raise SystemExit('Unable to extract reconciliation script.')
+          block = workflow[start + len(start_marker):end]
+          lines = block.splitlines()
+          script = '\n'.join(line[10:] if line.startswith('          ') else line for line in lines) + '\n'
+          compile(script, 'finalize_v1.py', 'exec')
+          exec(script, {'__name__': '__main__'})
+
+      - name: Restore, build, migrate-check, and test
+        shell: bash
+        run: |
+          set -euo pipefail
+          dotnet tool restore
+          dotnet restore LedgerForge.slnx
+          dotnet build LedgerForge.slnx --configuration Release --no-restore
+          dotnet ef migrations has-pending-model-changes \
+            --project src/LedgerForge.Infrastructure/LedgerForge.Infrastructure.csproj \
+            --startup-project src/LedgerForge.Web/LedgerForge.Web.csproj \
+            --context LedgerForgeDbContext
+          dotnet test tests/LedgerForge.UnitTests/LedgerForge.UnitTests.csproj --configuration Release --no-build
+          dotnet test tests/LedgerForge.IntegrationTests/LedgerForge.IntegrationTests.csproj --configuration Release --no-build
+          dotnet test tests/LedgerForge.UiTests/LedgerForge.UiTests.csproj --configuration Release --no-build
+
+      - name: Remove temporary workflows and push repaired branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git rm -f --ignore-unmatch \
+            .github/workflows/run-v1-finalizer.yml \
+            .github/workflows/finalize-v1-fixes.yml \
+            .github/workflows/complete-change-order-editing.yml \
+            .github/workflows/enable-v1-automerge.yml \
+            .github/workflows/enable-v1-ready.yml \
+            .github/workflows/ensure-v1-hardening.yml \
+            .github/workflows/final-doc-refresh.yml \
+            .github/workflows/final-v1-maintenance.yml \
+            .github/workflows/harden-actual-import-idempotency.yml \
+            .github/workflows/preserve-po-line-dimensions.yml \
+            .github/workflows/reconcile-v1-state.yml \
+            .github/workflows/remove-legacy-scan-literals.yml \
+            .github/workflows/v1-merge-observer.yml
+          git add src tests docs README.md .github/workflows/release.yml .github/workflows/public-hygiene.yml .github/workflows/v1-release-gate.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'Reconcile LedgerForge v1 release checks'
+          git push origin HEAD:${{ github.head_ref }}
