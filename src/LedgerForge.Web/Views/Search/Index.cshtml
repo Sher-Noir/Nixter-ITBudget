@@ -1,0 +1,52 @@
+@model LedgerForge.Web.Models.Search.SearchViewModel
+@{
+    ViewData["Title"] = "Search";
+}
+
+<div class="lf-page-header">
+    <div>
+        <h1 class="lf-page-title">Search LedgerForge</h1>
+        <p class="lf-subtitle">Search budget items, vendors, purchase orders, invoices, and contracts.</p>
+    </div>
+</div>
+
+<form method="get" action="/search" class="lf-card">
+    <div class="lf-inline-form">
+        <input type="search" name="q" value="@Model.Query" minlength="2" maxlength="100" placeholder="Search by number, name, or description" aria-label="Search LedgerForge" required />
+        <button class="primary" type="submit">Search</button>
+    </div>
+</form>
+
+<section class="lf-card" aria-labelledby="search-results-title">
+    <div class="lf-panel-header">
+        <div><h2 id="search-results-title">Results</h2><p class="lf-muted">Up to 10 matches per module.</p></div>
+        <span class="badge">@Model.Results.Count result@(Model.Results.Count == 1 ? string.Empty : "s")</span>
+    </div>
+
+    @if (string.IsNullOrWhiteSpace(Model.Query))
+    {
+        <div class="lf-empty-state"><p>Enter at least two characters to search.</p></div>
+    }
+    else if (Model.Results.Count == 0)
+    {
+        <div class="lf-empty-state"><p>No records matched <strong>@Model.Query</strong>.</p></div>
+    }
+    else
+    {
+        <div class="lf-admin-stack">
+            @foreach (var result in Model.Results)
+            {
+                <article class="lf-card">
+                    <div class="lf-panel-header">
+                        <div>
+                            <span class="badge">@result.Type</span>
+                            <h2><a href="@result.Url">@result.Reference · @result.Title</a></h2>
+                            @if (!string.IsNullOrWhiteSpace(result.Detail)) { <p class="lf-muted">@result.Detail</p> }
+                        </div>
+                        <a class="button" href="@result.Url">Open</a>
+                    </div>
+                </article>
+            }
+        </div>
+    }
+</section>
