@@ -40,10 +40,25 @@ public sealed class PhysicalDocumentStore
     private readonly long _maxFileSizeBytes;
 
     public PhysicalDocumentStore(string contentRootPath, long maxFileSizeBytes = DefaultMaxFileSizeBytes)
+        : this(contentRootPath, null, maxFileSizeBytes)
+    {
+    }
+
+    public PhysicalDocumentStore(string contentRootPath, string? storageRootPath, long maxFileSizeBytes = DefaultMaxFileSizeBytes)
     {
         if (string.IsNullOrWhiteSpace(contentRootPath)) throw new ArgumentException("Content root path is required.", nameof(contentRootPath));
         if (maxFileSizeBytes <= 0) throw new ArgumentOutOfRangeException(nameof(maxFileSizeBytes));
-        _root = Path.GetFullPath(Path.Combine(contentRootPath, "App_Data", "Documents"));
+
+        var contentRoot = Path.GetFullPath(contentRootPath);
+        _root = string.IsNullOrWhiteSpace(storageRootPath)
+            ? Path.GetFullPath(Path.Combine(contentRoot, "App_Data", "Documents"))
+            : Path.GetFullPath(Environment.ExpandEnvironmentVariables(storageRootPath.Trim()));
+
+        var webRoot = Path.GetFullPath(Path.Combine(contentRoot, "wwwroot"));
+        var webRootPrefix = webRoot.EndsWith(Path.DirectorySeparatorChar) ? webRoot : webRoot + Path.DirectorySeparatorChar;
+        if (_root.Equals(webRoot, StringComparison.OrdinalIgnoreCase) || _root.StartsWith(webRootPrefix, StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException("Document storage must be outside the public web root.");
+
         _maxFileSizeBytes = maxFileSizeBytes;
         Directory.CreateDirectory(_root);
     }
