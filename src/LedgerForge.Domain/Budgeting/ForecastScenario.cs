@@ -1,3 +1,4 @@
+using System.ComponentModel.DataAnnotations.Schema;
 using LedgerForge.Domain.Common;
 
 namespace LedgerForge.Domain.Budgeting;
@@ -100,7 +101,10 @@ public sealed class ForecastLine : AuditableEntity
 
     public Guid ForecastScenarioId { get; private set; }
     public Guid BudgetItemId { get; private set; }
+
+    [Column(TypeName = "decimal(19,4)")]
     public decimal BaselineTotal { get; private set; }
+
     public decimal ForecastTotal { get; private set; }
     public string? Note { get; private set; }
 
