@@ -61,9 +61,9 @@
                 <div>
                     <label for="DefaultTheme"><strong>Default theme</strong></label>
                     <select id="DefaultTheme" name="DefaultTheme">
-                        <option value="system" selected="@(Model.DefaultTheme == "system")">System</option>
-                        <option value="light" selected="@(Model.DefaultTheme == "light")">Light</option>
-                        <option value="dark" selected="@(Model.DefaultTheme == "dark")">Dark</option>
+                        <option value="system" selected="@(Model.DefaultTheme == "system" ? "selected" : null)">System</option>
+                        <option value="light" selected="@(Model.DefaultTheme == "light" ? "selected" : null)">Light</option>
+                        <option value="dark" selected="@(Model.DefaultTheme == "dark" ? "selected" : null)">Dark</option>
                     </select>
                     <small class="muted">Individual users can still toggle their own theme in the header.</small>
                 </div>
@@ -87,8 +87,9 @@
             <p><button class="primary" type="submit">Save organization settings</button></p>
         </form>
 
-        <form method="post" action="/admin/organization/reset" onsubmit="return confirm('Remove local organization overrides and restore deployment defaults?');">
+        <form method="post" action="/admin/organization/reset">
             @Html.AntiForgeryToken()
+            <p class="muted">Reset removes only the host-local override file and restores deployment defaults.</p>
             <button type="submit">Reset to deployment defaults</button>
         </form>
     </section>
