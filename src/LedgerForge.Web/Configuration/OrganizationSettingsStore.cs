@@ -152,7 +152,7 @@ public sealed class OrganizationSettingsStore
     {
         var normalized = NormalizeOptional(value);
         if (normalized.Length == 0) return normalized;
-        if (!normalized.StartsWith('/', StringComparison.Ordinal) || normalized.StartsWith("//", StringComparison.Ordinal))
+        if (!normalized.StartsWith("/", StringComparison.Ordinal) || normalized.StartsWith("//", StringComparison.Ordinal))
             throw new ArgumentException($"{fieldName} must be an application-local path beginning with '/'.");
         return normalized;
     }
