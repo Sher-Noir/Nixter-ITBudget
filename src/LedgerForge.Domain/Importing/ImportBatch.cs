@@ -38,7 +38,7 @@ public sealed class ImportBatch : AuditableEntity
     public int? AcceptedRowCount { get; private set; }
     public int? ExceptionCount { get; private set; }
     public decimal? RecalculatedPlannedTotal { get; private set; }
-    public int? MustHaveCount { get; private set; }
+    public int? PriorityNeedLevelCount { get; private set; }
     public bool? ReconciledToExpectedTargets { get; private set; }
     public DateTimeOffset? PreviewGeneratedAtUtc { get; private set; }
     public DateTimeOffset? CommittedAtUtc { get; private set; }
@@ -51,19 +51,26 @@ public sealed class ImportBatch : AuditableEntity
         Status = ImportBatchStatus.Validating;
     }
 
-    public void CompletePreview(int sourceRowCount, int acceptedRowCount, int exceptionCount, decimal recalculatedPlannedTotal, int mustHaveCount, bool reconciledToExpectedTargets, DateTimeOffset generatedAtUtc)
+    public void CompletePreview(
+        int sourceRowCount,
+        int acceptedRowCount,
+        int exceptionCount,
+        decimal recalculatedPlannedTotal,
+        int priorityNeedLevelCount,
+        bool reconciledToExpectedTargets,
+        DateTimeOffset generatedAtUtc)
     {
         if (Status != ImportBatchStatus.Validating) throw new InvalidOperationException($"Import preview cannot complete from status {Status}.");
         if (sourceRowCount < 0) throw new ArgumentOutOfRangeException(nameof(sourceRowCount));
         if (acceptedRowCount < 0 || acceptedRowCount > sourceRowCount) throw new ArgumentOutOfRangeException(nameof(acceptedRowCount));
         if (exceptionCount < 0) throw new ArgumentOutOfRangeException(nameof(exceptionCount));
         if (recalculatedPlannedTotal < 0m) throw new ArgumentOutOfRangeException(nameof(recalculatedPlannedTotal));
-        if (mustHaveCount < 0 || mustHaveCount > sourceRowCount) throw new ArgumentOutOfRangeException(nameof(mustHaveCount));
+        if (priorityNeedLevelCount < 0 || priorityNeedLevelCount > sourceRowCount) throw new ArgumentOutOfRangeException(nameof(priorityNeedLevelCount));
         SourceRowCount = sourceRowCount;
         AcceptedRowCount = acceptedRowCount;
         ExceptionCount = exceptionCount;
         RecalculatedPlannedTotal = recalculatedPlannedTotal;
-        MustHaveCount = mustHaveCount;
+        PriorityNeedLevelCount = priorityNeedLevelCount;
         ReconciledToExpectedTargets = reconciledToExpectedTargets;
         PreviewGeneratedAtUtc = generatedAtUtc;
         Status = ImportBatchStatus.PreviewReady;
