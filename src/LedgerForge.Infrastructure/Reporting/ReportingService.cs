@@ -168,23 +168,37 @@ public sealed class ReportingService(LedgerForgeDbContext dbContext)
             .FirstOrDefaultAsync(cancellationToken);
         if (version is null) return [];
 
-        return await dbContext.BudgetItems.AsNoTracking()
+        var rows = await dbContext.BudgetItems.AsNoTracking()
             .Where(x => x.FiscalYearId == fiscalYearId && x.BudgetVersionId == version.Id)
             .OrderBy(x => x.ItemNumber)
-            .Select(x => new BudgetExportRow(
-                year.DisplayName,
-                version.Name,
+            .Select(x => new
+            {
                 x.ItemNumber,
                 x.Description,
-                x.Status.ToString(),
+                x.Status,
                 x.Quantity,
                 x.UnitCost,
                 x.PlannedTotal,
                 x.ApprovedTotal,
                 x.RevisedTotal,
                 x.EstimatedPurchaseDate,
-                x.RenewalDate))
+                x.RenewalDate
+            })
             .ToListAsync(cancellationToken);
+
+        return rows.Select(x => new BudgetExportRow(
+            year.DisplayName,
+            version.Name,
+            x.ItemNumber,
+            x.Description,
+            x.Status.ToString(),
+            x.Quantity,
+            x.UnitCost,
+            x.PlannedTotal,
+            x.ApprovedTotal,
+            x.RevisedTotal,
+            x.EstimatedPurchaseDate,
+            x.RenewalDate)).ToArray();
     }
 
     public async Task<IReadOnlyList<ActualExportRow>> GetActualExportAsync(Guid fiscalYearId, CancellationToken cancellationToken = default)
@@ -276,17 +290,28 @@ public sealed class ReportingService(LedgerForgeDbContext dbContext)
             .FirstOrDefaultAsync(cancellationToken);
         if (version is null) return [];
 
-        return await dbContext.BudgetItems.AsNoTracking()
+        var rows = await dbContext.BudgetItems.AsNoTracking()
             .Where(x => x.FiscalYearId == fiscalYearId && x.BudgetVersionId == version.Id && x.RenewalDate != null)
             .OrderBy(x => x.RenewalDate)
-            .Select(x => new RenewalExportRow(
-                year.DisplayName,
+            .Select(x => new
+            {
                 x.ItemNumber,
                 x.Description,
-                x.RenewalDate!.Value,
-                x.RevisedTotal ?? x.ApprovedTotal ?? x.PlannedTotal,
-                x.Status.ToString()))
+                x.RenewalDate,
+                x.RevisedTotal,
+                x.ApprovedTotal,
+                x.PlannedTotal,
+                x.Status
+            })
             .ToListAsync(cancellationToken);
+
+        return rows.Select(x => new RenewalExportRow(
+            year.DisplayName,
+            x.ItemNumber,
+            x.Description,
+            x.RenewalDate!.Value,
+            x.RevisedTotal ?? x.ApprovedTotal ?? x.PlannedTotal,
+            x.Status.ToString())).ToArray();
     }
 
     private static Guid? ResolveFiscalYear(IReadOnlyList<ReportFiscalYearOption> years, Guid? requested)
