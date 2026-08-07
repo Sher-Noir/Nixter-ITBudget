@@ -10,6 +10,7 @@
     var userName = User.Identity?.Name ?? "Signed-in user";
     var userInitial = userName.Split('\\', StringSplitOptions.RemoveEmptyEntries).LastOrDefault()?.FirstOrDefault().ToString().ToUpperInvariant() ?? "U";
     var canManageBudget = (await AuthorizationService.AuthorizeAsync(User, AuthorizationPolicies.ManageBudget)).Succeeded;
+    var canApprove = (await AuthorizationService.AuthorizeAsync(User, AuthorizationPolicies.Approve)).Succeeded;
     var canManageImports = (await AuthorizationService.AuthorizeAsync(User, AuthorizationPolicies.ManageImports)).Succeeded;
     var canAdminister = (await AuthorizationService.AuthorizeAsync(User, AuthorizationPolicies.Administration)).Succeeded;
     bool IsActive(string prefix) => Context.Request.Path.StartsWithSegments(prefix, StringComparison.OrdinalIgnoreCase);
@@ -53,7 +54,10 @@
             <a href="/contracts" class="@(IsActive("/contracts") ? "active" : null)"><span class="lf-nav-icon">▧</span><span>Contracts</span></a>
             <a href="/renewals" class="@(IsActive("/renewals") ? "active" : null)"><span class="lf-nav-icon">↻</span><span>Renewals</span></a>
             <a href="/documents" class="@(IsActive("/documents") ? "active" : null)"><span class="lf-nav-icon">□</span><span>Documents</span></a>
-            <a href="/approvals" class="@(IsActive("/approvals") ? "active" : null)"><span class="lf-nav-icon">✓</span><span>Approvals</span></a>
+            @if (canApprove)
+            {
+                <a href="/approvals" class="@(IsActive("/approvals") ? "active" : null)"><span class="lf-nav-icon">✓</span><span>Approvals</span></a>
+            }
             <a href="/reports" class="@(IsActive("/reports") ? "active" : null)"><span class="lf-nav-icon">▥</span><span>Reports</span></a>
             @if (canManageBudget)
             {
