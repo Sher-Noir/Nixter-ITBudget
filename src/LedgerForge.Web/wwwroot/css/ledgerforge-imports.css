@@ -1,0 +1,8 @@
+.lf-row-review-form {
+  margin: .8rem;
+  padding: .8rem;
+  border: 1px solid var(--lf-border);
+  border-radius: 9px;
+  background: var(--lf-surface);
+}
+.lf-row-review-form button { margin-top: .7rem; }
