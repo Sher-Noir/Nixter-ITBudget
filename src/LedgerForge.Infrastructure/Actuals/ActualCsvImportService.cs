@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Security.Cryptography;
 using System.Text;
 using LedgerForge.Domain.Actuals;
 using LedgerForge.Domain.Budgeting;
@@ -47,6 +48,7 @@ public sealed class ActualCsvImportService(LedgerForgeDbContext dbContext)
         using var reader = new StreamReader(source, new UTF8Encoding(false, true), detectEncodingFromByteOrderMarks: true, leaveOpen: true);
         var text = await reader.ReadToEndAsync(cancellationToken);
         if (string.IsNullOrWhiteSpace(text)) return new(0, 0m, ["CSV file is empty."]);
+        var sourceHash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(text))).ToLowerInvariant();
 
         IReadOnlyList<IReadOnlyList<string>> records;
         try
@@ -98,6 +100,7 @@ public sealed class ActualCsvImportService(LedgerForgeDbContext dbContext)
 
         var pending = new List<ActualTransaction>(records.Count - 1);
         var errors = new List<string>();
+        var seenReferences = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         decimal total = 0m;
         var safeFileName = Path.GetFileName(string.IsNullOrWhiteSpace(sourceFileName) ? "actuals.csv" : sourceFileName);
 
@@ -155,7 +158,13 @@ public sealed class ActualCsvImportService(LedgerForgeDbContext dbContext)
             if (errors.Any(x => x.StartsWith($"Row {rowNumber}:", StringComparison.Ordinal))) continue;
 
             var reference = Value(row, header, profile.SourceReferenceHeader);
-            if (string.IsNullOrWhiteSpace(reference)) reference = $"import:{safeFileName}:row-{rowNumber}";
+            if (string.IsNullOrWhiteSpace(reference)) reference = $"import:{sourceHash}:row-{rowNumber}";
+
+            if (!seenReferences.Add(reference))
+  {
+      errors.Add($"Row {rowNumber}: source reference '{reference}' is duplicated within this import file.");
+      continue;
+  }
 
             try
             {
@@ -182,7 +191,24 @@ public sealed class ActualCsvImportService(LedgerForgeDbContext dbContext)
         if (pending.Count == 0 && errors.Count == 0) errors.Add("CSV contains no non-empty data rows.");
         if (errors.Count > 0) return new(0, 0m, errors);
 
-        await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
+        await using var transaction = await dbContext.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable, cancellationToken);
+        var importReferences = pending
+  .Select(x => x.SourceReference)
+  .Where(x => x is not null)
+  .Select(x => x!)
+  .Distinct(StringComparer.OrdinalIgnoreCase)
+  .ToArray();
+        var existingReferences = await dbContext.ActualTransactions.AsNoTracking()
+  .Where(x => x.FiscalYearId == fiscalYearId && x.Kind == ActualTransactionKind.Import && x.SourceReference != null && importReferences.Contains(x.SourceReference))
+  .Select(x => x.SourceReference!)
+  .ToListAsync(cancellationToken);
+        if (existingReferences.Count > 0)
+        {
+  await transaction.RollbackAsync(cancellationToken);
+  var shown = string.Join(", ", existingReferences.Distinct(StringComparer.OrdinalIgnoreCase).Take(5));
+  return new(0, 0m, [$"Import rejected because previously posted import reference(s) were found: {shown}. No rows were posted."]);
+        }
+
         dbContext.ActualTransactions.AddRange(pending);
         await dbContext.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);

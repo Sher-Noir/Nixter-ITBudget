@@ -1,3 +1,7 @@
+# LedgerForge implementation checklist
+
+This checklist is superseded by [`v1-completion.md`](v1-completion.md), the authoritative v1 feature and validation contract.
+
 # LedgerForge phased implementation checklist
 
 - [x] 1. LedgerForge solution scaffolding, MIT license, generic branding, and coding standards

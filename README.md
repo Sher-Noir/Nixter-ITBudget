@@ -76,3 +76,8 @@ LedgerForge is licensed under the MIT License. See `LICENSE`.
 ## Public-repository hygiene
 
 Avoid committing organization names, internal network paths, employee data, private documents, production secrets, proprietary account mappings, or real migration source files to the upstream repository.
+
+
+## LedgerForge v1
+
+See [`docs/architecture/v1-completion.md`](docs/architecture/v1-completion.md) for the current v1 contract and [`docs/GETTING_STARTED.md`](docs/GETTING_STARTED.md) for installation and first-run guidance.

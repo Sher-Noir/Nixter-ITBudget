@@ -281,6 +281,10 @@ public sealed class ProcurementService(LedgerForgeDbContext dbContext)
                 cancellationToken))
             throw new InvalidOperationException("This purchase order already has an active change order. Continue from that revision instead.");
 
+        if (await dbContext.Set<PurchaseReceipt>().AsNoTracking().AnyAsync(x => x.PurchaseOrderId == source.Id, cancellationToken) ||
+  await dbContext.Invoices.AsNoTracking().AnyAsync(x => x.PurchaseOrderId == source.Id && x.State != InvoiceState.Cancelled && x.State != InvoiceState.Rejected, cancellationToken))
+  throw new InvalidOperationException("Create a change order before receiving or invoicing begins on the issued purchase order. Once activity exists, preserve the existing PO history and create a separately linked procurement record.");
+
         newNumber = newNumber?.Trim() ?? string.Empty;
         if (await dbContext.PurchaseOrders.AnyAsync(x => x.FiscalYearId == source.FiscalYearId && x.Number == newNumber, cancellationToken))
             throw new InvalidOperationException($"Purchase order number '{newNumber}' already exists in the selected fiscal year.");
@@ -439,8 +443,11 @@ public sealed class ProcurementService(LedgerForgeDbContext dbContext)
             var source = await dbContext.PurchaseOrders.SingleOrDefaultAsync(x => x.Id == sourceId, cancellationToken)
                 ?? throw new InvalidOperationException("The purchase order revision source no longer exists.");
             if (source.State != PurchaseOrderState.Issued)
-                throw new InvalidOperationException($"The superseded purchase order must still be Issued when the change order is issued; current state is {source.State}.");
-            source.Close(actor, now);
+      throw new InvalidOperationException($"The superseded purchase order must still be Issued when the change order is issued; current state is {source.State}.");
+  if (await dbContext.Set<PurchaseReceipt>().AsNoTracking().AnyAsync(x => x.PurchaseOrderId == source.Id, cancellationToken) ||
+      await dbContext.Invoices.AsNoTracking().AnyAsync(x => x.PurchaseOrderId == source.Id && x.State != InvoiceState.Cancelled && x.State != InvoiceState.Rejected, cancellationToken))
+      throw new InvalidOperationException("The superseded purchase order received receiving/invoice activity after this revision was created. Cancel this draft revision and reconcile the active PO before attempting another change.");
+  source.Close(actor, now);
         }
         await dbContext.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);

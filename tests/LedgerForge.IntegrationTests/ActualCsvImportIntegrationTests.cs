@@ -39,6 +39,14 @@ public sealed class ActualCsvImportIntegrationTests
 
         Assert.Equal(2, await dbContext.ActualTransactions.CountAsync(x => x.FiscalYearId == year.Id));
 
+        await using (var duplicateStream = new MemoryStream(Encoding.UTF8.GetBytes(validCsv)))
+        {
+  var duplicate = await service.ImportAsync(year.Id, duplicateStream, ActualImportProfile.Default, "renamed-copy.csv");
+  Assert.False(duplicate.Succeeded);
+  Assert.Equal(0, duplicate.ImportedRows);
+        }
+        Assert.Equal(2, await dbContext.ActualTransactions.CountAsync(x => x.FiscalYearId == year.Id));
+
         var invalidCsv = "TransactionDate,Amount,Description\r\n2035-04-01,10.00,Would otherwise be valid\r\nnot-a-date,20.00,Bad row\r\n";
         await using (var stream = new MemoryStream(Encoding.UTF8.GetBytes(invalidCsv)))
         {

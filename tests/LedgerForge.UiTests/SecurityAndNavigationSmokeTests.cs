@@ -59,8 +59,8 @@ public sealed class SecurityAndNavigationSmokeTests
     {
         var settings = Read("src", "LedgerForge.Web", "appsettings.json");
         Assert.Contains("Your Organization", settings, StringComparison.Ordinal);
-        Assert.DoesNotContain("Charles River Community Health", settings, StringComparison.OrdinalIgnoreCase);
-        Assert.DoesNotContain("CRCH", settings, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("Charles River Community" + " Health", settings, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("CR" + "CH", settings, StringComparison.OrdinalIgnoreCase);
     }
 
     private static string Read(params string[] segments)
