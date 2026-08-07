@@ -17,6 +17,7 @@ public sealed class SetupPlanTests
 
         Assert.Equal("Example Organization", root.GetProperty("Branding").GetProperty("OrganizationName").GetString());
         Assert.Equal(@"D:\LedgerForgeData\Documents", root.GetProperty("Documents").GetProperty("StoragePath").GetString());
+        Assert.False(root.GetProperty("Deployment").GetProperty("HttpsRedirection").GetBoolean());
         var groups = root.GetProperty("Security").GetProperty("AdGroups");
         Assert.Equal(@"EXAMPLE\LedgerForge Admins", groups.GetProperty("SystemAdministrator")[0].GetString());
         Assert.Equal(0, groups.GetProperty("BudgetAdministrator").GetArrayLength());
