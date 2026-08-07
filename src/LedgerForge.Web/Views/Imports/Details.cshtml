@@ -5,6 +5,7 @@
     var detail = Model.Detail;
     var batch = detail.Batch;
     var reviewOpen = batch.Status == ImportBatchStatus.PreviewReady && string.IsNullOrWhiteSpace(batch.AcceptedBy);
+    var acceptedPendingCommit = batch.Status == ImportBatchStatus.PreviewReady && !string.IsNullOrWhiteSpace(batch.AcceptedBy);
 }
 
 <div class="lf-page-header">
@@ -25,14 +26,18 @@
 }
 @if (Model.Accepted)
 {
-    <div class="lf-card lf-alert lf-alert-success" role="status">Import preview accepted for a future authoritative commit.</div>
+    <div class="lf-card lf-alert lf-alert-success" role="status">Import preview accepted. Select an unlocked target budget version to commit eligible rows.</div>
+}
+@if (Model.Committed)
+{
+    <div class="lf-card lf-alert lf-alert-success" role="status">Import committed transactionally to the selected budget version.</div>
 }
 
 <div class="lf-kpi-grid">
     <article class="lf-card lf-kpi"><div class="lf-kpi-icon blue">R</div><div><div class="lf-card-title">Source Rows</div><div class="lf-kpi-value">@(batch.SourceRowCount ?? detail.Rows.Count)</div><div class="lf-kpi-note">Rows captured from source</div></div></article>
-    <article class="lf-card lf-kpi"><div class="lf-kpi-icon green">A</div><div><div class="lf-card-title">Accepted Rows</div><div class="lf-kpi-value">@(batch.AcceptedRowCount ?? 0)</div><div class="lf-kpi-note">Accepted in preview</div></div></article>
+    <article class="lf-card lf-kpi"><div class="lf-kpi-icon green">A</div><div><div class="lf-card-title">Accepted Rows</div><div class="lf-kpi-value">@(batch.AcceptedRowCount ?? 0)</div><div class="lf-kpi-note">Eligible preview rows</div></div></article>
     <article class="lf-card lf-kpi"><div class="lf-kpi-icon red">E</div><div><div class="lf-card-title">Open Errors</div><div class="lf-kpi-value">@detail.OpenErrorCount</div><div class="lf-kpi-note">Must resolve before acceptance</div></div></article>
-    <article class="lf-card lf-kpi"><div class="lf-kpi-icon gold">W</div><div><div class="lf-card-title">Open Warnings</div><div class="lf-kpi-value">@detail.OpenWarningCount</div><div class="lf-kpi-note">Require review but may be accepted</div></div></article>
+    <article class="lf-card lf-kpi"><div class="lf-kpi-icon gold">W</div><div><div class="lf-card-title">Open Warnings</div><div class="lf-kpi-value">@detail.OpenWarningCount</div><div class="lf-kpi-note">Reviewable non-blocking items</div></div></article>
 </div>
 
 <div class="lf-settings-grid">
@@ -72,10 +77,35 @@
                 <button type="submit">Reject batch</button>
             </form>
         }
-        else if (!string.IsNullOrWhiteSpace(batch.AcceptedBy))
+        else if (acceptedPendingCommit)
         {
-            <p><strong>Accepted for commit</strong></p>
-            <p class="lf-muted">Authoritative commit is intentionally not available yet. Acceptance records administrator intent while the transactional commit workflow is completed.</p>
+            <p><strong>Accepted for authoritative commit</strong></p>
+            @if (Model.CommitTargets.Count == 0)
+            {
+                <p class="lf-muted">No unlocked fiscal year/budget version target is currently available. Create or unlock a planning version before committing.</p>
+            }
+            else
+            {
+                <form method="post" action="/imports/@batch.Id/commit">
+                    @Html.AntiForgeryToken()
+                    <p>
+                        <label for="budgetVersionId"><strong>Target budget version</strong></label>
+                        <select id="budgetVersionId" name="budgetVersionId" required>
+                            @foreach (var target in Model.CommitTargets)
+                            {
+                                <option value="@target.BudgetVersionId">@target.FiscalYearName · v@target.VersionNumber · @target.BudgetVersionName</option>
+                            }
+                        </select>
+                    </p>
+                    <p class="lf-muted">Eligible source rows are inserted together in one SQL transaction. Rejected preview rows are skipped. Item numbers and source lineage are preserved.</p>
+                    <button class="primary" type="submit">Commit imported budget items</button>
+                </form>
+            }
+        }
+        else if (batch.Status == ImportBatchStatus.Committed)
+        {
+            <p><strong>Commit complete</strong></p>
+            <p class="lf-muted">Committed source rows below now show their target BudgetItem identifiers.</p>
         }
         else
         {
