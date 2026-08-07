@@ -62,6 +62,11 @@
                 <a class="button primary" href="/exports/actuals.csv?fiscalYearId=@Model.SelectedFiscalYearId">Download actuals CSV</a>
             </article>
             <article class="lf-report-card">
+                <h3>Finance posting</h3>
+                <p>Neutral posting feed with signed amounts and finance dimension codes. Output header names and file name are deployment-configurable for ERP/accounting imports.</p>
+                <a class="button primary" href="/exports/finance.csv?fiscalYearId=@Model.SelectedFiscalYearId">Download finance CSV</a>
+            </article>
+            <article class="lf-report-card">
                 <h3>Open commitments</h3>
                 <p>Issued purchase orders reconciled against posted linked invoices, with gross, invoiced, and outstanding totals.</p>
                 <a class="button primary" href="/exports/commitments.csv?fiscalYearId=@Model.SelectedFiscalYearId">Download commitments CSV</a>
