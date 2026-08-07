@@ -2,6 +2,7 @@ using Crch.ItBudget.ImportExport.Fy2027;
 using Crch.ItBudget.Infrastructure.Importing;
 using Crch.ItBudget.Infrastructure.Persistence;
 using Crch.ItBudget.Infrastructure.Persistence.Seeding;
+using Crch.ItBudget.Infrastructure.Security;
 using Crch.ItBudget.Web.Security;
 using Microsoft.AspNetCore.Authentication.Negotiate;
 using Microsoft.AspNetCore.Authorization;
@@ -18,7 +19,10 @@ builder.Services.AddControllersWithViews(options =>
     options.Filters.Add(new Microsoft.AspNetCore.Mvc.AutoValidateAntiforgeryTokenAttribute());
 });
 
-var maxImportFileSize = builder.Configuration.GetValue<long?>("Imports:MaxFileSizeBytes") ?? 25L * 1024 * 1024;
+var configuredMaxImportFileSize = builder.Configuration.GetValue<long?>("Imports:MaxFileSizeBytes");
+var maxImportFileSize = configuredMaxImportFileSize is > 0
+    ? configuredMaxImportFileSize.Value
+    : 25L * 1024 * 1024;
 builder.Services.Configure<FormOptions>(options => options.MultipartBodyLengthLimit = maxImportFileSize);
 
 var connectionString = builder.Configuration.GetConnectionString("ItBudget")
@@ -27,6 +31,7 @@ builder.Services.AddDbContext<ItBudgetDbContext>(options => options.UseSqlServer
 builder.Services.AddSingleton<Fy2027WorkbookReader>();
 builder.Services.AddScoped<Fy2027ImportPreviewService>();
 builder.Services.AddScoped<ManagedLookupInitializer>();
+builder.Services.AddScoped<SecurityAdministrationService>();
 
 var app = builder.Build();
 
