@@ -1,7 +1,90 @@
 @{
     ViewData["Title"] = "Dashboard";
 }
-<div class="card">
-  <h1>IT Budget Management</h1>
-  <p class="muted">Initial authenticated scaffold. Budget planning, actuals, purchase orders, invoices, renewals, reports, imports/exports, approvals, tasks, and administration will be implemented in the milestone sequence documented in this repository.</p>
+
+<div class="lf-page-header">
+    <div>
+        <h1 class="lf-page-title">Dashboard</h1>
+        <p class="lf-subtitle">Overview of the current fiscal year and budget activity.</p>
+    </div>
 </div>
+
+<div class="lf-toolbar" aria-label="Dashboard filters">
+    <select aria-label="Location filter"><option>All locations</option></select>
+    <select aria-label="Category filter"><option>All categories</option></select>
+    <select aria-label="Budget version"><option>Active budget version</option></select>
+</div>
+
+<section class="lf-kpi-grid" aria-label="Budget key performance indicators">
+    <article class="lf-card lf-kpi">
+        <div class="lf-kpi-icon blue" aria-hidden="true">✓</div>
+        <div><h2 class="lf-card-title">Approved Budget</h2><div class="lf-kpi-value">$0.00</div><div class="lf-kpi-note">Current approved baseline</div></div>
+    </article>
+    <article class="lf-card lf-kpi">
+        <div class="lf-kpi-icon purple" aria-hidden="true">✎</div>
+        <div><h2 class="lf-card-title">Revised Budget</h2><div class="lf-kpi-value">$0.00</div><div class="lf-kpi-note">Approved baseline plus amendments</div></div>
+    </article>
+    <article class="lf-card lf-kpi">
+        <div class="lf-kpi-icon orange" aria-hidden="true">↔</div>
+        <div><h2 class="lf-card-title">Committed</h2><div class="lf-kpi-value">$0.00</div><div class="lf-kpi-note">Open purchase commitments</div></div>
+    </article>
+    <article class="lf-card lf-kpi">
+        <div class="lf-kpi-icon green" aria-hidden="true">▥</div>
+        <div><h2 class="lf-card-title">Actual</h2><div class="lf-kpi-value">$0.00</div><div class="lf-kpi-note">Posted actual spend</div></div>
+    </article>
+    <article class="lf-card lf-kpi">
+        <div class="lf-kpi-icon teal" aria-hidden="true">□</div>
+        <div><h2 class="lf-card-title">Available</h2><div class="lf-kpi-value">$0.00</div><div class="lf-kpi-note">Revised less commitments and actuals</div></div>
+    </article>
+    <article class="lf-card lf-kpi">
+        <div class="lf-kpi-icon blue" aria-hidden="true">⌁</div>
+        <div><h2 class="lf-card-title">Forecast</h2><div class="lf-kpi-value">$0.00</div><div class="lf-kpi-note">Current projected spend</div></div>
+    </article>
+    <article class="lf-card lf-kpi">
+        <div class="lf-kpi-icon gold" aria-hidden="true">!</div>
+        <div><h2 class="lf-card-title">Pending Approvals</h2><div class="lf-kpi-value">0</div><div class="lf-kpi-note">Items awaiting review</div></div>
+    </article>
+    <article class="lf-card lf-kpi">
+        <div class="lf-kpi-icon red" aria-hidden="true">◫</div>
+        <div><h2 class="lf-card-title">Renewals Due in 30 Days</h2><div class="lf-kpi-value">0</div><div class="lf-kpi-note">Upcoming renewal decisions</div></div>
+    </article>
+</section>
+
+<section class="lf-grid-3" aria-label="Budget dashboard charts and records">
+    <article class="lf-card lf-panel">
+        <div class="lf-panel-header"><h2>Budget vs. Actual by Month</h2><a href="/reports">View report</a></div>
+        <div class="lf-placeholder-chart">Monthly budget and actual chart will appear when data is available.</div>
+    </article>
+    <article class="lf-card lf-panel">
+        <div class="lf-panel-header"><h2>Spending by Category</h2><a href="/reports">View report</a></div>
+        <div class="lf-placeholder-chart">Category distribution will appear when actual transactions are available.</div>
+    </article>
+    <article class="lf-card lf-panel">
+        <div class="lf-panel-header"><h2>Open Purchase Orders</h2><a href="/purchase-orders">View all</a></div>
+        <table class="lf-table">
+            <thead><tr><th>PO</th><th>Vendor</th><th>Category</th><th>Amount</th><th>Status</th></tr></thead>
+            <tbody><tr><td colspan="5" class="lf-muted">No open purchase orders.</td></tr></tbody>
+        </table>
+    </article>
+</section>
+
+<section class="lf-grid-3" aria-label="Budget exceptions and activity">
+    <article class="lf-card lf-panel">
+        <div class="lf-panel-header"><h2>Top Unfavorable Variances</h2><a href="/reports">View report</a></div>
+        <table class="lf-table">
+            <thead><tr><th>Category</th><th>Budget</th><th>Actual</th><th>Variance</th></tr></thead>
+            <tbody><tr><td colspan="4" class="lf-muted">No unfavorable variances to display.</td></tr></tbody>
+        </table>
+    </article>
+    <article class="lf-card lf-panel">
+        <div class="lf-panel-header"><h2>Renewals Due Soon</h2><a href="/renewals">View all</a></div>
+        <table class="lf-table">
+            <thead><tr><th>Contract</th><th>Vendor</th><th>Date</th><th>Estimate</th></tr></thead>
+            <tbody><tr><td colspan="4" class="lf-muted">No upcoming renewals.</td></tr></tbody>
+        </table>
+    </article>
+    <article class="lf-card lf-panel">
+        <div class="lf-panel-header"><h2>Recent Activity</h2><a href="/reports/audit">View activity</a></div>
+        <p class="lf-muted">Recent budget, approval, import, and document activity will appear here.</p>
+    </article>
+</section>
