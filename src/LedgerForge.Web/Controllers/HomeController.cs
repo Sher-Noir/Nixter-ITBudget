@@ -1,15 +1,21 @@
 using LedgerForge.Infrastructure.Dashboard;
+using LedgerForge.Web.Security;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace LedgerForge.Web.Controllers;
 
-[Authorize]
-public sealed class HomeController(DashboardService dashboardService) : Controller
+[Authorize(Policy = AuthorizationPolicies.ViewBudget)]
+public sealed class HomeController(
+    DashboardService dashboardService,
+    IAuthorizationService authorizationService) : Controller
 {
     [HttpGet]
     public async Task<IActionResult> Index(CancellationToken cancellationToken)
-        => View(await dashboardService.GetAsync(cancellationToken));
+    {
+        ViewData["CanManageImports"] = (await authorizationService.AuthorizeAsync(User, AuthorizationPolicies.ManageImports)).Succeeded;
+        return View(await dashboardService.GetAsync(cancellationToken));
+    }
 
     [AllowAnonymous]
     [HttpGet]
