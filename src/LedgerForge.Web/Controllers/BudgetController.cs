@@ -1,4 +1,5 @@
 using LedgerForge.Domain.Budgeting;
+using LedgerForge.Infrastructure.Approvals;
 using LedgerForge.Infrastructure.Budgeting;
 using LedgerForge.Web.Models.Budgeting;
 using LedgerForge.Web.Security;
@@ -11,6 +12,7 @@ namespace LedgerForge.Web.Controllers;
 [Route("budget")]
 public sealed class BudgetController(
     BudgetPlanningService planningService,
+    ApprovalQueueService approvalQueueService,
     IAuthorizationService authorizationService) : Controller
 {
     [HttpGet("")]
@@ -72,9 +74,13 @@ public sealed class BudgetController(
         if (snapshot is null) return NotFound();
 
         var canEditRole = (await authorizationService.AuthorizeAsync(User, AuthorizationPolicies.EditPlanningBudget)).Succeeded;
+        var workflowEditable = snapshot.Status is BudgetItemStatus.Draft or BudgetItemStatus.Proposed or BudgetItemStatus.Deferred;
+        ViewData["CanSubmit"] = canEditRole && !snapshot.VersionLocked && workflowEditable;
+        ViewData["Submitted"] = Request.Query.ContainsKey("submitted");
+
         return View("Item", new BudgetItemEditViewModel(
             snapshot,
-            canEditRole && !snapshot.VersionLocked,
+            canEditRole && !snapshot.VersionLocked && workflowEditable,
             TempData["BudgetItemError"] as string,
             Request.Query.ContainsKey("saved")));
     }
@@ -132,5 +138,33 @@ public sealed class BudgetController(
             TempData["BudgetItemError"] = exception.Message;
             return RedirectToAction(nameof(Item), new { id });
         }
+    }
+
+    [Authorize(Policy = AuthorizationPolicies.EditPlanningBudget)]
+    [HttpPost("items/{id:guid}/submit")]
+    public async Task<IActionResult> SubmitItem(Guid id, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await approvalQueueService.SubmitBudgetItemAsync(id, RequireActor(), cancellationToken);
+            return RedirectToAction(nameof(Item), new { id, submitted = true });
+        }
+        catch (KeyNotFoundException)
+        {
+            return NotFound();
+        }
+        catch (Exception exception) when (exception is ArgumentException or InvalidOperationException)
+        {
+            TempData["BudgetItemError"] = exception.Message;
+            return RedirectToAction(nameof(Item), new { id });
+        }
+    }
+
+    private string RequireActor()
+    {
+        var actor = User.Identity?.Name;
+        if (string.IsNullOrWhiteSpace(actor))
+            throw new InvalidOperationException("An authenticated directory identity is required for this action.");
+        return actor;
     }
 }
