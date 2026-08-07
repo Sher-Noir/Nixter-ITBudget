@@ -28,10 +28,7 @@ public sealed class ExportsController(ReportingService reportingService) : Contr
                 }));
             return File(bytes, "text/csv; charset=utf-8", "ledgerforge-budget.csv");
         }
-        catch (KeyNotFoundException)
-        {
-            return NotFound();
-        }
+        catch (KeyNotFoundException) { return NotFound(); }
     }
 
     [HttpGet("actuals.csv")]
@@ -49,10 +46,7 @@ public sealed class ExportsController(ReportingService reportingService) : Contr
                 }));
             return File(bytes, "text/csv; charset=utf-8", "ledgerforge-actuals.csv");
         }
-        catch (KeyNotFoundException)
-        {
-            return NotFound();
-        }
+        catch (KeyNotFoundException) { return NotFound(); }
     }
 
     [HttpGet("commitments.csv")]
@@ -70,10 +64,7 @@ public sealed class ExportsController(ReportingService reportingService) : Contr
                 }));
             return File(bytes, "text/csv; charset=utf-8", "ledgerforge-open-commitments.csv");
         }
-        catch (KeyNotFoundException)
-        {
-            return NotFound();
-        }
+        catch (KeyNotFoundException) { return NotFound(); }
     }
 
     [HttpGet("renewals.csv")]
@@ -83,16 +74,32 @@ public sealed class ExportsController(ReportingService reportingService) : Contr
         {
             var rows = await reportingService.GetRenewalExportAsync(fiscalYearId, cancellationToken);
             var bytes = CsvExportWriter.Write(
-                ["Fiscal Year", "Item Number", "Description", "Renewal Date", "Estimated Amount", "Status"],
+                ["Fiscal Year", "Source", "Reference", "Description", "Vendor", "Renewal Date", "Notice Date", "Estimated Amount", "Status"],
                 rows.Select(x => (IReadOnlyList<object?>)new object?[]
                 {
-                    x.FiscalYear, x.ItemNumber, x.Description, x.RenewalDate, x.EstimatedAmount, x.Status
+                    x.FiscalYear, x.Source, x.Reference, x.Description, x.Vendor, x.RenewalDate,
+                    x.NoticeDate, x.EstimatedAmount, x.Status
                 }));
             return File(bytes, "text/csv; charset=utf-8", "ledgerforge-renewals.csv");
         }
-        catch (KeyNotFoundException)
+        catch (KeyNotFoundException) { return NotFound(); }
+    }
+
+    [HttpGet("forecast.csv")]
+    public async Task<IActionResult> Forecast(Guid fiscalYearId, CancellationToken cancellationToken)
+    {
+        try
         {
-            return NotFound();
+            var rows = await reportingService.GetForecastExportAsync(fiscalYearId, cancellationToken);
+            var bytes = CsvExportWriter.Write(
+                ["Fiscal Year", "Scenario", "As Of Date", "Item Number", "Description", "Baseline", "Forecast", "Variance", "Note"],
+                rows.Select(x => (IReadOnlyList<object?>)new object?[]
+                {
+                    x.FiscalYear, x.Scenario, x.AsOfDate, x.ItemNumber, x.Description,
+                    x.Baseline, x.Forecast, x.Variance, x.Note
+                }));
+            return File(bytes, "text/csv; charset=utf-8", "ledgerforge-forecast.csv");
         }
+        catch (KeyNotFoundException) { return NotFound(); }
     }
 }
