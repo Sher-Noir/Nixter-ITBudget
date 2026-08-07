@@ -19,6 +19,8 @@ public sealed class LedgerForgeDbContext(DbContextOptions<LedgerForgeDbContext> 
     public DbSet<Vendor> Vendors => Set<Vendor>();
     public DbSet<PurchaseOrder> PurchaseOrders => Set<PurchaseOrder>();
     public DbSet<PurchaseOrderLine> PurchaseOrderLines => Set<PurchaseOrderLine>();
+    public DbSet<Invoice> Invoices => Set<Invoice>();
+    public DbSet<InvoiceAllocation> InvoiceAllocations => Set<InvoiceAllocation>();
     public DbSet<ImportBatch> ImportBatches => Set<ImportBatch>();
     public DbSet<ImportRow> ImportRows => Set<ImportRow>();
     public DbSet<ImportException> ImportExceptions => Set<ImportException>();
@@ -48,6 +50,16 @@ public sealed class LedgerForgeDbContext(DbContextOptions<LedgerForgeDbContext> 
     public DbSet<UserRoleException> UserRoleExceptions => Set<UserRoleException>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
+    {
+        ConfigureBudgeting(modelBuilder);
+        ConfigureActuals(modelBuilder);
+        ConfigureProcurement(modelBuilder);
+        ConfigureManagedLookups(modelBuilder);
+        ConfigureImports(modelBuilder);
+        ConfigureSecurity(modelBuilder);
+    }
+
+    private static void ConfigureBudgeting(ModelBuilder modelBuilder)
     {
         modelBuilder.Entity<FiscalYear>(entity =>
         {
@@ -105,6 +117,9 @@ public sealed class LedgerForgeDbContext(DbContextOptions<LedgerForgeDbContext> 
             entity.Property(x => x.ItemNumber).HasMaxLength(64).IsRequired();
             entity.Property(x => x.Description).HasMaxLength(500).IsRequired();
             entity.Property(x => x.ReasonPurpose).HasMaxLength(2000);
+            entity.Property(x => x.SubmittedBy).HasMaxLength(256);
+            entity.Property(x => x.DecisionBy).HasMaxLength(256);
+            entity.Property(x => x.DecisionNote).HasMaxLength(2000);
             entity.Property(x => x.Quantity).HasPrecision(19, 4);
             entity.Property(x => x.UnitCost).HasPrecision(19, 4);
             entity.Property(x => x.PlannedTotal).HasPrecision(19, 4);
@@ -114,6 +129,7 @@ public sealed class LedgerForgeDbContext(DbContextOptions<LedgerForgeDbContext> 
             entity.HasIndex(x => new { x.FiscalYearId, x.BudgetVersionId, x.ItemNumber }).IsUnique();
             entity.HasIndex(x => x.StableIdentifier);
             entity.HasIndex(x => x.Status);
+            entity.HasIndex(x => x.SubmittedAtUtc);
             entity.HasIndex(x => x.BudgetSectionId);
             entity.HasIndex(x => x.FinanceTypeId);
             entity.HasIndex(x => x.DepartmentId);
@@ -153,12 +169,6 @@ public sealed class LedgerForgeDbContext(DbContextOptions<LedgerForgeDbContext> 
             entity.HasOne<FinanceAccount>().WithMany().HasForeignKey(x => x.FinanceAccountId).OnDelete(DeleteBehavior.Restrict);
             entity.HasOne<FiscalPeriod>().WithMany().HasForeignKey(x => x.FiscalPeriodId).OnDelete(DeleteBehavior.Restrict);
         });
-
-        ConfigureActuals(modelBuilder);
-        ConfigureProcurement(modelBuilder);
-        ConfigureManagedLookups(modelBuilder);
-        ConfigureImports(modelBuilder);
-        ConfigureSecurity(modelBuilder);
     }
 
     private static void ConfigureActuals(ModelBuilder modelBuilder)
@@ -182,6 +192,7 @@ public sealed class LedgerForgeDbContext(DbContextOptions<LedgerForgeDbContext> 
             entity.HasIndex(x => x.DepartmentId);
             entity.HasIndex(x => x.LocationId);
             entity.HasIndex(x => x.FiscalPeriodId);
+            entity.HasIndex(x => x.InvoiceId);
             entity.HasIndex(x => x.ReversesTransactionId).HasFilter("[ReversesTransactionId] IS NOT NULL").IsUnique();
             entity.HasOne<FiscalYear>().WithMany().HasForeignKey(x => x.FiscalYearId).OnDelete(DeleteBehavior.Restrict);
             entity.HasOne<BudgetItem>().WithMany().HasForeignKey(x => x.BudgetItemId).OnDelete(DeleteBehavior.Restrict);
@@ -189,6 +200,7 @@ public sealed class LedgerForgeDbContext(DbContextOptions<LedgerForgeDbContext> 
             entity.HasOne<Department>().WithMany().HasForeignKey(x => x.DepartmentId).OnDelete(DeleteBehavior.Restrict);
             entity.HasOne<Location>().WithMany().HasForeignKey(x => x.LocationId).OnDelete(DeleteBehavior.Restrict);
             entity.HasOne<FiscalPeriod>().WithMany().HasForeignKey(x => x.FiscalPeriodId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<Invoice>().WithMany().HasForeignKey(x => x.InvoiceId).OnDelete(DeleteBehavior.Restrict);
             entity.HasOne<ActualTransaction>().WithMany().HasForeignKey(x => x.ReversesTransactionId).OnDelete(DeleteBehavior.Restrict);
         });
     }
@@ -217,6 +229,8 @@ public sealed class LedgerForgeDbContext(DbContextOptions<LedgerForgeDbContext> 
             entity.Property(x => x.Description).HasMaxLength(500).IsRequired();
             entity.Property(x => x.SubmittedBy).HasMaxLength(256);
             entity.Property(x => x.ApprovedBy).HasMaxLength(256);
+            entity.Property(x => x.RejectedBy).HasMaxLength(256);
+            entity.Property(x => x.RejectionReason).HasMaxLength(1000);
             entity.Property(x => x.IssuedBy).HasMaxLength(256);
             entity.Property(x => x.ClosedBy).HasMaxLength(256);
             entity.Property(x => x.CancelledBy).HasMaxLength(256);
@@ -253,6 +267,50 @@ public sealed class LedgerForgeDbContext(DbContextOptions<LedgerForgeDbContext> 
             entity.HasOne<FinanceAccount>().WithMany().HasForeignKey(x => x.FinanceAccountId).OnDelete(DeleteBehavior.Restrict);
             entity.HasOne<Department>().WithMany().HasForeignKey(x => x.DepartmentId).OnDelete(DeleteBehavior.Restrict);
             entity.HasOne<Location>().WithMany().HasForeignKey(x => x.LocationId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<Invoice>(entity =>
+        {
+            entity.ToTable("Invoice", table => table.HasCheckConstraint("CK_Invoice_TotalAmount", "[TotalAmount] > 0"));
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.InvoiceNumber).HasMaxLength(100).IsRequired();
+            entity.Property(x => x.Description).HasMaxLength(500).IsRequired();
+            entity.Property(x => x.TotalAmount).HasPrecision(19, 4);
+            entity.Property(x => x.SubmittedBy).HasMaxLength(256);
+            entity.Property(x => x.ApprovedBy).HasMaxLength(256);
+            entity.Property(x => x.RejectedBy).HasMaxLength(256);
+            entity.Property(x => x.RejectionReason).HasMaxLength(1000);
+            entity.Property(x => x.PostedBy).HasMaxLength(256);
+            entity.Property(x => x.CancelledBy).HasMaxLength(256);
+            entity.Property(x => x.CancellationReason).HasMaxLength(1000);
+            entity.Property(x => x.RowVersion).IsRowVersion();
+            entity.HasIndex(x => new { x.FiscalYearId, x.VendorId, x.InvoiceNumber }).IsUnique();
+            entity.HasIndex(x => new { x.State, x.FiscalYearId });
+            entity.HasIndex(x => x.PurchaseOrderId);
+            entity.HasOne<FiscalYear>().WithMany().HasForeignKey(x => x.FiscalYearId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<Vendor>().WithMany().HasForeignKey(x => x.VendorId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<PurchaseOrder>().WithMany().HasForeignKey(x => x.PurchaseOrderId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<InvoiceAllocation>(entity =>
+        {
+            entity.ToTable("InvoiceAllocation", table => table.HasCheckConstraint("CK_InvoiceAllocation_Amount", "[Amount] > 0"));
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.Description).HasMaxLength(500).IsRequired();
+            entity.Property(x => x.Amount).HasPrecision(19, 4);
+            entity.Property(x => x.RowVersion).IsRowVersion();
+            entity.HasIndex(x => new { x.InvoiceId, x.LineNumber }).IsUnique();
+            entity.HasIndex(x => x.BudgetItemId);
+            entity.HasIndex(x => x.FinanceAccountId);
+            entity.HasIndex(x => x.DepartmentId);
+            entity.HasIndex(x => x.LocationId);
+            entity.HasIndex(x => x.FiscalPeriodId);
+            entity.HasOne<Invoice>().WithMany().HasForeignKey(x => x.InvoiceId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<BudgetItem>().WithMany().HasForeignKey(x => x.BudgetItemId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<FinanceAccount>().WithMany().HasForeignKey(x => x.FinanceAccountId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<Department>().WithMany().HasForeignKey(x => x.DepartmentId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<Location>().WithMany().HasForeignKey(x => x.LocationId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<FiscalPeriod>().WithMany().HasForeignKey(x => x.FiscalPeriodId).OnDelete(DeleteBehavior.Restrict);
         });
     }
 
@@ -336,6 +394,8 @@ public sealed class LedgerForgeDbContext(DbContextOptions<LedgerForgeDbContext> 
             entity.Property(x => x.SourceKey).HasMaxLength(256);
             entity.Property(x => x.RawDataJson).IsRequired();
             entity.Property(x => x.TargetEntityType).HasMaxLength(128);
+            entity.Property(x => x.ReviewedBy).HasMaxLength(256);
+            entity.Property(x => x.ReviewNote).HasMaxLength(2000);
             entity.Property(x => x.RowVersion).IsRowVersion();
             entity.HasIndex(x => new { x.ImportBatchId, x.SourceSheet, x.SourceRowNumber }).IsUnique();
             entity.HasIndex(x => new { x.ImportBatchId, x.Outcome });
