@@ -1,3 +1,4 @@
+using LedgerForge.Domain.Actuals;
 using LedgerForge.Domain.Budgeting;
 using LedgerForge.Domain.Importing;
 using LedgerForge.Domain.MasterData;
@@ -13,6 +14,7 @@ public sealed class LedgerForgeDbContext(DbContextOptions<LedgerForgeDbContext> 
     public DbSet<BudgetVersion> BudgetVersions => Set<BudgetVersion>();
     public DbSet<BudgetItem> BudgetItems => Set<BudgetItem>();
     public DbSet<BudgetItemAllocation> BudgetItemAllocations => Set<BudgetItemAllocation>();
+    public DbSet<ActualTransaction> ActualTransactions => Set<ActualTransaction>();
     public DbSet<ImportBatch> ImportBatches => Set<ImportBatch>();
     public DbSet<ImportRow> ImportRows => Set<ImportRow>();
     public DbSet<ImportException> ImportExceptions => Set<ImportException>();
@@ -148,9 +150,42 @@ public sealed class LedgerForgeDbContext(DbContextOptions<LedgerForgeDbContext> 
             entity.HasOne<FiscalPeriod>().WithMany().HasForeignKey(x => x.FiscalPeriodId).OnDelete(DeleteBehavior.Restrict);
         });
 
+        ConfigureActuals(modelBuilder);
         ConfigureManagedLookups(modelBuilder);
         ConfigureImports(modelBuilder);
         ConfigureSecurity(modelBuilder);
+    }
+
+    private static void ConfigureActuals(ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<ActualTransaction>(entity =>
+        {
+            entity.ToTable("ActualTransaction", table =>
+            {
+                table.HasCheckConstraint("CK_ActualTransaction_Amount", "[Amount] <> 0");
+                table.HasCheckConstraint("CK_ActualTransaction_Reversal", "([Kind] = 3 AND [Amount] < 0 AND [ReversesTransactionId] IS NOT NULL) OR ([Kind] <> 3 AND [Amount] > 0 AND [ReversesTransactionId] IS NULL)");
+            });
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.Amount).HasPrecision(19, 4);
+            entity.Property(x => x.Description).HasMaxLength(500).IsRequired();
+            entity.Property(x => x.SourceReference).HasMaxLength(200);
+            entity.Property(x => x.ReversalReason).HasMaxLength(1000);
+            entity.Property(x => x.RowVersion).IsRowVersion();
+            entity.HasIndex(x => new { x.FiscalYearId, x.TransactionDate });
+            entity.HasIndex(x => x.BudgetItemId);
+            entity.HasIndex(x => x.FinanceAccountId);
+            entity.HasIndex(x => x.DepartmentId);
+            entity.HasIndex(x => x.LocationId);
+            entity.HasIndex(x => x.FiscalPeriodId);
+            entity.HasIndex(x => x.ReversesTransactionId).HasFilter("[ReversesTransactionId] IS NOT NULL").IsUnique();
+            entity.HasOne<FiscalYear>().WithMany().HasForeignKey(x => x.FiscalYearId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<BudgetItem>().WithMany().HasForeignKey(x => x.BudgetItemId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<FinanceAccount>().WithMany().HasForeignKey(x => x.FinanceAccountId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<Department>().WithMany().HasForeignKey(x => x.DepartmentId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<Location>().WithMany().HasForeignKey(x => x.LocationId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<FiscalPeriod>().WithMany().HasForeignKey(x => x.FiscalPeriodId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<ActualTransaction>().WithMany().HasForeignKey(x => x.ReversesTransactionId).OnDelete(DeleteBehavior.Restrict);
+        });
     }
 
     private static void ConfigureManagedLookups(ModelBuilder modelBuilder)
@@ -184,6 +219,7 @@ public sealed class LedgerForgeDbContext(DbContextOptions<LedgerForgeDbContext> 
         ConfigureLookup<ContractStatusLookup>(modelBuilder, "ContractStatus");
 
         modelBuilder.Entity<FinanceAccount>().HasOne<FinanceCategory>().WithMany().HasForeignKey(x => x.FinanceCategoryId).OnDelete(DeleteBehavior.Restrict);
+        modelBuilder.Entity<FinanceAccount>().HasIndex(x => x.FinanceCategoryId);
 
         modelBuilder.Entity<LookupValueAlias>(entity =>
         {
