@@ -23,9 +23,17 @@ public sealed class FinanceAccount : ManagedLookupEntity
     private FinanceAccount() { }
     public FinanceAccount(string code, string name, Guid? financeCategoryId = null, int sortOrder = 0) : base(code, name, sortOrder)
     {
+        SetFinanceCategory(financeCategoryId);
+    }
+
+    public Guid? FinanceCategoryId { get; private set; }
+
+    public void SetFinanceCategory(Guid? financeCategoryId)
+    {
+        if (financeCategoryId == Guid.Empty)
+            throw new ArgumentException("Finance category ID cannot be an empty GUID.", nameof(financeCategoryId));
         FinanceCategoryId = financeCategoryId;
     }
-    public Guid? FinanceCategoryId { get; private set; }
 }
 
 public sealed class InternalCategory : ManagedLookupEntity
