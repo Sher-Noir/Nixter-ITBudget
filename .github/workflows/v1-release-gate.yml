@@ -1,0 +1,214 @@
+name: v1-release-gate
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  sql-and-tests:
+    runs-on: ubuntu-latest
+    services:
+      sqlserver:
+        image: mcr.microsoft.com/mssql/server:2022-latest
+        env:
+          ACCEPT_EULA: 'Y'
+          MSSQL_SA_PASSWORD: 'LedgerForge_V1_Gate_2026_Aa7!'
+        ports:
+          - 1433:1433
+    env:
+      LEDGERFORGE_TEST_CONNECTION: 'Server=localhost,1433;Database=LedgerForgeV1Gate;User Id=sa;Password=LedgerForge_V1_Gate_2026_Aa7!;Encrypt=True;TrustServerCertificate=True;Connect Timeout=30'
+      ConnectionStrings__LedgerForge: 'Server=localhost,1433;Database=LedgerForgeV1Gate;User Id=sa;Password=LedgerForge_V1_Gate_2026_Aa7!;Encrypt=True;TrustServerCertificate=True;Connect Timeout=30'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      - name: Restore and build Release
+        run: |
+          dotnet tool restore
+          dotnet restore LedgerForge.slnx
+          dotnet build LedgerForge.slnx --configuration Release --no-restore
+
+      - name: Wait for SQL Server
+        shell: bash
+        run: |
+          set -euo pipefail
+          container_id='${{ job.services.sqlserver.id }}'
+          for attempt in $(seq 1 60); do
+            if docker exec "$container_id" bash -lc '
+              if [ -x /opt/mssql-tools18/bin/sqlcmd ]; then SQLCMD=/opt/mssql-tools18/bin/sqlcmd; else SQLCMD=/opt/mssql-tools/bin/sqlcmd; fi
+              "$SQLCMD" -b -S localhost -U sa -P "$MSSQL_SA_PASSWORD" -C -Q "SELECT 1" >/dev/null
+            '; then
+              exit 0
+            fi
+            sleep 2
+          done
+          docker logs "$container_id"
+          exit 1
+
+      - name: Verify committed EF model
+        run: |
+          dotnet ef migrations has-pending-model-changes \
+            --project src/LedgerForge.Infrastructure/LedgerForge.Infrastructure.csproj \
+            --startup-project src/LedgerForge.Web/LedgerForge.Web.csproj \
+            --context LedgerForgeDbContext
+          mkdir -p artifacts
+          dotnet ef migrations script 0 \
+            --project src/LedgerForge.Infrastructure/LedgerForge.Infrastructure.csproj \
+            --startup-project src/LedgerForge.Web/LedgerForge.Web.csproj \
+            --context LedgerForgeDbContext \
+            --output artifacts/LedgerForge-Migrations.sql
+
+      - name: Review migration SQL
+        shell: python
+        run: |
+          from pathlib import Path
+          sql = Path('artifacts/LedgerForge-Migrations.sql').read_text(encoding='utf-8').upper()
+          blocked = [token for token in ('DROP TABLE', 'DROP COLUMN', 'TRUNCATE TABLE', 'ON DELETE CASCADE') if token in sql]
+          if blocked:
+              raise SystemExit('Blocked migration SQL token(s): ' + ', '.join(blocked))
+          if 'BASELINETOTAL' not in sql or 'PURCHASERECEIPT' not in sql or 'SUPERSEDESPURCHASEORDERID' not in sql:
+              raise SystemExit('Expected v1 forecast/procurement migration content is missing from the full migration script.')
+
+      - name: Initialize and verify disposable database
+        run: |
+          LEDGERFORGE_CONNECTION_STRING="$LEDGERFORGE_TEST_CONNECTION" dotnet run --project src/LedgerForge.Bootstrap/LedgerForge.Bootstrap.csproj --configuration Release --no-build -- initialize
+          LEDGERFORGE_CONNECTION_STRING="$LEDGERFORGE_TEST_CONNECTION" dotnet run --project src/LedgerForge.Bootstrap/LedgerForge.Bootstrap.csproj --configuration Release --no-build -- verify
+
+      - name: Inspect applied schema invariants
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > artifacts/v1-schema-check.sql <<'SQL'
+          SET NOCOUNT ON;
+          IF EXISTS (SELECT 1 FROM sys.foreign_keys WHERE delete_referential_action_desc = N'CASCADE')
+              THROW 50101, 'Cascade-delete foreign key found.', 1;
+          IF EXISTS (
+              SELECT 1
+              FROM INFORMATION_SCHEMA.COLUMNS
+              WHERE DATA_TYPE IN (N'decimal', N'numeric')
+                AND NOT (
+                    NUMERIC_SCALE = 4
+                    AND (
+                        NUMERIC_PRECISION = 19
+                        OR (TABLE_NAME = N'BudgetItemAllocation' AND COLUMN_NAME = N'Percentage' AND NUMERIC_PRECISION = 9)
+                    )
+                )
+          ) THROW 50102, 'Unexpected decimal precision/scale found.', 1;
+          IF NOT EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME = N'PurchaseReceipt')
+              THROW 50103, 'PurchaseReceipt table missing.', 1;
+          IF NOT EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = N'ForecastLine' AND COLUMN_NAME = N'BaselineTotal')
+              THROW 50104, 'Forecast baseline column missing.', 1;
+          IF NOT EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = N'PurchaseOrder' AND COLUMN_NAME = N'SupersedesPurchaseOrderId')
+              THROW 50105, 'PO change-order lineage column missing.', 1;
+          SQL
+          container_id='${{ job.services.sqlserver.id }}'
+          docker cp artifacts/v1-schema-check.sql "$container_id:/tmp/v1-schema-check.sql"
+          docker exec "$container_id" bash -lc '
+            if [ -x /opt/mssql-tools18/bin/sqlcmd ]; then SQLCMD=/opt/mssql-tools18/bin/sqlcmd; else SQLCMD=/opt/mssql-tools/bin/sqlcmd; fi
+            "$SQLCMD" -b -S localhost -U sa -P "$MSSQL_SA_PASSWORD" -C -d LedgerForgeV1Gate -i /tmp/v1-schema-check.sql
+          '
+
+      - name: Unit tests
+        run: dotnet test tests/LedgerForge.UnitTests/LedgerForge.UnitTests.csproj --configuration Release --no-build --logger "trx;LogFileName=v1-unit.trx"
+      - name: Integration tests against migrated SQL Server
+        run: dotnet test tests/LedgerForge.IntegrationTests/LedgerForge.IntegrationTests.csproj --configuration Release --no-build --logger "trx;LogFileName=v1-integration.trx"
+      - name: UI security/navigation smoke tests
+        run: dotnet test tests/LedgerForge.UiTests/LedgerForge.UiTests.csproj --configuration Release --no-build --logger "trx;LogFileName=v1-ui.trx"
+
+      - name: Enforce public-source hygiene
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git grep -n -i -E 'Charles River Community Health|\bCRCH\b' --; then
+            echo 'Legacy organization identifier found.'
+            exit 1
+          fi
+          bad=$(git ls-files | grep -E -i '\.(xlsx?|xlsm|pfx|p12|snk)$|(^|/)(App_Data|Documents|Uploads)/' || true)
+          if [ -n "$bad" ]; then
+            echo "$bad"
+            exit 1
+          fi
+          if grep -R -n -E --include='*.yml' --include='*.yaml' '^[[:space:]]*if:.*secrets\.' .github/workflows; then
+            echo 'GitHub Actions secrets must not be referenced directly from step/job if expressions.'
+            exit 1
+          fi
+
+      - name: Common secret-pattern scan
+        shell: python
+        run: |
+          from pathlib import Path
+          import re, subprocess
+          tracked = [Path(x.decode()) for x in subprocess.check_output(['git','ls-files','-z']).split(b'\0') if x]
+          patterns = [
+              re.compile(rb'-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----'),
+              re.compile(rb'gh[pousr]_[A-Za-z0-9]{30,}'),
+              re.compile(rb'AKIA[0-9A-Z]{16}'),
+              re.compile(rb'xox[baprs]-[A-Za-z0-9-]{20,}')
+          ]
+          hits=[]
+          for path in tracked:
+              try: data=path.read_bytes()
+              except OSError: continue
+              if b'\0' in data[:4096]: continue
+              if any(p.search(data) for p in patterns): hits.append(str(path))
+          if hits: raise SystemExit('Potential secret material: ' + ', '.join(hits))
+
+      - name: Upload final migration evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: LedgerForge-v1-migration-evidence
+          path: |
+            artifacts/LedgerForge-Migrations.sql
+            artifacts/v1-schema-check.sql
+
+  windows-package:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      - name: Build and test Windows release source
+        shell: pwsh
+        run: |
+          dotnet restore LedgerForge.slnx
+          dotnet build LedgerForge.slnx --configuration Release --no-restore
+          dotnet test tests\LedgerForge.UnitTests\LedgerForge.UnitTests.csproj --configuration Release --no-build
+          dotnet test tests\LedgerForge.IntegrationTests\LedgerForge.IntegrationTests.csproj --configuration Release --no-build
+          dotnet test tests\LedgerForge.UiTests\LedgerForge.UiTests.csproj --configuration Release --no-build
+
+      - name: Publish server payload
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path artifacts\payload\web | Out-Null
+          New-Item -ItemType Directory -Force -Path artifacts\payload\bootstrap | Out-Null
+          dotnet publish src\LedgerForge.Web\LedgerForge.Web.csproj --configuration Release --runtime win-x64 --self-contained false --output artifacts\payload\web
+          dotnet publish src\LedgerForge.Bootstrap\LedgerForge.Bootstrap.csproj --configuration Release --runtime win-x64 --self-contained false --output artifacts\payload\bootstrap
+          if (Test-Path artifacts\payload\web\appsettings.Production.json) { throw 'Production settings leaked into public payload.' }
+          Compress-Archive -Path artifacts\payload\* -DestinationPath artifacts\LedgerForge.Server.win-x64.zip -Force
+
+      - name: Publish embedded self-contained Setup
+        shell: pwsh
+        run: |
+          $payload = (Resolve-Path artifacts\LedgerForge.Server.win-x64.zip).Path
+          dotnet publish src\LedgerForge.Setup\LedgerForge.Setup.csproj --configuration Release --runtime win-x64 --self-contained true --output artifacts\setup /p:PayloadZipPath="$payload"
+          $setup = 'artifacts\setup\LedgerForge.Setup.exe'
+          if (-not (Test-Path $setup)) { throw 'LedgerForge.Setup.exe was not produced.' }
+          $hash = (Get-FileHash $setup -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash  LedgerForge.Setup.exe" | Set-Content -Encoding ascii artifacts\LedgerForge.Setup.exe.sha256
+
+      - name: Upload v1 Windows candidate
+        uses: actions/upload-artifact@v4
+        with:
+          name: LedgerForge-v1-windows-candidate
+          if-no-files-found: error
+          path: |
+            artifacts/setup/LedgerForge.Setup.exe
+            artifacts/LedgerForge.Setup.exe.sha256
+            artifacts/LedgerForge.Server.win-x64.zip
