@@ -1,0 +1,91 @@
+@model LedgerForge.Infrastructure.Budgeting.ForecastDetailSnapshot
+@using LedgerForge.Domain.Budgeting
+@{
+    ViewData["Title"] = Model.Scenario.Name;
+    var canEdit = ViewData["CanEdit"] as bool? == true;
+    var canPublish = ViewData["CanPublish"] as bool? == true;
+    var errorMessage = ViewData["ErrorMessage"] as string;
+    var saved = ViewData["Saved"] as bool? == true;
+}
+
+<div class="lf-page-header">
+    <div>
+        <h1 class="lf-page-title">@Model.Scenario.Name</h1>
+        <p class="lf-subtitle">@Model.Scenario.FiscalYear · @Model.Scenario.BudgetVersion · as of @Model.Scenario.AsOfDate.ToString("yyyy-MM-dd")</p>
+    </div>
+    <a class="button" href="/forecasts">Back to forecasts</a>
+</div>
+
+@if (!string.IsNullOrWhiteSpace(errorMessage))
+{
+    <div class="lf-card lf-alert lf-alert-danger" role="alert">@errorMessage</div>
+}
+@if (saved)
+{
+    <div class="lf-card lf-alert lf-alert-success" role="status">Forecast workflow saved.</div>
+}
+
+<div class="lf-kpi-grid">
+    <article class="lf-card lf-kpi"><div class="lf-kpi-icon blue">B</div><div><div class="lf-card-title">Baseline</div><div class="lf-kpi-value">@Model.BaselineTotal.ToString("C2")</div><div class="lf-kpi-note">Current revised/approved/planned baseline</div></div></article>
+    <article class="lf-card lf-kpi"><div class="lf-kpi-icon teal">F</div><div><div class="lf-card-title">Forecast</div><div class="lf-kpi-value">@Model.ForecastTotal.ToString("C2")</div><div class="lf-kpi-note">Scenario line total</div></div></article>
+    <article class="lf-card lf-kpi"><div class="lf-kpi-icon @(Model.Variance > 0 ? "red" : "green")">Δ</div><div><div class="lf-card-title">Variance</div><div class="lf-kpi-value">@Model.Variance.ToString("C2")</div><div class="lf-kpi-note">Forecast less baseline</div></div></article>
+    <article class="lf-card lf-kpi"><div class="lf-kpi-icon purple">S</div><div><div class="lf-card-title">State</div><div class="lf-kpi-value">@Model.Scenario.State</div><div class="lf-kpi-note">@Model.Scenario.LineCount item lines</div></div></article>
+</div>
+
+<section class="lf-card" aria-labelledby="forecast-summary-title">
+    <div class="lf-panel-header">
+        <div><h2 id="forecast-summary-title">Scenario summary</h2><p class="lf-muted">@Model.Notes</p></div>
+        <span class="badge">@Model.Scenario.State</span>
+    </div>
+    @if (Model.Scenario.State == ForecastScenarioState.Published)
+    {
+        <p>Published by <strong>@Model.Scenario.PublishedBy</strong>@if (Model.Scenario.PublishedAtUtc is not null) { <span> · @Model.Scenario.PublishedAtUtc.Value.ToString("u")</span> }</p>
+    }
+    <div class="lf-toolbar">
+        @if (canPublish && Model.Scenario.State == ForecastScenarioState.Draft)
+        {
+            <form method="post" action="/forecasts/@Model.Scenario.Id/publish">@Html.AntiForgeryToken()<button class="primary" type="submit">Publish scenario</button></form>
+        }
+        @if (canPublish && Model.Scenario.State != ForecastScenarioState.Archived)
+        {
+            <details><summary>Archive scenario</summary><form method="post" action="/forecasts/@Model.Scenario.Id/archive">@Html.AntiForgeryToken()<p><label for="archiveReason">Reason</label><input id="archiveReason" name="reason" maxlength="1000" required /></p><button type="submit">Archive</button></form></details>
+        }
+    </div>
+</section>
+
+<section class="lf-card" aria-labelledby="forecast-lines-title">
+    <div class="lf-panel-header"><div><h2 id="forecast-lines-title">Forecast lines</h2><p class="lf-muted">Draft lines can be adjusted individually. Published lines are read-only.</p></div><span class="badge">@Model.Lines.Count line@(Model.Lines.Count == 1 ? string.Empty : "s")</span></div>
+    @if (Model.Lines.Count == 0)
+    {
+        <div class="lf-empty-state"><p>No forecast lines are available.</p></div>
+    }
+    else
+    {
+        <div class="lf-admin-stack">
+            @foreach (var line in Model.Lines)
+            {
+                <article class="lf-card">
+                    <div class="lf-panel-header">
+                        <div><h3><a href="/budget/items/@line.BudgetItemId">@line.ItemNumber · @line.Description</a></h3><p class="lf-muted">Baseline @line.Baseline.ToString("C2") · Variance @line.Variance.ToString("C2")</p></div>
+                        <strong>@line.ForecastTotal.ToString("C2")</strong>
+                    </div>
+                    @if (canEdit && Model.Scenario.State == ForecastScenarioState.Draft)
+                    {
+                        <form method="post" action="/forecasts/@Model.Scenario.Id/lines/@line.Id">
+                            @Html.AntiForgeryToken()
+                            <div class="lf-form-grid">
+                                <div><label for="forecast-@line.Id">Forecast total</label><input id="forecast-@line.Id" name="forecastTotal" type="number" min="0" step="0.0001" value="@line.ForecastTotal.ToString("0.####", System.Globalization.CultureInfo.InvariantCulture)" required /></div>
+                                <div class="lf-span-all"><label for="note-@line.Id">Note</label><input id="note-@line.Id" name="note" maxlength="1000" value="@line.Note" /></div>
+                            </div>
+                            <button type="submit">Save line</button>
+                        </form>
+                    }
+                    else if (!string.IsNullOrWhiteSpace(line.Note))
+                    {
+                        <p>@line.Note</p>
+                    }
+                </article>
+            }
+        </div>
+    }
+</section>
