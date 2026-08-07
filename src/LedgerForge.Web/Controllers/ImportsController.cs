@@ -1,3 +1,4 @@
+using System.Text.Json;
 using LedgerForge.Domain.Importing;
 using LedgerForge.ImportExport.Spreadsheets;
 using LedgerForge.Infrastructure.Importing;
@@ -229,9 +230,12 @@ public sealed class ImportsController(
         => new(await reviewService.ListBatchesAsync(cancellationToken: cancellationToken), errorMessage);
 
     private string RequireActor()
-        => string.IsNullOrWhiteSpace(User.Identity?.Name)
-            ? throw new InvalidOperationException("An authenticated directory identity is required for this action.")
-            : User.Identity.Name;
+    {
+        var actor = User.Identity?.Name;
+        if (string.IsNullOrWhiteSpace(actor))
+            throw new InvalidOperationException("An authenticated directory identity is required for this action.");
+        return actor;
+    }
 
     private static bool HasZipSignature(MemoryStream stream)
     {
