@@ -11,7 +11,7 @@ on:
       - '.github/workflows/generate-forecast-baseline-migration.yml'
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   generate:
@@ -32,6 +32,50 @@ jobs:
             --startup-project src/LedgerForge.Web/LedgerForge.Web.csproj \
             --context LedgerForgeDbContext \
             --output-dir Persistence/Migrations
+      - name: Preserve existing forecast baselines during upgrade
+        shell: python
+        run: |
+          from pathlib import Path
+
+          migration = next(Path('src/LedgerForge.Infrastructure/Persistence/Migrations').glob('*_AddForecastBaselineSnapshot.cs'))
+          text = migration.read_text(encoding='utf-8-sig')
+          generated = '''            migrationBuilder.AddColumn<decimal>(
+                name: "BaselineTotal",
+                table: "ForecastLine",
+                type: "decimal(19,4)",
+                nullable: false,
+                defaultValue: 0m);'''
+          reviewed = '''            migrationBuilder.AddColumn<decimal>(
+                name: "BaselineTotal",
+                table: "ForecastLine",
+                type: "decimal(19,4)",
+                nullable: true);
+
+            migrationBuilder.Sql("""
+                UPDATE [ForecastLine]
+                SET [BaselineTotal] = [ForecastTotal]
+                WHERE [BaselineTotal] IS NULL;
+                """);
+
+            migrationBuilder.AlterColumn<decimal>(
+                name: "BaselineTotal",
+                table: "ForecastLine",
+                type: "decimal(19,4)",
+                nullable: false,
+                oldClrType: typeof(decimal),
+                oldType: "decimal(19,4)",
+                oldNullable: true);'''
+          if generated not in text:
+              raise SystemExit('Expected generated BaselineTotal AddColumn block was not found; review EF output manually.')
+          migration.write_text(text.replace(generated, reviewed), encoding='utf-8')
+      - name: Commit generated migration to branch
+        if: github.event_name == 'push'
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/LedgerForge.Infrastructure/Persistence/Migrations
+          git commit -m 'Add forecast baseline snapshot migration'
+          git push origin HEAD:${GITHUB_REF_NAME}
       - name: Upload generated migration files
         uses: actions/upload-artifact@v4
         with:
