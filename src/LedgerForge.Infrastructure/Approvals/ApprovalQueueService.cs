@@ -41,7 +41,10 @@ public sealed class ApprovalQueueService(
     BudgetAmendmentService budgetAmendmentService,
     InvoiceWorkflowService invoiceWorkflowService)
 {
-    public async Task<ApprovalQueueSnapshot> GetAsync(CancellationToken cancellationToken = default)
+    public Task<ApprovalQueueSnapshot> GetAsync(CancellationToken cancellationToken = default)
+        => GetAsync(null, cancellationToken);
+
+    public async Task<ApprovalQueueSnapshot> GetAsync(Guid? fiscalYearId, CancellationToken cancellationToken = default)
     {
         var fiscalYearNames = await dbContext.FiscalYears
             .AsNoTracking()
@@ -49,7 +52,7 @@ public sealed class ApprovalQueueService(
 
         var budgetRows = await dbContext.BudgetItems
             .AsNoTracking()
-            .Where(x => x.Status == BudgetItemStatus.Submitted)
+            .Where(x => x.Status == BudgetItemStatus.Submitted && (fiscalYearId == null || x.FiscalYearId == fiscalYearId.Value))
             .OrderBy(x => x.SubmittedAtUtc)
             .Select(x => new
             {
@@ -72,7 +75,7 @@ public sealed class ApprovalQueueService(
 
         var poRows = await dbContext.PurchaseOrders
             .AsNoTracking()
-            .Where(x => x.State == PurchaseOrderState.PendingApproval)
+            .Where(x => x.State == PurchaseOrderState.PendingApproval && (fiscalYearId == null || x.FiscalYearId == fiscalYearId.Value))
             .OrderBy(x => x.SubmittedAtUtc)
             .Select(x => new
             {
@@ -87,7 +90,7 @@ public sealed class ApprovalQueueService(
 
         var invoiceRows = await dbContext.Invoices
             .AsNoTracking()
-            .Where(x => x.State == InvoiceState.PendingApproval)
+            .Where(x => x.State == InvoiceState.PendingApproval && (fiscalYearId == null || x.FiscalYearId == fiscalYearId.Value))
             .OrderBy(x => x.SubmittedAtUtc)
             .Select(x => new
             {
@@ -103,7 +106,7 @@ public sealed class ApprovalQueueService(
 
         var amendmentRows = await dbContext.BudgetAmendments
             .AsNoTracking()
-            .Where(x => x.State == BudgetAmendmentState.PendingApproval)
+            .Where(x => x.State == BudgetAmendmentState.PendingApproval && (fiscalYearId == null || x.FiscalYearId == fiscalYearId.Value))
             .OrderBy(x => x.SubmittedAtUtc)
             .Select(x => new
             {
@@ -176,21 +179,12 @@ public sealed class ApprovalQueueService(
             ordered.Sum(x => Math.Abs(x.Amount)));
     }
 
-    public async Task SubmitBudgetItemAsync(
-        Guid itemId,
-        string actor,
-        CancellationToken cancellationToken = default)
+    public async Task SubmitBudgetItemAsync(Guid itemId, string actor, CancellationToken cancellationToken = default)
     {
-        var item = await dbContext.BudgetItems
-            .SingleOrDefaultAsync(x => x.Id == itemId, cancellationToken)
+        var item = await dbContext.BudgetItems.SingleOrDefaultAsync(x => x.Id == itemId, cancellationToken)
             ?? throw new KeyNotFoundException("Budget item was not found.");
-
-        var version = await dbContext.BudgetVersions
-            .AsNoTracking()
-            .SingleAsync(x => x.Id == item.BudgetVersionId, cancellationToken);
-        if (version.IsLocked)
-            throw new InvalidOperationException("Items in a locked budget version cannot be submitted.");
-
+        var version = await dbContext.BudgetVersions.AsNoTracking().SingleAsync(x => x.Id == item.BudgetVersionId, cancellationToken);
+        if (version.IsLocked) throw new InvalidOperationException("Items in a locked budget version cannot be submitted.");
         item.Submit(actor, DateTimeOffset.UtcNow);
         await dbContext.SaveChangesAsync(cancellationToken);
     }
