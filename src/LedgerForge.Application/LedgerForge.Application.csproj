@@ -1,0 +1,5 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="../LedgerForge.Domain/LedgerForge.Domain.csproj" />
+  </ItemGroup>
+</Project>
