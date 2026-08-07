@@ -2,6 +2,7 @@
   <PropertyGroup><IsTestProject>true</IsTestProject></PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../../src/Crch.ItBudget.Application/Crch.ItBudget.Application.csproj" />
+    <ProjectReference Include="../../src/Crch.ItBudget.ImportExport/Crch.ItBudget.ImportExport.csproj" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
