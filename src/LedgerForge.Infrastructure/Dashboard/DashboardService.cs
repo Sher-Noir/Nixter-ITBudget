@@ -2,6 +2,7 @@ using LedgerForge.Domain.Budgeting;
 using LedgerForge.Domain.Importing;
 using LedgerForge.Domain.Procurement;
 using LedgerForge.Infrastructure.Persistence;
+using LedgerForge.Infrastructure.Procurement;
 using Microsoft.EntityFrameworkCore;
 
 namespace LedgerForge.Infrastructure.Dashboard;
@@ -40,7 +41,9 @@ public sealed record DashboardSnapshot(
     IReadOnlyList<DashboardRenewalItem> UpcomingRenewals,
     IReadOnlyList<DashboardRecentBudgetItem> RecentBudgetItems);
 
-public sealed class DashboardService(LedgerForgeDbContext dbContext)
+public sealed class DashboardService(
+    LedgerForgeDbContext dbContext,
+    OutstandingCommitmentService outstandingCommitmentService)
 {
     public async Task<DashboardSnapshot> GetAsync(CancellationToken cancellationToken = default)
     {
@@ -61,18 +64,7 @@ public sealed class DashboardService(LedgerForgeDbContext dbContext)
             .Where(x => x.FiscalYearId == fiscalYear.Id)
             .SumAsync(x => (decimal?)x.Amount, cancellationToken) ?? 0m;
 
-        var issuedOrderIds = await dbContext.PurchaseOrders
-            .AsNoTracking()
-            .Where(x => x.FiscalYearId == fiscalYear.Id && x.State == PurchaseOrderState.Issued)
-            .Select(x => x.Id)
-            .ToListAsync(cancellationToken);
-
-        var committed = issuedOrderIds.Count == 0
-            ? 0m
-            : await dbContext.PurchaseOrderLines
-                .AsNoTracking()
-                .Where(x => issuedOrderIds.Contains(x.PurchaseOrderId))
-                .SumAsync(x => (decimal?)x.LineTotal, cancellationToken) ?? 0m;
+        var committed = await outstandingCommitmentService.GetTotalForFiscalYearAsync(fiscalYear.Id, cancellationToken);
 
         var pendingPurchaseOrders = await dbContext.PurchaseOrders
             .AsNoTracking()
