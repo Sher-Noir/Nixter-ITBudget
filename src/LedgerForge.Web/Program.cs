@@ -35,6 +35,7 @@ builder.Services.AddDbContext<LedgerForgeDbContext>(options => options.UseSqlSer
 builder.Services.AddSingleton<LegacyBudgetWorkbookReader>();
 builder.Services.AddScoped<LegacyBudgetImportPreviewService>();
 builder.Services.AddScoped<ImportReviewService>();
+builder.Services.AddScoped<LegacyBudgetImportCommitService>();
 builder.Services.AddScoped<ManagedLookupInitializer>();
 builder.Services.AddScoped<LookupAdministrationService>();
 builder.Services.AddScoped<SecurityAdministrationService>();
