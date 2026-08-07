@@ -1,5 +1,7 @@
 using LedgerForge.Domain.Actuals;
+using LedgerForge.Domain.Auditing;
 using LedgerForge.Domain.Budgeting;
+using LedgerForge.Domain.Common;
 using LedgerForge.Domain.Importing;
 using LedgerForge.Domain.MasterData;
 using LedgerForge.Domain.Procurement;
@@ -15,15 +17,21 @@ public sealed class LedgerForgeDbContext(DbContextOptions<LedgerForgeDbContext> 
     public DbSet<BudgetVersion> BudgetVersions => Set<BudgetVersion>();
     public DbSet<BudgetItem> BudgetItems => Set<BudgetItem>();
     public DbSet<BudgetItemAllocation> BudgetItemAllocations => Set<BudgetItemAllocation>();
+    public DbSet<BudgetAmendment> BudgetAmendments => Set<BudgetAmendment>();
+    public DbSet<ForecastScenario> ForecastScenarios => Set<ForecastScenario>();
+    public DbSet<ForecastLine> ForecastLines => Set<ForecastLine>();
     public DbSet<ActualTransaction> ActualTransactions => Set<ActualTransaction>();
     public DbSet<Vendor> Vendors => Set<Vendor>();
     public DbSet<PurchaseOrder> PurchaseOrders => Set<PurchaseOrder>();
     public DbSet<PurchaseOrderLine> PurchaseOrderLines => Set<PurchaseOrderLine>();
     public DbSet<Invoice> Invoices => Set<Invoice>();
     public DbSet<InvoiceAllocation> InvoiceAllocations => Set<InvoiceAllocation>();
+    public DbSet<Contract> Contracts => Set<Contract>();
+    public DbSet<ContractRenewal> ContractRenewals => Set<ContractRenewal>();
     public DbSet<ImportBatch> ImportBatches => Set<ImportBatch>();
     public DbSet<ImportRow> ImportRows => Set<ImportRow>();
     public DbSet<ImportException> ImportExceptions => Set<ImportException>();
+    public DbSet<AuditEvent> AuditEvents => Set<AuditEvent>();
 
     public DbSet<BudgetSection> BudgetSections => Set<BudgetSection>();
     public DbSet<FinanceType> FinanceTypes => Set<FinanceType>();
@@ -57,6 +65,8 @@ public sealed class LedgerForgeDbContext(DbContextOptions<LedgerForgeDbContext> 
         ConfigureManagedLookups(modelBuilder);
         ConfigureImports(modelBuilder);
         ConfigureSecurity(modelBuilder);
+        ConfigureAudit(modelBuilder);
+        ConfigureAuditableEntities(modelBuilder);
     }
 
     private static void ConfigureBudgeting(ModelBuilder modelBuilder)
@@ -168,6 +178,56 @@ public sealed class LedgerForgeDbContext(DbContextOptions<LedgerForgeDbContext> 
             entity.HasOne<Location>().WithMany().HasForeignKey(x => x.LocationId).OnDelete(DeleteBehavior.Restrict);
             entity.HasOne<FinanceAccount>().WithMany().HasForeignKey(x => x.FinanceAccountId).OnDelete(DeleteBehavior.Restrict);
             entity.HasOne<FiscalPeriod>().WithMany().HasForeignKey(x => x.FiscalPeriodId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<BudgetAmendment>(entity =>
+        {
+            entity.ToTable("BudgetAmendment", table =>
+            {
+                table.HasCheckConstraint("CK_BudgetAmendment_AmountDelta", "[AmountDelta] <> 0");
+                table.HasCheckConstraint("CK_BudgetAmendment_ResultingRevisedTotal", "[ResultingRevisedTotal] IS NULL OR [ResultingRevisedTotal] >= 0");
+            });
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.AmountDelta).HasPrecision(19, 4);
+            entity.Property(x => x.Reason).HasMaxLength(2000).IsRequired();
+            entity.Property(x => x.SubmittedBy).HasMaxLength(256);
+            entity.Property(x => x.DecisionBy).HasMaxLength(256);
+            entity.Property(x => x.DecisionNote).HasMaxLength(2000);
+            entity.Property(x => x.ResultingRevisedTotal).HasPrecision(19, 4);
+            entity.Property(x => x.CancelledBy).HasMaxLength(256);
+            entity.Property(x => x.CancellationReason).HasMaxLength(2000);
+            entity.HasIndex(x => new { x.FiscalYearId, x.BudgetVersionId, x.State });
+            entity.HasIndex(x => new { x.BudgetItemId, x.CreatedAtUtc });
+            entity.HasOne<FiscalYear>().WithMany().HasForeignKey(x => x.FiscalYearId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<BudgetVersion>().WithMany().HasForeignKey(x => x.BudgetVersionId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<BudgetItem>().WithMany().HasForeignKey(x => x.BudgetItemId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<ForecastScenario>(entity =>
+        {
+            entity.ToTable("ForecastScenario");
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.Name).HasMaxLength(150).IsRequired();
+            entity.Property(x => x.Notes).HasMaxLength(2000);
+            entity.Property(x => x.PublishedBy).HasMaxLength(256);
+            entity.Property(x => x.ArchivedBy).HasMaxLength(256);
+            entity.Property(x => x.ArchiveReason).HasMaxLength(1000);
+            entity.HasIndex(x => new { x.FiscalYearId, x.Name }).IsUnique();
+            entity.HasIndex(x => new { x.FiscalYearId, x.BudgetVersionId, x.State, x.PublishedAtUtc });
+            entity.HasOne<FiscalYear>().WithMany().HasForeignKey(x => x.FiscalYearId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<BudgetVersion>().WithMany().HasForeignKey(x => x.BudgetVersionId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<ForecastLine>(entity =>
+        {
+            entity.ToTable("ForecastLine", table => table.HasCheckConstraint("CK_ForecastLine_ForecastTotal", "[ForecastTotal] >= 0"));
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.ForecastTotal).HasPrecision(19, 4);
+            entity.Property(x => x.Note).HasMaxLength(1000);
+            entity.HasIndex(x => new { x.ForecastScenarioId, x.BudgetItemId }).IsUnique();
+            entity.HasIndex(x => x.BudgetItemId);
+            entity.HasOne<ForecastScenario>().WithMany().HasForeignKey(x => x.ForecastScenarioId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<BudgetItem>().WithMany().HasForeignKey(x => x.BudgetItemId).OnDelete(DeleteBehavior.Restrict);
         });
     }
 
@@ -312,6 +372,48 @@ public sealed class LedgerForgeDbContext(DbContextOptions<LedgerForgeDbContext> 
             entity.HasOne<Location>().WithMany().HasForeignKey(x => x.LocationId).OnDelete(DeleteBehavior.Restrict);
             entity.HasOne<FiscalPeriod>().WithMany().HasForeignKey(x => x.FiscalPeriodId).OnDelete(DeleteBehavior.Restrict);
         });
+
+        modelBuilder.Entity<Contract>(entity =>
+        {
+            entity.ToTable("Contract", table =>
+            {
+                table.HasCheckConstraint("CK_Contract_DateRange", "[EndDate] >= [StartDate]");
+                table.HasCheckConstraint("CK_Contract_EstimatedAnnualAmount", "[EstimatedAnnualAmount] >= 0");
+                table.HasCheckConstraint("CK_Contract_RenewalNoticeDays", "[RenewalNoticeDays] >= 0 AND [RenewalNoticeDays] <= 730");
+            });
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.ContractNumber).HasMaxLength(100).IsRequired();
+            entity.Property(x => x.Name).HasMaxLength(250).IsRequired();
+            entity.Property(x => x.Description).HasMaxLength(2000);
+            entity.Property(x => x.EstimatedAnnualAmount).HasPrecision(19, 4);
+            entity.Property(x => x.ActivatedBy).HasMaxLength(256);
+            entity.Property(x => x.TerminatedBy).HasMaxLength(256);
+            entity.Property(x => x.TerminationReason).HasMaxLength(1000);
+            entity.Ignore(x => x.RenewalNoticeDate);
+            entity.HasIndex(x => new { x.VendorId, x.ContractNumber }).IsUnique();
+            entity.HasIndex(x => new { x.State, x.EndDate });
+            entity.HasIndex(x => x.BudgetItemId);
+            entity.HasIndex(x => x.FinanceAccountId);
+            entity.HasOne<Vendor>().WithMany().HasForeignKey(x => x.VendorId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<BudgetItem>().WithMany().HasForeignKey(x => x.BudgetItemId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<FinanceAccount>().WithMany().HasForeignKey(x => x.FinanceAccountId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<ContractRenewal>(entity =>
+        {
+            entity.ToTable("ContractRenewal", table =>
+            {
+                table.HasCheckConstraint("CK_ContractRenewal_DateRange", "[NoticeDate] <= [RenewalDate]");
+                table.HasCheckConstraint("CK_ContractRenewal_ExpectedAmount", "[ExpectedAmount] >= 0");
+            });
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.ExpectedAmount).HasPrecision(19, 4);
+            entity.Property(x => x.DecisionBy).HasMaxLength(256);
+            entity.Property(x => x.DecisionNote).HasMaxLength(2000);
+            entity.HasIndex(x => new { x.ContractId, x.RenewalDate }).IsUnique();
+            entity.HasIndex(x => new { x.Status, x.NoticeDate });
+            entity.HasOne<Contract>().WithMany().HasForeignKey(x => x.ContractId).OnDelete(DeleteBehavior.Restrict);
+        });
     }
 
     private static void ConfigureManagedLookups(ModelBuilder modelBuilder)
@@ -442,5 +544,38 @@ public sealed class LedgerForgeDbContext(DbContextOptions<LedgerForgeDbContext> 
             entity.HasIndex(x => new { x.DomainIdentity, x.Role }).HasFilter("[IsActive] = 1").IsUnique();
             entity.HasIndex(x => new { x.IsActive, x.ExpiresAtUtc });
         });
+    }
+
+    private static void ConfigureAudit(ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<AuditEvent>(entity =>
+        {
+            entity.ToTable("AuditEvent");
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.Actor).HasMaxLength(256).IsRequired();
+            entity.Property(x => x.EntityType).HasMaxLength(256).IsRequired();
+            entity.Property(x => x.BeforeJson).HasMaxLength(16000);
+            entity.Property(x => x.AfterJson).HasMaxLength(16000);
+            entity.Property(x => x.CorrelationId).HasMaxLength(128).IsRequired();
+            entity.Property(x => x.RequestMethod).HasMaxLength(32);
+            entity.Property(x => x.RequestPath).HasMaxLength(2048);
+            entity.Property(x => x.RemoteAddress).HasMaxLength(128);
+            entity.Property(x => x.UserAgent).HasMaxLength(1000);
+            entity.HasIndex(x => new { x.OccurredAtUtc, x.Id });
+            entity.HasIndex(x => new { x.EntityType, x.EntityId, x.OccurredAtUtc });
+            entity.HasIndex(x => new { x.Actor, x.OccurredAtUtc });
+            entity.HasIndex(x => x.CorrelationId);
+        });
+    }
+
+    private static void ConfigureAuditableEntities(ModelBuilder modelBuilder)
+    {
+        foreach (var entityType in modelBuilder.Model.GetEntityTypes().Where(x => typeof(AuditableEntity).IsAssignableFrom(x.ClrType)))
+        {
+            var entity = modelBuilder.Entity(entityType.ClrType);
+            entity.Property(nameof(AuditableEntity.CreatedBy)).HasMaxLength(256).IsRequired();
+            entity.Property(nameof(AuditableEntity.ModifiedBy)).HasMaxLength(256);
+            entity.Property(nameof(AuditableEntity.RowVersion)).IsRowVersion();
+        }
     }
 }
