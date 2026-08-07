@@ -3,6 +3,7 @@
   <ItemGroup>
     <ProjectReference Include="../../src/LedgerForge.Application/LedgerForge.Application.csproj" />
     <ProjectReference Include="../../src/LedgerForge.ImportExport/LedgerForge.ImportExport.csproj" />
+    <ProjectReference Include="../../src/LedgerForge.Setup.Engine/LedgerForge.Setup.Engine.csproj" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
