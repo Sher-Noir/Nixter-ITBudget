@@ -1,10 +1,8 @@
 # LedgerForge Project Handoff
 
-_Last verified against `agent/initial-scaffold` on 2026-08-07 at commit `666b93562d3a329686a40e15db32ecef083d7b5f`._
+_Last implementation checkpoint verified against `agent/initial-scaffold` on 2026-08-07 at commit `7bc31afd1a072ed64e23ea5350096f5fb49eaa35`. This handoff update itself is a later documentation-only commit, so always verify the live branch head before editing._
 
-This file is the authoritative handoff/checkpoint for ongoing LedgerForge implementation work. It exists so a new chat/session can resume from the real repository state without relying on conversation memory.
-
-> **Important:** The draft PR description and `docs/architecture/implementation-checklist.md` are older than the current branch and are now partially stale. Use this file first when resuming work, then verify the live branch before changing code.
+This file is the authoritative checkpoint for continuing LedgerForge. Do not rely on prior-chat memory. Read this file, verify the live GitHub branch/PR head, and inspect any commits newer than the checkpoint before changing code.
 
 ## Repository state
 
@@ -12,644 +10,388 @@ This file is the authoritative handoff/checkpoint for ongoing LedgerForge implem
 - Active branch: `agent/initial-scaffold`
 - Draft PR: `#1` — LedgerForge open-source budget platform foundation
 - PR base: `main`
-- Current verified head: `666b93562d3a329686a40e15db32ecef083d7b5f`
-- PR state at this checkpoint: open, draft, mergeable
-- Current PR size at this checkpoint: approximately 349 commits / 182 changed files
-- Target stack: .NET 10 LTS, ASP.NET Core MVC/Razor, EF Core, SQL Server, IIS, Integrated Windows Authentication
+- Verified implementation checkpoint: `7bc31afd1a072ed64e23ea5350096f5fb49eaa35`
+- Target stack: .NET 10 LTS, ASP.NET Core MVC/Razor, EF Core 10, SQL Server, IIS, Integrated Windows Authentication
+- SDK pinned by `global.json`: .NET SDK `10.0.302`, `latestPatch`, prerelease disabled
+- EF CLI pinned by `.config/dotnet-tools.json`: `dotnet-ef` `10.0.0`
 
-## Core engineering rules already established
+At the beginning of the 2026-08-07 validation pass, the live branch was `cee02879fc957ff80bdb0e0fa2b247fcf7b0a1ca` while the prior handoff recorded `666b93562d3a329686a40e15db32ecef083d7b5f`. The intervening repository delta was documentation-only (`PROJECT_HANDOFF.md` and the Windows installer-wizard design), so application/schema understanding did not need to be rebased around hidden code changes.
 
-- LedgerForge must remain organization-neutral and open-source friendly.
-- Do not commit real organization names, production account mappings, employee identities, private workbooks, secrets, internal paths, or other adopter-specific sensitive data.
+## Non-negotiable engineering rules
+
+- LedgerForge is organization-neutral and intended for public/open-source release.
+- Never commit real organization names, employee identities, production account mappings, private workbook names/data, internal paths, credentials, secrets, or adopter-specific directory groups.
+- Organization identity, branding, fiscal-year labels, AD groups, accounts, departments, locations, import expectations, and similar values are configuration/master data.
 - SQL Server / EF Core is authoritative for financial system-of-record data.
 - Financial amounts use `decimal(19,4)`.
-- Browser totals are never trusted as authoritative financial calculations.
-- Approved/posted financial history should be corrected through explicit workflow/reversal/amendment records, not silent destructive edits.
-- Financial relationships generally use restrictive deletes.
-- Mutable records use `rowversion` concurrency where appropriate.
+- Browser-calculated totals are never authoritative.
+- Preserve approved/posted history through amendments, reversals, workflow records, versioning, and immutable history rather than destructive edits.
+- Financial relationships must fail safe and generally use restrictive/no-action deletion.
 - Authorization fails closed.
-- Sensitive documents are not served directly from the web root.
-- Production database migrations must be explicit deployment steps, never destructive startup migrations.
-- CSP is intentionally strict; avoid inline scripts/styles.
-
-# What is implemented
-
-## 1. Solution / architecture / open-source conversion
-
-Implemented:
-
-- LedgerForge modular-monolith solution structure:
-  - `LedgerForge.Domain`
-  - `LedgerForge.Application`
-  - `LedgerForge.Infrastructure`
-  - `LedgerForge.Reporting`
-  - `LedgerForge.ImportExport`
-  - `LedgerForge.Web`
-- .NET 10 target across the solution.
-- Nullable reference types and warnings-as-errors configuration.
-- MIT license, contributor documentation, security policy, architecture notes, permissions documentation, import documentation, and AD authentication documentation.
-- Organization-specific runtime names/data removed from the LedgerForge source path.
-- Configurable organization/product branding instead of source-code organization constants.
-
-## 2. Authentication and authorization
-
-Implemented:
-
-- ASP.NET Core Negotiate / Integrated Windows Authentication reference configuration.
-- Logical application roles and role-aware authorization policies.
-- Fail-closed authorization behavior.
-- Database-backed AD/directory group mappings.
-- Deployment/bootstrap group mapping support.
-- Per-user role grant/deny exceptions.
-- Deny exceptions override grants/group membership.
-- Security administration UI.
-- Friendly access-denied behavior.
-- Separate policies for budget viewing/editing, approvals, imports, audit, administration, actual posting, procurement, etc.
-
-Still requires real-environment verification; see remaining work.
-
-## 3. Organization and appearance settings
-
-Implemented:
-
-- Configurable organization name, product name, application title, logo/icon paths, footer/support text, display timezone, fiscal-year label, and default theme.
-- Host-local overrides under git-ignored `App_Data`.
-- Light, dark, and system theme support.
-- Organization/appearance changes now emit explicit audit events because this settings store intentionally bypasses EF.
-
-## 4. Managed master data and finance administration
-
-Implemented:
-
-- Generic managed lookup model with:
-  - stable code
-  - editable name/description
-  - active/inactive state
-  - sort order
-  - aliases
-- Generic lookup seed catalogs.
-- Explicit initializer that inserts missing stable codes without overwriting administrator-renamed values.
-- Managed lookup administration screens.
-- Finance Categories.
-- Finance Accounts with category relationship.
-- Stable finance-account codes remain immutable while labels/description/sort/active/category assignment can change.
-- Fiscal-year administration screens.
-
-## 5. Fiscal years, fiscal periods, and budget versions
-
-Implemented:
-
-- Fiscal-year domain/persistence model.
-- Fiscal-period domain/persistence model.
-- Budget-version domain/persistence model.
-- Date/number/check constraints.
-- Locked/closed-state workflow protections.
-- Fiscal-year and version administration services/UI.
-
-## 6. Budget planning
-
-Implemented:
-
-- Budget items with stable identifiers and item numbers.
-- Quantity, unit cost, planned total, approved total, revised total.
-- Server-side authoritative calculation of totals.
-- Planning dimensions including department/location/etc.
-- Budget item allocation foundation.
-- Spreadsheet-like planning views.
-- Detailed budget-item edit screen.
-- Planning edits blocked when version/item workflow state does not permit them.
-- Budget item submit/approve/deny/defer workflow.
-- Reviewer actor/time/reason/note lineage.
-
-## 7. Budget amendments
-
-Implemented:
-
-- `BudgetAmendment` domain model.
-- Amendment workflow service.
-- Amendment controller/UI.
-- Amendment workflow tests.
-- Approved amendments update revised budget values through an explicit workflow instead of mutating approved baseline history silently.
-
-Files include:
-
-- `src/LedgerForge.Domain/Budgeting/BudgetAmendment.cs`
-- `src/LedgerForge.Infrastructure/Budgeting/BudgetAmendmentService.cs`
-- `src/LedgerForge.Web/Controllers/BudgetAmendmentsController.cs`
-- `src/LedgerForge.Web/Views/BudgetAmendments/Index.cshtml`
-- `tests/LedgerForge.UnitTests/BudgetAmendmentWorkflowTests.cs`
-
-## 8. Forecasting / scenarios
-
-Implemented:
-
-- `ForecastScenario` domain model.
-- Forecast service.
-- Forecast controllers and views.
-- Forecast scenario tests.
-- Draft scenarios begin from a complete budget baseline.
-- Item forecasts can be adjusted.
-- Published scenarios are immutable.
-- Forecast lines preserve baseline snapshots so later budget amendments do not rewrite historical published variance.
-- Dashboard uses the latest published forecast when available.
-- Forecast export support has been added to reporting/export work.
-
-Files include:
-
-- `src/LedgerForge.Domain/Budgeting/ForecastScenario.cs`
-- `src/LedgerForge.Infrastructure/Budgeting/ForecastService.cs`
-- `src/LedgerForge.Web/Controllers/ForecastsController.cs`
-- `src/LedgerForge.Web/Views/Forecasts/*`
-- `tests/LedgerForge.UnitTests/ForecastScenarioTests.cs`
-
-## 9. Legacy spreadsheet import pipeline
-
-Implemented:
-
-- Adapter-based ClosedXML workbook reader.
-- Strict sheet/header/schema validation.
-- `.xlsx` and ZIP signature validation.
-- Configurable upload size limit.
-- SHA-256 source hashing.
-- Source workbook/sheet/row lineage.
-- Server-side recalculation of planned totals.
-- Lookup resolution and alias support.
-- Optional configurable reconciliation expectations.
-- Preview batch persistence in a transaction.
-- `ImportBatch`, `ImportRow`, `ImportException` workflow models.
-- Warning/error handling.
-- Explicit exception assignment/resolution/reopen workflow.
-- Audited row disposition override:
-  - Accepted
-  - Accepted with warning
-  - Rejected
-- Open row errors block acceptance.
-- Warnings require explicit accepted-with-warning disposition when applicable.
-- Accepted-row aggregate is recalculated after row review changes.
-- HTTP actions verify that exception/row IDs belong to the supplied batch, preventing cross-batch crafted-ID actions.
-- Explicit administrator preview acceptance.
-- Written acceptance reason when required.
-- Transactional authoritative commit into budget records.
-- Item-number/source lineage preserved.
-- Import tests exist for parser/workflow/review behavior.
-
-## 10. Actual transaction ledger
-
-Implemented:
-
-- Append-only actual transaction model.
-- Transaction kinds include manual, invoice, adjustment, reversal.
-- Positive normal transactions.
-- Corrections use negative reversal rows linked to exactly one original transaction.
-- Original actual row is not destructively edited/deleted.
-- Reversal reason/lineage.
-- Fiscal-year and fiscal-period relationship.
-- Budget item / finance account / department / location dimensions.
-- Closed fiscal-period posting protection.
-- Actual-ledger UI.
-- Separate read vs posting authorization.
-- Domain tests for reversal behavior.
-
-## 11. Vendors and purchase orders
-
-Implemented:
-
-- Vendor master data and UI.
-- Purchase-order domain and persistence.
-- Purchase-order lines.
-- PO numbering per fiscal year.
-- PO line dimensions:
-  - budget item
-  - finance account
-  - department
-  - location
-- Draft-only line maintenance.
-- Submit -> approve -> issue -> close workflow.
-- Explicit rejection and cancellation lineage.
-- Separate approver authority.
-- Issued PO lines feed commitment calculations.
-- Closed/cancelled/rejected states stop contributing as appropriate.
-- Purchase-order workflow tests.
-
-Known remaining procurement enhancement: first-class change-order support is still needed.
-
-## 12. Invoices
-
-Implemented:
-
-- Invoice domain/persistence model.
-- Invoice allocations.
-- Vendor and optional PO relationship.
-- Budget/account/department/location/fiscal-period allocation dimensions.
-- Draft -> pending approval -> approved -> posted workflow.
-- Rejection/cancellation lineage.
-- Allocation totals must reconcile to invoice total before posting.
-- Posting requires compatible/open periods.
-- Atomic posting creates actual-ledger rows.
-- Actual rows preserve invoice lineage.
-- Duplicate invoice posting is blocked.
-- PO-backed posted invoice amounts reduce outstanding PO commitment while simultaneously increasing Actual, avoiding double counting.
-- Invoice UI and workflow tests.
-
-## 13. Contracts and renewal decisions
-
-Implemented:
-
-- First-class contract domain model.
-- Vendor relationship.
-- Optional budget item / finance account relationships.
-- Contract lifecycle service/UI.
-- Persistent renewal review/decision records.
-- Contract notice/end dates drive renewal planning.
-- Contract workflow tests.
-
-## 14. Renewal calendar
-
-Implemented:
-
-- Renewal calendar service/UI.
-- Contract notice windows are the primary renewal signal.
-- Budget-item renewal dates remain a fallback when an item is not already represented by a contract.
-- Duplicate renewal exposure is avoided between contract and budget sources.
-- Dashboard and renewal reporting use the same contract-first semantics.
-- Renewal exports include source/vendor/action/renewal metadata.
-
-## 15. Unified approvals
-
-Implemented:
-
-- Central approvals queue.
-- Budget item approvals.
-- Purchase-order approvals/rejections.
-- Invoice approvals/rejections.
-- Oldest submissions first.
-- Actor/timestamp/reason/note lineage.
-- Approval navigation is role-aware.
-- Dashboard pending-approval counts incorporate active workflow records.
-
-## 16. Dashboard
-
-Implemented:
-
-- Live authoritative dashboard service rather than static mock totals.
-- Planned Budget.
-- Approved Budget.
-- Revised Budget.
-- Outstanding Committed.
-- Actual.
-- Available.
-- Forecast.
-- Pending Approvals.
-- Renewals due / renewal actions.
-- Recent budget items.
-- Import review panel for authorized users.
-- Contract-aware renewal signals.
-- Posted PO-backed invoice amounts reduce outstanding commitment.
-
-## 17. Reporting and CSV exports
-
-Implemented:
-
-- Report Center.
-- Fiscal-year selection.
-- Authoritative summary totals.
-- Budget CSV.
-- Actual ledger CSV.
-- Commitment/open-PO CSV.
-- Renewal CSV.
-- Forecast export support.
-- Spreadsheet formula-injection protection for exported text.
-- UTF-8/Excel-friendly CSV handling.
-- Reporting calculations are aligned with dashboard commitment/actual semantics.
-
-## 18. Central audit trail
-
-Implemented:
-
-- `AuditEvent` domain model/table.
-- `IAuditRequestContext` abstraction.
-- Web `HttpAuditRequestContext` implementation.
-- EF `AuditSaveChangesInterceptor`.
-- Actor, entity, action, before/after values, correlation/request metadata.
-- Audit events participate in the same EF save/transaction.
-- Hard deletes of auditable EF entities are blocked.
-- Generic auditing excludes oversized/raw import payload fields where appropriate.
-- Audit Trail controller/view with filters for actor/entity/correlation/date and bounded results.
-- Audit navigation under `ViewAudit` policy.
-- Organization settings emit explicit audit records outside EF.
-- Document actions emit explicit audit records outside EF.
-- Audit event tests.
-
-## 19. Secure document storage
-
-Implemented:
-
-- Physical document store under non-web-root `App_Data/Documents`.
-- Generated storage keys instead of trusting user file paths.
-- Versioned document metadata.
-- SHA-256 version hashes.
-- File/signature validation for supported Office/PDF/image formats.
-- Authorized controller-based download streaming.
-- Upload/new-version controls are role-aware.
-- Immutable version history.
-- Linked-entity metadata support.
-- Document library/detail UI.
-- Explicit upload/download/access audit records.
-- Local append-only access logging.
-
-## 20. Search
-
-Implemented:
-
-- Global search controller/view/model.
-- Search route wired into the application shell.
-- Search support across relevant LedgerForge entities.
-
-## 21. Tests currently present
-
-The branch contains unit tests for material domain/workflow behavior including:
+- CSP remains strict; do not introduce inline scripts/styles casually.
+- Sensitive documents remain outside the public web root and are streamed only through authorized endpoints.
+- Production EF migrations are explicit deployment steps. Do not add automatic startup migrations.
 
+# Validation gate — CURRENT STATUS
+
+The validation/migration gate is **not green**. Do not continue to fiscal-year rollover or later feature priorities until the exact branch head can restore/build/test cleanly and the first migration is generated/reviewed/applied to disposable SQL Server.
+
+## Build/test execution status
+
+Required commands remain:
+
+```powershell
+dotnet restore LedgerForge.slnx
+dotnet build LedgerForge.slnx --configuration Release --no-restore
+dotnet test LedgerForge.slnx --configuration Release --no-build
+```
+
+What is known:
+
+- `Directory.Build.props` enables nullable reference types, latest analysis, and `TreatWarningsAsErrors=true`.
+- `global.json` now pins the intended .NET 10 SDK baseline to `10.0.302`.
+- The current agent execution container has no .NET SDK and cannot obtain a usable repository checkout/SDK through its restricted network path, so the required local commands have **not** been executed successfully in this checkpoint.
+- Therefore no claim of compiler-clean, warning-clean, or test-clean status is valid yet.
+
+## GitHub Actions status
+
+Workflow: `.github/workflows/ci.yml`
+
+Repository-side CI fixes completed during this validation pass:
+
+- Removed invalid `actions/setup-dotnet` NuGet caching. The workflow had `cache: true` but the repository has no `packages.lock.json`; setup-dotnet documents that this configuration fails when no lock file exists.
+- Added explicit `permissions: contents: read`.
+- CI now consumes `global.json` rather than an unpinned `10.0.x` SDK range.
+- Added `dotnet --info` before restore so future runnable jobs expose the exact SDK/runtime environment.
+
+Current infrastructure blocker:
+
+- Latest checked run for implementation checkpoint `7bc31afd1a072ed64e23ea5350096f5fb49eaa35`: workflow run `31214601900`.
+- `build-test` job id: `92985055015`.
+- GitHub reports the job as completed/failure but exposes `steps: null` and no downloadable job log through the connected API.
+- This is still a pre-step execution/runner/account-side failure from the repository's perspective; checkout and setup-dotnet are not being reported as executed.
+- Do not guess at billing/quota/runner causes without evidence. Once GitHub actually creates steps, inspect the first real failing step and fix it.
+
+# Persistence/model validation completed
+
+The prior handoff overstated the completeness of `LedgerForgeDbContext`. Source modules existed for amendments, forecasts, contracts/renewals, and audit, but the context did not expose/configure those entities. Several controllers/services referenced missing DbSet properties, and the web host did not register multiple newer services or the audit interceptor.
+
+## `LedgerForgeDbContext` corrections
+
+Commit `553a474f09cab687a2862dd0c6613622ae2c3e4c` completed the EF model surface.
+
+Added DbSets/configuration for:
+
+- `BudgetAmendment`
+- `ForecastScenario`
+- `ForecastLine`
+- `Contract`
+- `ContractRenewal`
+- `AuditEvent`
+
+Key schema rules now encoded in the model:
+
+- New financial amount columns explicitly use `decimal(19,4)`.
+- New financial relationships use `DeleteBehavior.Restrict`.
+- Amendment delta cannot be zero; resulting revised total cannot be negative.
+- Forecast totals cannot be negative.
+- Contract date range, annual amount, and renewal-notice-day constraints are explicit.
+- Contract-renewal notice date cannot be after renewal date; expected amount cannot be negative.
+- Contract computed `RenewalNoticeDate` is explicitly ignored by EF.
+- Unique/index coverage was added for scenario names, scenario lines, contract numbers, renewal dates, state/date queries, and audit lookup paths.
+- Audit-event field lengths now match domain validation.
+- Auditable entities receive bounded `CreatedBy`/`ModifiedBy` and `rowversion` configuration centrally.
+
+Existing financial model configuration was reviewed across:
+
+- fiscal years/periods
+- budget versions/items/allocations
 - actual transactions/reversals
-- audit events
-- budget calculations
-- allocation reconciliation
-- budget planning
-- budget approvals
+- vendors
+- purchase orders/lines
+- invoices/allocations
+- managed lookups/finance accounts
+- import batches/rows/exceptions
+- directory mappings/user exceptions
+
+No new cascade-delete path was deliberately introduced.
+
+## Runtime wiring corrections
+
+Commit `4abbdf25bfc400367067ac1e328ba1aa904efd08` corrected the web host wiring.
+
+Added/connected:
+
+- `IAuditRequestContext` -> `HttpAuditRequestContext`
+- `AuditSaveChangesInterceptor`
+- interceptor registration on `LedgerForgeDbContext`
+- `BudgetAmendmentService`
+- `ForecastService`
+- `InvoiceQueryService`
+- `InvoiceWorkflowService`
+- `ContractService`
+- `AddHttpContextAccessor()`
+
+Strict CSP was preserved. No startup database migration was added.
+
+## Persistence regression tests
+
+`tests/LedgerForge.IntegrationTests/PersistenceModelTests.cs` was added and tightened in commits `934b58c26688abfb2305d6c03061f6784a343dc8` and `f8bef5c2e6349738ae06987b202b74d1bad4f466`.
+
+The tests are intended to fail once executable CI resumes if:
+
+- shipped financial/audit entity types disappear from the EF model,
+- known financial amount properties drift away from precision 19 / scale 4,
+- any modeled FK uses cascade/client-cascade delete.
+
+These tests are source-reviewed but **not yet executed** because the validation runner remains blocked.
+
+# First controlled EF migration — CURRENT STATUS
+
+The first migration has **not** been generated, reviewed, committed, or applied. Do not hand-author a file and call it EF-generated.
+
+Migration tooling is now deterministic:
+
+- `.config/dotnet-tools.json` pins `dotnet-ef` to `10.0.0`, matching the EF Core package baseline in `LedgerForge.Infrastructure`.
+- `global.json` pins the .NET SDK baseline.
+
+Once a working .NET execution environment is available, run the validation commands first. Only after they are clean, use:
+
+```powershell
+dotnet tool restore
+
+dotnet ef migrations add InitialCreate `
+  --project src/LedgerForge.Infrastructure/LedgerForge.Infrastructure.csproj `
+  --startup-project src/LedgerForge.Web/LedgerForge.Web.csproj `
+  --context LedgerForgeDbContext `
+  --output-dir Persistence/Migrations
+```
+
+Then generate and review SQL before applying it:
+
+```powershell
+dotnet ef migrations script 0 InitialCreate `
+  --project src/LedgerForge.Infrastructure/LedgerForge.Infrastructure.csproj `
+  --startup-project src/LedgerForge.Web/LedgerForge.Web.csproj `
+  --context LedgerForgeDbContext `
+  --output artifacts/InitialCreate.sql
+```
+
+Review the generated migration and SQL for at least:
+
+- any `Drop*`, data-loss, or destructive operation
+- accidental cascade deletes
+- money/amount precision other than `decimal(19,4)` where not intentionally percentage/rate data
+- missing max lengths
+- nullable vs required relationship mistakes
+- missing indexes and business-key uniqueness
+- check-constraint correctness
+- filtered-index correctness
+- `rowversion` mappings
+- TPC managed-lookup table behavior
+- audit-table size/index choices
+- SQL Server identifier/filtered-index compatibility
+
+Then apply only to a disposable SQL Server database using a non-secret local/environment connection string and validate schema/application behavior there. Production deployment must continue to apply reviewed migrations explicitly; do not introduce `Database.Migrate()` at startup.
+
+# Important stale claims discovered during validation
+
+The previous handoff described several behaviors as implemented that are not present in the current authoritative source. Treat the following as defects/incomplete work, not completed features:
+
+## Forecasting
+
+Source present:
+
+- forecast scenario/line domain types
+- forecast service/controller/views
+- scenario workflow tests
+
+Not actually present yet:
+
+- `ForecastLine` does not persist a separate baseline snapshot; it stores scenario id, budget item id, forecast total, and note.
+- Dashboard does not consume the latest published forecast; it currently derives forecast as `Max(revised budget, committed + actual)`.
+- Reporting/export service has no forecast export method/route.
+
+## Commitment accounting
+
+Source present:
+
+- issued PO commitment calculation
+- invoice posting creates actual-ledger rows
+- optional invoice-to-PO relationship
+
+Incorrect/incomplete today:
+
+- Dashboard and Report Center sum gross issued PO line totals.
+- Posted PO-backed invoice totals are not subtracted from outstanding commitment there.
+- Therefore a posted invoice linked to an issued PO can currently increase Actual while the original PO amount remains fully Committed, causing double counting in available/forecast views.
+- Commitment CSV currently exports gross issued PO lines rather than a reconciled outstanding commitment representation.
+
+Do not call those totals production-authoritative until this is fixed and tested.
+
+## Renewals/contracts
+
+Source present:
+
+- contract/contract-renewal domain and service/UI
+- budget-item renewal calendar
+
+Not actually present yet:
+
+- Renewal calendar is still budget-item-renewal-date based; it is not contract-first.
+- Dashboard renewal signals are budget-item based.
+- Reporting renewal export is budget-item based and lacks the previously claimed contract source/vendor/action metadata.
+- Duplicate suppression between contract and budget renewal sources is not implemented.
+
+## Unified approvals
+
+Current `ApprovalQueueService` includes:
+
+- submitted budget items
+- pending purchase orders
+
+It does **not** currently include invoice approvals or budget-amendment approvals despite the previous handoff claiming a fully unified queue. Dashboard pending approvals likewise do not yet count all active workflow types.
+
+These corrections to project status are important: source presence is not equivalent to verified end-to-end implementation.
+
+# Module inventory — source present, validation still required
+
+The branch contains substantial source/UI/domain coverage for:
+
+- authentication/authorization and directory-role mapping
+- organization/appearance settings
+- managed lookup and finance administration
+- fiscal years/periods/budget versions
+- budget planning and allocations
+- budget item approval workflow
 - budget amendments
-- finance accounts
-- fiscal-year workflow
-- forecast scenarios
-- import batch workflow
-- import exception workflow
-- import row review
-- legacy workbook reader
-- purchase-order workflow
-- invoice workflow
-- contract workflow
+- forecasting/scenarios
+- legacy spreadsheet import/review/commit
+- actual transaction ledger and reversals
+- vendors and purchase orders
+- invoices and invoice posting
+- contracts and renewal decision records
+- dashboard
+- report center and CSV exports
+- central audit model/interceptor/UI
+- physical document storage outside web root
+- global search
 
-Integration-test and UI-test projects also exist, but meaningful environment-backed coverage remains incomplete.
+None of the above should be promoted to "validated current head" until the Release build/tests run successfully and database-backed flows are exercised after the initial migration.
 
-# Validation status at this checkpoint
+# Security/open-source checks to preserve
 
-## What is known
+- Checked-in `appsettings.json` uses generic LedgerForge/"Your Organization" defaults and no adopter secrets.
+- Checked-in AD group arrays are empty; authorization must continue to fail closed until deployment bootstrap is configured.
+- Document content is stored under non-web-root `App_Data/Documents`.
+- Document downloads are controller-mediated.
+- CSP remains self-hosted/strict.
+- No production startup migration is present.
+- Real migration workbooks and adopter-specific configuration remain outside source control.
 
-- The draft PR is currently mergeable according to GitHub.
-- Static repository hygiene checks performed during implementation found no obvious merge markers, stale CRCH namespace references, indexed inline `style=` usage, or obvious destructive `.Remove(` financial persistence calls at the time of those checks.
-- The current branch includes all modules listed above.
+# Priority order after the gate
 
-## What is NOT yet proven
+Do not skip Priority 1 or Priority 2 because later source already exists.
 
-Do **not** claim the current head is production-ready or build/test clean yet.
+## Priority 1 — clean executable validation baseline
 
-At this checkpoint:
+1. Obtain exact live `agent/initial-scaffold` checkout.
+2. Verify `dotnet --version` resolves to the pinned .NET 10 SDK line.
+3. `dotnet tool restore`.
+4. Run restore/build/test commands exactly as documented above.
+5. Fix every compiler warning/error; warnings are errors.
+6. Re-run until clean.
+7. Get GitHub Actions to execute real steps and confirm it matches local results.
+8. Record exact command output/result and current implementation SHA here.
 
-- The GitHub Actions run for current head `666b93562d3a329686a40e15db32ecef083d7b5f` is failing.
-- The connected Actions API reports the `build-test` job as failed but still exposes no executable step summaries/logs.
-- A successful full Release build of the exact current head has not yet been recorded in this handoff.
-- A successful full unit/integration/UI test pass of the exact current head has not yet been recorded.
-- The first controlled EF Core migration has **not** yet been committed.
-- The complete current schema has not yet been migration-tested against a disposable SQL Server instance.
+## Priority 2 — first controlled migration + disposable SQL Server validation
 
-This validation gate is the **first priority when work resumes**.
-
-# What is left
-
-The following list is ordered roughly by priority.
-
-## Priority 1 — establish a clean validation baseline
-
-1. Obtain a local checkout of `agent/initial-scaffold` at the current head.
-2. Use a .NET 10 SDK.
-3. Run:
-
-   ```powershell
-   dotnet restore LedgerForge.slnx
-   dotnet build LedgerForge.slnx --configuration Release --no-restore
-   dotnet test LedgerForge.slnx --configuration Release --no-build
-   ```
-
-4. Fix all compiler warnings/errors; warnings are treated as errors.
-5. Re-run tests until clean.
-6. Determine why GitHub Actions `build-test` is failing before exposing useful step logs and repair CI if necessary.
-7. Update this handoff with the exact validation result and new head SHA.
-
-## Priority 2 — create and verify the first controlled EF migration
-
-1. Review the final current `LedgerForgeDbContext` model.
-2. Generate the first EF Core migration from the complete current schema.
-3. Review generated SQL for:
-   - destructive operations
-   - wrong cascade behaviors
-   - missing lengths/precision
-   - missing indexes/unique constraints
-   - enum/check-constraint mismatches
-   - nullable relationship mistakes
-4. Apply the migration to a disposable SQL Server database.
-5. Run the application/tests against that database.
-6. Validate rollback/restore strategy rather than relying on automatic destructive down migrations.
-7. Commit migration and deployment notes only after review.
+1. Generate `InitialCreate` from the complete corrected `LedgerForgeDbContext`.
+2. Review migration and SQL.
+3. Fix model issues and regenerate rather than editing around a wrong model where possible.
+4. Apply to disposable SQL Server.
+5. Run application/database integration smoke tests against it.
+6. Validate migration history/schema/indexes/constraints.
+7. Commit the reviewed migration and deployment notes.
+8. Update this handoff with exact migration name/SHA and disposable-database result.
 
 ## Priority 3 — fiscal-year close and rollover
 
 Still needed:
 
-- Fiscal-year close checklist.
-- Close prerequisites and blocking conditions.
-- Period/fiscal-year closure workflow.
-- Controlled rollover wizard.
-- Copy-forward rules for recurring/renewal budget items.
-- New fiscal-year budget version creation.
-- Explicit treatment of open POs, contracts, renewals, forecasts, and amendments at rollover.
-- Rollover audit trail.
-- Rollover tests.
+- close prerequisites/checklist
+- period/fiscal-year closure orchestration
+- controlled rollover wizard/service
+- recurring/renewal copy-forward rules
+- next-year budget version creation
+- explicit handling for open POs, posted/unposted invoices, contracts, renewals, forecasts, and amendments
+- immutable rollover audit history
+- rollover regression tests
 
-## Priority 4 — remaining procurement/actual enhancements
+## Priority 4 — correctness gaps in existing procurement/reporting workflows
 
-Still needed or incomplete:
+Before broadening features, repair and test the stale-claim defects recorded above:
 
-- Purchase-order change orders / revisions with preserved history.
-- Receipt/receiving workflow if LedgerForge is expected to track received vs invoiced quantities.
-- Configurable actual-transaction import profiles/adapters beyond manual and invoice posting.
-- Reconciliation workflows for external finance-system actual imports.
-- Stronger duplicate-invoice/business-key policies if required by deployment rules.
+- outstanding PO commitment reduced by posted linked invoices without going negative
+- shared dashboard/reporting commitment semantics
+- latest published forecast used where intended
+- forecast export
+- contract-first renewal calendar/report/dashboard behavior with fallback and deduplication
+- invoice/amendment entries in unified approvals and pending counts
+- purchase-order change orders/revisions with preserved history
 
-## Priority 5 — import administration hardening
+## Priority 5 — import/report/admin hardening
 
-Still needed or incomplete:
+Continue remaining work documented in architecture/checklist files, including:
 
-- Administrator-managed import profiles/schema definitions instead of only the built-in legacy adapter.
-- Secure immutable source-workbook attachment to the import batch.
-- Synthetic end-to-end integration fixture covering upload -> preview -> exception disposition -> acceptance -> commit.
-- Import profile versioning and compatibility rules.
+- administrator-managed import profiles/schema definitions
+- external actual import/reconciliation adapters
+- stronger duplicate/business-key controls where required
+- richer reporting/filtering/drill-down
+- environment-backed authorization tests
+- document-storage permission/runbook hardening
+- backup/restore and operational runbooks
 
-## Priority 6 — approvals / workflow productivity
+# Windows Setup wizard direction
 
-Still needed or incomplete:
+Read `docs/deployment/windows-installer-wizard.md` before implementing installer work.
 
-- General comments/discussion model across workflow objects.
-- User tasks / assignments beyond import exception assignment.
-- Notification framework.
-- SMTP/settings integration.
-- Reminder delivery for renewals/approvals if required.
-- Optional escalation/SLA logic.
+Intended product:
 
-## Priority 7 — reporting expansion
+- `LedgerForge.Setup.exe`
+- Windows WPF, self-contained `net10.0-windows`
+- separate testable setup engine/core from the UI
+- Express/local and Advanced/existing-infrastructure modes
+- prerequisite detection before changes
+- enable required IIS features
+- install a LedgerForge-tested .NET Hosting Bundle
+- optionally install a LedgerForge-tested SQL Server Express version
+- verify downloaded hashes/signatures
+- configure IIS site/app pool/bindings/Windows Authentication
+- create/configure database and apply only reviewed EF migrations
+- configure organization branding/settings and initial AD admin group
+- configure non-web-root document storage and ACLs
+- health checks, structured logs, resumability, and safe failure recovery
+- later unattended install, offline bundle, repair, and upgrade modes
 
-Still needed or incomplete:
+Installer implementation remains **blocked** on:
 
-- Finance export profiles/templates rather than only generic CSVs.
-- Configurable charting/drill-downs.
-- Fiscal-year close report/checklist.
-- Audit activity report export.
-- Saved report filters.
-- Role-aware/saved dashboard personalization.
+- clean build/test gate
+- reviewed initial migration
+- disposable SQL Server migration validation
+- deterministic bootstrap/seed commands
+- stable health-check endpoint
+- supported/tested runtime/SQL version matrix
 
-## Priority 8 — administration / operations
+# Resume checklist
 
-Still needed or incomplete:
+When continuing in a new session:
 
-- Storage settings administration.
-- SMTP settings administration.
-- Diagnostics/health page.
-- Database/directory/storage connection tests.
-- Retention settings.
-- Feature flags where justified.
-- Operational data-retention jobs.
-
-## Priority 9 — security and environment verification
-
-Still needed:
-
-- Automated authorization tests using representative principals/claims/groups.
-- Real IIS Integrated Windows Authentication verification.
-- Real Active Directory group-resolution verification.
-- Least-privilege SQL/service-account verification.
-- Document storage ACL verification.
-- Security-header/CSP regression tests.
-- Upload/download authorization regression tests.
-
-## Priority 10 — test depth and accessibility
-
-Still needed:
-
-- Real integration tests against SQL Server.
-- Playwright flows for core user journeys.
-- Approval authorization matrix tests.
-- Import end-to-end tests.
-- Invoice -> actual -> commitment accounting integration tests.
-- Amendment/forecast/report consistency integration tests.
-- Fiscal close/rollover tests once implemented.
-- Keyboard navigation checks.
-- Accessibility regression scans.
-- Light/dark theme UI regression checks.
-
-## Priority 11 — deployment and runbooks
-
-Still needed:
-
-- Production IIS deployment package/process.
-- Migration deployment script/process.
-- Environment configuration guide.
-- SQL backup/restore runbook.
-- Document-store backup/restore runbook.
-- Disaster-recovery notes.
-- Upgrade/rollback runbook.
-- First-admin/bootstrap checklist.
-- Operational logging/retention guidance.
-- Stable release/versioning process.
-
-# Known documentation debt
-
-The following repository documentation predates much of the current implementation and should be refreshed after the build/migration gate is green:
-
-- Draft PR #1 description.
-- `docs/architecture/implementation-checklist.md`.
-- Architecture entity inventory / ERD as needed for newly added invoices/contracts/audit/amendments/forecast entities.
-- Navigation/permissions docs for all newer routes.
-- README current-status list.
-
-Do not use the old checklist as proof that a module is absent; verify the live branch first.
-
-# Exact resume procedure for a new chat/session
-
-When a new session begins:
-
-1. Read this file first: `docs/PROJECT_HANDOFF.md`.
-2. Connect to GitHub repository `Sher-Noir/Nixter-ITBudget`.
-3. Read draft PR #1 metadata and current head SHA.
-4. Treat branch `agent/initial-scaffold` as authoritative.
-5. Compare the current head SHA to the SHA recorded at the top of this file.
-6. If they differ, inspect changes since this checkpoint before modifying anything.
-7. Verify files on the live branch rather than trusting old chat summaries.
-8. Do not recreate features already listed as implemented unless repository inspection shows they are missing/broken.
-9. Start with the validation gate: Release build, tests, then first controlled EF migration.
-10. Update this handoff file at every substantial stopping point with:
-    - current head SHA
-    - what was completed
-    - validation result
-    - exact next task
-    - any known blockers
-
-# Copy/paste continuation prompt
-
-Use the following prompt in a fresh chat if the previous conversation becomes too long or unavailable:
-
-```text
-Continue the LedgerForge budget-management project from the repository state, not from chat memory.
-
-Repository: Sher-Noir/Nixter-ITBudget
-Branch: agent/initial-scaffold
-Draft PR: #1
-
-FIRST:
-1. Read docs/PROJECT_HANDOFF.md from the live branch in full.
-2. Fetch the current PR #1 head SHA and compare it with the checkpoint SHA recorded in that file.
-3. Inspect the live branch before making changes. Treat GitHub as authoritative; do not assume work described in an old chat exists unless it is actually committed.
-4. Preserve all existing implemented work. Do not replace working modules with old snapshots.
-
-ENGINEERING RULES:
-- LedgerForge must remain organization-neutral/open-source friendly.
-- Do not commit real organization data, employee identities, production account mappings, private workbooks, secrets, or internal paths.
-- Preserve financial history. Use explicit reversals/amendments/workflow records instead of destructive edits/deletes.
-- Server-side calculations and SQL constraints are authoritative.
-- Financial amounts use decimal(19,4).
-- Authorization must fail closed.
-- Maintain strict CSP; avoid inline scripts/styles.
-- Sensitive documents stay outside web root and are streamed through authorized endpoints.
-- Do not auto-run destructive migrations at application startup.
-
-IMMEDIATE PRIORITY:
-Establish a clean validation baseline on the CURRENT branch head before adding new feature work:
-- dotnet restore LedgerForge.slnx
-- dotnet build LedgerForge.slnx --configuration Release --no-restore
-- dotnet test LedgerForge.slnx --configuration Release --no-build
-Fix all compiler/test failures.
-Then generate/review/apply the first controlled EF Core migration against a disposable SQL Server database.
-
-AFTER THE VALIDATION/MIGRATION GATE:
-Continue with the highest-priority unfinished work listed in docs/PROJECT_HANDOFF.md, beginning with fiscal-year close/rollover unless repository inspection shows a more urgent blocker.
-
-WORKING STYLE:
-- Make small coherent commits to agent/initial-scaffold.
-- Verify live files before editing central files such as Program.cs and LedgerForgeDbContext.cs.
-- Add regression tests for workflow/accounting/security changes.
-- Keep dashboard/report/export calculations consistent with authoritative domain semantics.
-- Update docs/PROJECT_HANDOFF.md before stopping so another session can resume without relying on memory.
-
-At the start of your response, briefly tell me:
-- current branch head SHA,
-- whether it differs from the handoff checkpoint,
-- current build/test status,
-- the exact next task you are taking.
-Then continue implementation without asking me to restate prior project history unless there is a genuinely unresolved product decision.
-```
-
-# Next task at this checkpoint
-
-**Do not start another large feature first.**
-
-The next task is:
-
-> **Run and repair the full .NET 10 Release build/test suite on the exact current branch head, then generate and validate the first controlled EF Core migration against disposable SQL Server.**
-
-Once that gate is green, proceed to fiscal-year close/rollover and the remaining operational/deployment hardening in the priority order above.
+1. Read this file first.
+2. Read `docs/deployment/windows-installer-wizard.md`.
+3. Fetch PR #1 and live `agent/initial-scaffold` head.
+4. Compare live head to the implementation checkpoint recorded at the top.
+5. If newer commits exist, inspect them before editing.
+6. Do not claim build/test/migration success unless exact current-head evidence exists.
+7. Stay inside the validation/migration gate until it is green.
+8. Keep this handoff updated at meaningful checkpoints.
