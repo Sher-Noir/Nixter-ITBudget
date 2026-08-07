@@ -9,4 +9,6 @@ public sealed record FiscalYearIndexViewModel(
 
 public sealed record FiscalYearDetailViewModel(
     FiscalYearSummary FiscalYear,
-    IReadOnlyList<BudgetVersionSummary> Versions);
+    IReadOnlyList<BudgetVersionSummary> Versions,
+    IReadOnlyList<FiscalPeriodSummary> Periods,
+    FiscalCloseReadiness CloseReadiness);
