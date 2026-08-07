@@ -54,7 +54,7 @@ public sealed record LegacyBudgetWorkbookReadResult(
     LegacyBudgetReconciliation Reconciliation,
     IReadOnlyList<string> Warnings);
 
-public sealed class LegacyBudgetWorkbookValidationException : InvalidDataException
+public sealed class LegacyBudgetWorkbookValidationException : Exception
 {
     public LegacyBudgetWorkbookValidationException(string message) : base(message) { }
 }
