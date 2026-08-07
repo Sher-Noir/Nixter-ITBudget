@@ -115,6 +115,10 @@ public static class DeploymentConfigurationRenderer
             {
                 LedgerForge = CreateConnectionString(plan)
             },
+            Deployment = new
+            {
+                HttpsRedirection = false
+            },
             Documents = new
             {
                 StoragePath = plan.DocumentsPath.Trim(),
