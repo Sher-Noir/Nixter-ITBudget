@@ -1,0 +1,86 @@
+@model LedgerForge.Infrastructure.Reporting.ReportCenterSnapshot
+@{
+    ViewData["Title"] = "Reports";
+}
+
+<div class="lf-page-header">
+    <div>
+        <h1 class="lf-page-title">Report Center</h1>
+        <p class="lf-subtitle">Authoritative fiscal-year totals and spreadsheet-safe CSV exports from LedgerForge records.</p>
+    </div>
+</div>
+
+<form method="get" action="/reports" class="lf-toolbar lf-budget-selector" aria-label="Report fiscal year">
+    <div>
+        <label for="fiscalYearId"><strong>Fiscal year</strong></label>
+        <select id="fiscalYearId" name="fiscalYearId">
+            @foreach (var year in Model.FiscalYears)
+            {
+                <option value="@year.Id" selected="@(Model.SelectedFiscalYearId == year.Id ? "selected" : null)">@year.Name@(year.IsCurrent ? " · Current" : string.Empty)</option>
+            }
+        </select>
+    </div>
+    <div class="lf-toolbar-action"><button type="submit">Load reports</button></div>
+</form>
+
+<div class="lf-kpi-grid">
+    <article class="lf-card lf-kpi"><div class="lf-kpi-icon blue">P</div><div><div class="lf-card-title">Planned</div><div class="lf-kpi-value">@Model.PlannedBudget.ToString("C2")</div><div class="lf-kpi-note">@Model.BudgetVersionName</div></div></article>
+    <article class="lf-card lf-kpi"><div class="lf-kpi-icon blue">✓</div><div><div class="lf-card-title">Approved</div><div class="lf-kpi-value">@Model.ApprovedBudget.ToString("C2")</div><div class="lf-kpi-note">Approved budget-item totals</div></div></article>
+    <article class="lf-card lf-kpi"><div class="lf-kpi-icon purple">R</div><div><div class="lf-card-title">Revised</div><div class="lf-kpi-value">@Model.RevisedBudget.ToString("C2")</div><div class="lf-kpi-note">Current revised baseline</div></div></article>
+    <article class="lf-card lf-kpi"><div class="lf-kpi-icon orange">↔</div><div><div class="lf-card-title">Committed</div><div class="lf-kpi-value">@Model.Committed.ToString("C2")</div><div class="lf-kpi-note">Issued purchase-order lines</div></div></article>
+    <article class="lf-card lf-kpi"><div class="lf-kpi-icon green">A</div><div><div class="lf-card-title">Actual</div><div class="lf-kpi-value">@Model.Actual.ToString("C2")</div><div class="lf-kpi-note">Posted actual ledger</div></div></article>
+    <article class="lf-card lf-kpi"><div class="lf-kpi-icon teal">□</div><div><div class="lf-card-title">Available</div><div class="lf-kpi-value">@Model.Available.ToString("C2")</div><div class="lf-kpi-note">Revised less commitments and actuals</div></div></article>
+    <article class="lf-card lf-kpi"><div class="lf-kpi-icon gold">!</div><div><div class="lf-card-title">Pending Approvals</div><div class="lf-kpi-value">@Model.PendingApprovals</div><div class="lf-kpi-note">Budget items plus purchase orders</div></div></article>
+    <article class="lf-card lf-kpi"><div class="lf-kpi-icon red">↻</div><div><div class="lf-card-title">Renewals in 30 Days</div><div class="lf-kpi-value">@Model.RenewalsDueIn30Days</div><div class="lf-kpi-note">Upcoming budget renewal dates</div></div></article>
+</div>
+
+<section class="lf-card" id="exports" aria-labelledby="exports-title">
+    <div class="lf-panel-header">
+        <div>
+            <h2 id="exports-title">CSV exports</h2>
+            <p class="lf-muted">Text fields are protected against spreadsheet formula injection and files are emitted as UTF-8 with a BOM for Excel compatibility.</p>
+        </div>
+        <span class="badge">@Model.FiscalYearName</span>
+    </div>
+
+    @if (Model.SelectedFiscalYearId is null)
+    {
+        <div class="lf-empty-state"><p>Create a fiscal year before exporting data.</p></div>
+    }
+    else
+    {
+        <div class="lf-report-grid">
+            <article class="lf-report-card">
+                <h3>Budget detail</h3>
+                <p>Latest budget-version item amounts, status, planned/approved/revised values, purchase dates, and renewal dates.</p>
+                <a class="button primary" href="/exports/budget.csv?fiscalYearId=@Model.SelectedFiscalYearId">Download budget CSV</a>
+            </article>
+            <article class="lf-report-card">
+                <h3>Actual ledger</h3>
+                <p>Append-only actual transactions including reversal lineage and budget/account/department/location/period dimensions.</p>
+                <a class="button primary" href="/exports/actuals.csv?fiscalYearId=@Model.SelectedFiscalYearId">Download actuals CSV</a>
+            </article>
+            <article class="lf-report-card">
+                <h3>Open commitments</h3>
+                <p>Issued purchase-order lines with vendor, budget-item, finance-account, department, and location coding.</p>
+                <a class="button primary" href="/exports/commitments.csv?fiscalYearId=@Model.SelectedFiscalYearId">Download commitments CSV</a>
+            </article>
+            <article class="lf-report-card">
+                <h3>Renewal calendar</h3>
+                <p>Budget items with renewal dates and current estimated amounts from the latest planning version.</p>
+                <a class="button primary" href="/exports/renewals.csv?fiscalYearId=@Model.SelectedFiscalYearId">Download renewals CSV</a>
+            </article>
+        </div>
+    }
+</section>
+
+<section class="lf-card" aria-labelledby="coverage-title">
+    <h2 id="coverage-title">Current report coverage</h2>
+    <dl class="lf-detail-grid">
+        <div><dt>Budget items</dt><dd>@Model.BudgetItemCount</dd></div>
+        <div><dt>Purchase orders</dt><dd>@Model.PurchaseOrderCount</dd></div>
+        <div><dt>Actual ledger rows</dt><dd>@Model.ActualTransactionCount</dd></div>
+        <div><dt>Fiscal year</dt><dd>@Model.FiscalYearName</dd></div>
+    </dl>
+    <p class="lf-muted">Forecast variance, audit activity, finance-export preview, and fiscal-year close checklist will become available as those underlying workflows are completed.</p>
+</section>
