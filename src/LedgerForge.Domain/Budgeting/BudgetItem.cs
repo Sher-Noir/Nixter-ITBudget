@@ -103,13 +103,13 @@ public sealed class BudgetItem : AuditableEntity
 
     public void SetApprovedTotal(decimal? approvedTotal)
     {
-        if (approvedTotal < 0m) throw new ArgumentOutOfRangeException(nameof(approvedTotal));
+        if (approvedTotal is < 0m) throw new ArgumentOutOfRangeException(nameof(approvedTotal));
         ApprovedTotal = approvedTotal;
     }
 
     public void SetRevisedTotal(decimal? revisedTotal)
     {
-        if (revisedTotal < 0m) throw new ArgumentOutOfRangeException(nameof(revisedTotal));
+        if (revisedTotal is < 0m) throw new ArgumentOutOfRangeException(nameof(revisedTotal));
         RevisedTotal = revisedTotal;
     }
 
