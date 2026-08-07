@@ -24,6 +24,8 @@ public sealed class LedgerForgeDbContext(DbContextOptions<LedgerForgeDbContext> 
     public DbSet<Vendor> Vendors => Set<Vendor>();
     public DbSet<PurchaseOrder> PurchaseOrders => Set<PurchaseOrder>();
     public DbSet<PurchaseOrderLine> PurchaseOrderLines => Set<PurchaseOrderLine>();
+    public DbSet<PurchaseReceipt> PurchaseReceipts => Set<PurchaseReceipt>();
+    public DbSet<PurchaseReceiptLine> PurchaseReceiptLines => Set<PurchaseReceiptLine>();
     public DbSet<Invoice> Invoices => Set<Invoice>();
     public DbSet<InvoiceAllocation> InvoiceAllocations => Set<InvoiceAllocation>();
     public DbSet<Contract> Contracts => Set<Contract>();
@@ -283,7 +285,10 @@ public sealed class LedgerForgeDbContext(DbContextOptions<LedgerForgeDbContext> 
 
         modelBuilder.Entity<PurchaseOrder>(entity =>
         {
-            entity.ToTable("PurchaseOrder");
+            entity.ToTable("PurchaseOrder", table =>
+            {
+                table.HasCheckConstraint("CK_PurchaseOrder_ChangeOrder", "([SupersedesPurchaseOrderId] IS NULL AND [ChangeOrderSequence] = 0) OR ([SupersedesPurchaseOrderId] IS NOT NULL AND [ChangeOrderSequence] > 0)");
+            });
             entity.HasKey(x => x.Id);
             entity.Property(x => x.Number).HasMaxLength(100).IsRequired();
             entity.Property(x => x.Description).HasMaxLength(500).IsRequired();
@@ -295,12 +300,16 @@ public sealed class LedgerForgeDbContext(DbContextOptions<LedgerForgeDbContext> 
             entity.Property(x => x.ClosedBy).HasMaxLength(256);
             entity.Property(x => x.CancelledBy).HasMaxLength(256);
             entity.Property(x => x.CancellationReason).HasMaxLength(1000);
+            entity.Property(x => x.ChangeOrderSequence).HasDefaultValue(0);
+            entity.Ignore(x => x.IsChangeOrder);
             entity.Property(x => x.RowVersion).IsRowVersion();
             entity.HasIndex(x => new { x.FiscalYearId, x.Number }).IsUnique();
             entity.HasIndex(x => new { x.State, x.FiscalYearId });
             entity.HasIndex(x => x.VendorId);
+            entity.HasIndex(x => x.SupersedesPurchaseOrderId).IsUnique().HasFilter("[SupersedesPurchaseOrderId] IS NOT NULL");
             entity.HasOne<FiscalYear>().WithMany().HasForeignKey(x => x.FiscalYearId).OnDelete(DeleteBehavior.Restrict);
             entity.HasOne<Vendor>().WithMany().HasForeignKey(x => x.VendorId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<PurchaseOrder>().WithMany().HasForeignKey(x => x.SupersedesPurchaseOrderId).OnDelete(DeleteBehavior.Restrict);
         });
 
         modelBuilder.Entity<PurchaseOrderLine>(entity =>
@@ -328,6 +337,33 @@ public sealed class LedgerForgeDbContext(DbContextOptions<LedgerForgeDbContext> 
             entity.HasOne<Department>().WithMany().HasForeignKey(x => x.DepartmentId).OnDelete(DeleteBehavior.Restrict);
             entity.HasOne<Location>().WithMany().HasForeignKey(x => x.LocationId).OnDelete(DeleteBehavior.Restrict);
         });
+
+        modelBuilder.Entity<PurchaseReceipt>(entity =>
+    {
+        entity.ToTable("PurchaseReceipt");
+        entity.HasKey(x => x.Id);
+        entity.Property(x => x.ReceiptNumber).HasMaxLength(100).IsRequired();
+        entity.Property(x => x.ReceivedBy).HasMaxLength(256).IsRequired();
+        entity.Property(x => x.Note).HasMaxLength(1000);
+        entity.Property(x => x.RowVersion).IsRowVersion();
+        entity.HasIndex(x => new { x.PurchaseOrderId, x.ReceiptNumber }).IsUnique();
+        entity.HasIndex(x => new { x.PurchaseOrderId, x.ReceivedDate });
+        entity.HasOne<PurchaseOrder>().WithMany().HasForeignKey(x => x.PurchaseOrderId).OnDelete(DeleteBehavior.Restrict);
+    });
+
+    modelBuilder.Entity<PurchaseReceiptLine>(entity =>
+    {
+        entity.ToTable("PurchaseReceiptLine", table =>
+            table.HasCheckConstraint("CK_PurchaseReceiptLine_Quantity", "[QuantityReceived] > 0"));
+        entity.HasKey(x => x.Id);
+        entity.Property(x => x.QuantityReceived).HasPrecision(19, 4);
+        entity.Property(x => x.Note).HasMaxLength(500);
+        entity.Property(x => x.RowVersion).IsRowVersion();
+        entity.HasIndex(x => new { x.PurchaseReceiptId, x.PurchaseOrderLineId }).IsUnique();
+        entity.HasIndex(x => x.PurchaseOrderLineId);
+        entity.HasOne<PurchaseReceipt>().WithMany().HasForeignKey(x => x.PurchaseReceiptId).OnDelete(DeleteBehavior.Restrict);
+        entity.HasOne<PurchaseOrderLine>().WithMany().HasForeignKey(x => x.PurchaseOrderLineId).OnDelete(DeleteBehavior.Restrict);
+    });
 
         modelBuilder.Entity<Invoice>(entity =>
         {
