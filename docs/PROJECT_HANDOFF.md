@@ -1,6 +1,6 @@
 # LedgerForge Project Handoff
 
-_Last implementation checkpoint verified against `agent/initial-scaffold` on 2026-08-07 at commit `7bc31afd1a072ed64e23ea5350096f5fb49eaa35`. This handoff update itself is a later documentation-only commit, so always verify the live branch head before editing._
+_Last implementation checkpoint verified against `agent/initial-scaffold` on 2026-08-07 at commit `c6e2a6efdf2d27d94ce5afe3f39545d68c76a080`. This handoff update itself is a later documentation-only commit, so always verify the live branch head before editing._
 
 This file is the authoritative checkpoint for continuing LedgerForge. Do not rely on prior-chat memory. Read this file, verify the live GitHub branch/PR head, and inspect any commits newer than the checkpoint before changing code.
 
@@ -10,7 +10,7 @@ This file is the authoritative checkpoint for continuing LedgerForge. Do not rel
 - Active branch: `agent/initial-scaffold`
 - Draft PR: `#1` — LedgerForge open-source budget platform foundation
 - PR base: `main`
-- Verified implementation checkpoint: `7bc31afd1a072ed64e23ea5350096f5fb49eaa35`
+- Verified implementation checkpoint: `c6e2a6efdf2d27d94ce5afe3f39545d68c76a080`
 - Target stack: .NET 10 LTS, ASP.NET Core MVC/Razor, EF Core 10, SQL Server, IIS, Integrated Windows Authentication
 - SDK pinned by `global.json`: .NET SDK `10.0.302`, `latestPatch`, prerelease disabled
 - EF CLI pinned by `.config/dotnet-tools.json`: `dotnet-ef` `10.0.0`
@@ -50,8 +50,9 @@ What is known:
 
 - `Directory.Build.props` enables nullable reference types, latest analysis, and `TreatWarningsAsErrors=true`.
 - `global.json` now pins the intended .NET 10 SDK baseline to `10.0.302`.
-- The current agent execution container has no .NET SDK and cannot obtain a usable repository checkout/SDK through its restricted network path, so the required local commands have **not** been executed successfully in this checkpoint.
-- Therefore no claim of compiler-clean, warning-clean, or test-clean status is valid yet.
+- The current agent execution container has no .NET SDK and cannot obtain a usable SDK through its restricted network/package path. Debian package repositories cannot resolve, and the mediated downloader rejects the SDK archive/package formats.
+- Therefore the required local commands have **not** been executed successfully in this checkpoint.
+- No claim of compiler-clean, warning-clean, or test-clean status is valid yet.
 
 ## GitHub Actions status
 
@@ -63,14 +64,15 @@ Repository-side CI fixes completed during this validation pass:
 - Added explicit `permissions: contents: read`.
 - CI now consumes `global.json` rather than an unpinned `10.0.x` SDK range.
 - Added `dotnet --info` before restore so future runnable jobs expose the exact SDK/runtime environment.
+- The current build/test job uses `ubuntu-latest`. The current LedgerForge solution targets portable `net10.0`; the UI test project is also currently platform-neutral. When the future WPF Setup project (`net10.0-windows`) enters the solution, add an appropriate Windows build job or matrix rather than assuming the portable job validates the installer.
 
-Current infrastructure blocker:
+Current infrastructure blocker is confirmed across hosted runner OS choices:
 
-- Latest checked run for implementation checkpoint `7bc31afd1a072ed64e23ea5350096f5fb49eaa35`: workflow run `31214601900`.
-- `build-test` job id: `92985055015`.
-- GitHub reports the job as completed/failure but exposes `steps: null` and no downloadable job log through the connected API.
-- This is still a pre-step execution/runner/account-side failure from the repository's perspective; checkout and setup-dotnet are not being reported as executed.
-- Do not guess at billing/quota/runner causes without evidence. Once GitHub actually creates steps, inspect the first real failing step and fix it.
+- Windows-hosted run for implementation checkpoint `7bc31afd1a072ed64e23ea5350096f5fb49eaa35`: workflow run `31214601900`, job `92985055015`, completed/failure with `steps: null` and no downloadable job log.
+- Ubuntu-hosted run for implementation checkpoint `c6e2a6efdf2d27d94ce5afe3f39545d68c76a080`: workflow run `31214853871`, job `92985875087`, completed/failure with `steps: null` and no downloadable job log.
+- Because both Windows and Ubuntu jobs fail before GitHub reports any executable step, this is not a Windows-runner-specific application/SDK problem.
+- The connected GitHub API does not expose repository/account Actions billing/runner-allocation diagnostics, so do not guess at billing, quota, policy, or runner causes without external evidence.
+- Once GitHub actually creates steps, inspect the first real failing step and fix it.
 
 # Persistence/model validation completed
 
@@ -196,7 +198,7 @@ Then apply only to a disposable SQL Server database using a non-secret local/env
 
 # Important stale claims discovered during validation
 
-The previous handoff described several behaviors as implemented that are not present in the current authoritative source. Treat the following as defects/incomplete work, not completed features:
+The previous handoff described several behaviors as implemented that are not present in the current authoritative source. Treat the following as defects/incomplete work, not completed features.
 
 ## Forecasting
 
