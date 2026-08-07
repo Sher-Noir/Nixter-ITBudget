@@ -306,7 +306,9 @@ public sealed class LedgerForgeDbContext(DbContextOptions<LedgerForgeDbContext> 
             entity.HasIndex(x => new { x.FiscalYearId, x.Number }).IsUnique();
             entity.HasIndex(x => new { x.State, x.FiscalYearId });
             entity.HasIndex(x => x.VendorId);
-            entity.HasIndex(x => x.SupersedesPurchaseOrderId).IsUnique().HasFilter("[SupersedesPurchaseOrderId] IS NOT NULL");
+            entity.HasIndex(x => x.SupersedesPurchaseOrderId)
+            .IsUnique()
+            .HasFilter("[SupersedesPurchaseOrderId] IS NOT NULL AND [State] <> 5 AND [State] <> 6");
             entity.HasOne<FiscalYear>().WithMany().HasForeignKey(x => x.FiscalYearId).OnDelete(DeleteBehavior.Restrict);
             entity.HasOne<Vendor>().WithMany().HasForeignKey(x => x.VendorId).OnDelete(DeleteBehavior.Restrict);
             entity.HasOne<PurchaseOrder>().WithMany().HasForeignKey(x => x.SupersedesPurchaseOrderId).OnDelete(DeleteBehavior.Restrict);
