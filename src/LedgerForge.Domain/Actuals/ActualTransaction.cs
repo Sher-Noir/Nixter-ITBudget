@@ -25,7 +25,8 @@ public sealed class ActualTransaction : AuditableEntity
         Guid? financeAccountId = null,
         Guid? departmentId = null,
         Guid? locationId = null,
-        Guid? fiscalPeriodId = null)
+        Guid? fiscalPeriodId = null,
+        Guid? invoiceId = null)
     {
         if (fiscalYearId == Guid.Empty) throw new ArgumentException("Fiscal year is required.", nameof(fiscalYearId));
         if (amount <= 0m) throw new ArgumentOutOfRangeException(nameof(amount), "Normal actual transactions must have a positive amount.");
@@ -43,6 +44,7 @@ public sealed class ActualTransaction : AuditableEntity
         DepartmentId = NormalizeId(departmentId, nameof(departmentId));
         LocationId = NormalizeId(locationId, nameof(locationId));
         FiscalPeriodId = NormalizeId(fiscalPeriodId, nameof(fiscalPeriodId));
+        InvoiceId = NormalizeId(invoiceId, nameof(invoiceId));
     }
 
     public Guid FiscalYearId { get; private set; }
@@ -56,6 +58,7 @@ public sealed class ActualTransaction : AuditableEntity
     public Guid? DepartmentId { get; private set; }
     public Guid? LocationId { get; private set; }
     public Guid? FiscalPeriodId { get; private set; }
+    public Guid? InvoiceId { get; private set; }
     public Guid? ReversesTransactionId { get; private set; }
     public string? ReversalReason { get; private set; }
 
@@ -79,6 +82,7 @@ public sealed class ActualTransaction : AuditableEntity
             DepartmentId = DepartmentId,
             LocationId = LocationId,
             FiscalPeriodId = NormalizeId(reversalFiscalPeriodId, nameof(reversalFiscalPeriodId)),
+            InvoiceId = InvoiceId,
             ReversesTransactionId = Id,
             ReversalReason = NormalizeRequired(reason, 1000, nameof(reason))
         };
