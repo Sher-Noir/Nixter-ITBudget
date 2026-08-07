@@ -182,6 +182,15 @@ public partial class MainWindow : Window
 
         if (File.Exists(AppCmdPath))
         {
+            var modules = await RunProcessAsync(AppCmdPath, ["list", "modules"], throwOnFailure: false);
+            var moduleRegistered = modules.ExitCode == 0 && modules.Output.Contains("AspNetCoreModuleV2", StringComparison.OrdinalIgnoreCase);
+            checks.Add(new(
+                "ASP.NET Core Module registration",
+                moduleRegistered,
+                moduleRegistered
+                    ? "AspNetCoreModuleV2 is registered with IIS."
+                    : "AspNetCoreModuleV2 is not registered with IIS. Repair/reinstall the .NET 10 Hosting Bundle and restart IIS."));
+
             var authCheck = await RunProcessAsync(
                 AppCmdPath,
                 ["list", "config", "/section:system.webServer/security/authentication/windowsAuthentication"],
@@ -253,15 +262,14 @@ public partial class MainWindow : Window
             await ConfigureSiteAsync(plan, webRoot);
 
             AppendLog("Starting LedgerForge...");
-            await RunProcessAsync(AppCmdPath, ["start", "apppool", $"/apppool.name:{plan.ApplicationPoolName}"], throwOnFailure: false);
-            await RunProcessAsync(AppCmdPath, ["start", "site", $"/site.name:{plan.SiteName}"], throwOnFailure: false);
+            await EnsureIisDeploymentStartedAsync(plan);
 
             AppendLog("Verifying database state with the deployment bootstrap...");
             var verify = await RunProcessAsync(bootstrapExecutable, ["verify"], bootstrapEnvironment);
             AppendProcessOutput(verify);
 
             AppendLog("Waiting for the LedgerForge health endpoint...");
-            await WaitForHealthAsync(plan.HttpPort);
+            await WaitForHealthAsync(plan);
             AppendLog("PASS  LedgerForge health endpoint is ready.");
         }
         finally
@@ -316,7 +324,33 @@ public partial class MainWindow : Window
             ["set", "config", plan.SiteName, "-section:system.webServer/security/authentication/windowsAuthentication", "/enabled:true", "/commit:apphost"]);
     }
 
-    private async Task WaitForHealthAsync(int port)
+    private async Task EnsureIisDeploymentStartedAsync(SetupPlan plan)
+    {
+        var poolStart = await RunProcessAsync(
+            AppCmdPath,
+            ["start", "apppool", $"/apppool.name:{plan.ApplicationPoolName}"],
+            throwOnFailure: false);
+        var siteStart = await RunProcessAsync(
+            AppCmdPath,
+            ["start", "site", $"/site.name:{plan.SiteName}"],
+            throwOnFailure: false);
+
+        var poolState = await RunProcessAsync(AppCmdPath, ["list", "apppool", $"/name:{plan.ApplicationPoolName}"], throwOnFailure: false);
+        var siteState = await RunProcessAsync(AppCmdPath, ["list", "site", $"/name:{plan.SiteName}"], throwOnFailure: false);
+
+        AppendLog($"IIS application pool: {CompactDiagnostic(poolState.Output, poolState.Error)}");
+        AppendLog($"IIS site: {CompactDiagnostic(siteState.Output, siteState.Error)}");
+
+        if (!poolState.Output.Contains("state:Started", StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException(
+                $"IIS application pool '{plan.ApplicationPoolName}' did not start. {CompactDiagnostic(poolStart.Output, poolStart.Error)}");
+
+        if (!siteState.Output.Contains("state:Started", StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException(
+                $"IIS site '{plan.SiteName}' did not start. {CompactDiagnostic(siteStart.Output, siteStart.Error)}");
+    }
+
+    private async Task WaitForHealthAsync(SetupPlan plan)
     {
         using var handler = new HttpClientHandler
         {
@@ -324,26 +358,43 @@ public partial class MainWindow : Window
             AllowAutoRedirect = false
         };
         using var client = new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(5) };
-        var uri = new Uri($"http://localhost:{port}/health");
+        var uri = new Uri($"http://localhost:{plan.HttpPort}/health");
 
-        Exception? lastException = null;
+        var lastDetail = "No HTTP response was received.";
         for (var attempt = 1; attempt <= 30; attempt++)
         {
             try
             {
                 using var response = await client.GetAsync(uri);
+                var body = await response.Content.ReadAsStringAsync();
                 if ((int)response.StatusCode == 200) return;
-                lastException = new InvalidOperationException($"Health endpoint returned HTTP {(int)response.StatusCode}.");
+                lastDetail = $"HTTP {(int)response.StatusCode} {response.ReasonPhrase}. Response: {CompactText(body, 1200)}";
             }
             catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException)
             {
-                lastException = exception;
+                lastDetail = $"{exception.GetType().Name}: {exception.Message}";
             }
 
             await Task.Delay(TimeSpan.FromSeconds(2));
         }
 
-        throw new InvalidOperationException("LedgerForge did not become healthy after IIS deployment.", lastException);
+        await AppendIisDiagnosticsAsync(plan);
+        throw new InvalidOperationException(
+            $"LedgerForge did not become healthy after IIS deployment. Last health result: {lastDetail}");
+    }
+
+    private async Task AppendIisDiagnosticsAsync(SetupPlan plan)
+    {
+        AppendLog("IIS diagnostic snapshot:");
+        var site = await RunProcessAsync(AppCmdPath, ["list", "site", $"/name:{plan.SiteName}"], throwOnFailure: false);
+        var pool = await RunProcessAsync(AppCmdPath, ["list", "apppool", $"/name:{plan.ApplicationPoolName}"], throwOnFailure: false);
+        var workers = await RunProcessAsync(AppCmdPath, ["list", "wp"], throwOnFailure: false);
+        var modules = await RunProcessAsync(AppCmdPath, ["list", "modules"], throwOnFailure: false);
+
+        AppendLog($"  Site: {CompactDiagnostic(site.Output, site.Error)}");
+        AppendLog($"  App pool: {CompactDiagnostic(pool.Output, pool.Error)}");
+        AppendLog($"  Worker processes: {CompactDiagnostic(workers.Output, workers.Error)}");
+        AppendLog($"  AspNetCoreModuleV2 registered: {modules.Output.Contains("AspNetCoreModuleV2", StringComparison.OrdinalIgnoreCase)}");
     }
 
     private bool HasPayload()
@@ -422,6 +473,19 @@ public partial class MainWindow : Window
         }
 
         return result;
+    }
+
+    private static string CompactDiagnostic(string output, string error)
+    {
+        var value = string.IsNullOrWhiteSpace(error) ? output : error;
+        return string.IsNullOrWhiteSpace(value) ? "No output." : CompactText(value, 1000);
+    }
+
+    private static string CompactText(string value, int maxLength)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return "<empty>";
+        var compact = string.Join(" ", value.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
+        return compact.Length <= maxLength ? compact : compact[..maxLength] + "…";
     }
 
     private void AppendProcessOutput(ProcessResult result)
