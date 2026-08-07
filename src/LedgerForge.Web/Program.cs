@@ -40,6 +40,7 @@ builder.Services.Configure<FormOptions>(options => options.MultipartBodyLengthLi
 
 var connectionString = builder.Configuration.GetConnectionString("LedgerForge")
     ?? throw new InvalidOperationException("Connection string 'LedgerForge' is required.");
+var httpsRedirectionEnabled = builder.Configuration.GetValue("Deployment:HttpsRedirection", true);
 builder.Services.AddScoped<IAuditRequestContext, HttpAuditRequestContext>();
 builder.Services.AddScoped<AuditSaveChangesInterceptor>();
 builder.Services.AddDbContext<LedgerForgeDbContext>((serviceProvider, options) =>
@@ -77,7 +78,8 @@ if (!app.Environment.IsDevelopment())
     app.UseHsts();
 }
 
-app.UseHttpsRedirection();
+if (httpsRedirectionEnabled)
+    app.UseHttpsRedirection();
 app.UseStatusCodePagesWithReExecute("/Home/AccessDenied", "?code={0}");
 app.Use(async (context, next) =>
 {
