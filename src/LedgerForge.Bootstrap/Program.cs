@@ -1,5 +1,6 @@
 using System.Text.RegularExpressions;
 using LedgerForge.Application.Abstractions;
+using LedgerForge.Domain.Security;
 using LedgerForge.Infrastructure.Persistence;
 using LedgerForge.Infrastructure.Persistence.Auditing;
 using LedgerForge.Infrastructure.Persistence.Seeding;
@@ -9,6 +10,7 @@ using Microsoft.EntityFrameworkCore;
 const string PrimaryConnectionEnvironmentVariable = "LEDGERFORGE_CONNECTION_STRING";
 const string AspNetConnectionEnvironmentVariable = "ConnectionStrings__LedgerForge";
 const string ApplicationIdentityEnvironmentVariable = "LEDGERFORGE_DATABASE_APP_IDENTITY";
+const string InitialAdministratorEnvironmentVariable = "LEDGERFORGE_INITIAL_ADMIN_IDENTITY";
 
 if (args.Length != 1 || args[0] is not ("initialize" or "verify"))
 {
@@ -47,6 +49,13 @@ try
         var initializer = new ManagedLookupInitializer(dbContext);
         await initializer.InitializeMissingAsync();
 
+        var initialAdministrator = Environment.GetEnvironmentVariable(InitialAdministratorEnvironmentVariable);
+        if (!string.IsNullOrWhiteSpace(initialAdministrator))
+        {
+            Console.WriteLine("Provisioning the explicit first LedgerForge administrator...");
+            await ProvisionInitialAdministratorAsync(dbContext, initialAdministrator.Trim());
+        }
+
         var applicationIdentity = Environment.GetEnvironmentVariable(ApplicationIdentityEnvironmentVariable);
         if (!string.IsNullOrWhiteSpace(applicationIdentity))
         {
@@ -77,6 +86,27 @@ catch (Exception exception)
 {
     Console.Error.WriteLine($"LedgerForge database operation failed: {exception.GetType().Name}: {exception.Message}");
     return 10;
+}
+
+static async Task ProvisionInitialAdministratorAsync(LedgerForgeDbContext dbContext, string domainIdentity)
+{
+    if (domainIdentity.Length > 256)
+        throw new InvalidOperationException("The initial administrator identity cannot exceed 256 characters.");
+
+    var existing = await dbContext.UserRoleExceptions
+        .SingleOrDefaultAsync(x => x.DomainIdentity == domainIdentity && x.Role == ApplicationRole.SystemAdministrator);
+    if (existing is not null)
+    {
+        Console.WriteLine("An explicit System Administrator rule already exists for the configured identity; setup left it unchanged.");
+        return;
+    }
+
+    dbContext.UserRoleExceptions.Add(new UserRoleException(
+        domainIdentity,
+        ApplicationRole.SystemAdministrator,
+        UserRoleExceptionEffect.Grant,
+        "Initial administrator provisioned explicitly by LedgerForge setup."));
+    await dbContext.SaveChangesAsync();
 }
 
 static async Task ProvisionApplicationIdentityAsync(string connectionString, string applicationIdentity)
