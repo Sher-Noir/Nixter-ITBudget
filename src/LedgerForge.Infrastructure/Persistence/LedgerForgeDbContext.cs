@@ -91,6 +91,8 @@ public sealed class LedgerForgeDbContext(DbContextOptions<LedgerForgeDbContext> 
                 table.HasCheckConstraint("CK_BudgetItem_Quantity", "[Quantity] >= 0");
                 table.HasCheckConstraint("CK_BudgetItem_UnitCost", "[UnitCost] >= 0");
                 table.HasCheckConstraint("CK_BudgetItem_PlannedTotal", "[PlannedTotal] >= 0");
+                table.HasCheckConstraint("CK_BudgetItem_ApprovedTotal", "[ApprovedTotal] IS NULL OR [ApprovedTotal] >= 0");
+                table.HasCheckConstraint("CK_BudgetItem_RevisedTotal", "[RevisedTotal] IS NULL OR [RevisedTotal] >= 0");
             });
             entity.HasKey(x => x.Id);
             entity.Property(x => x.StableIdentifier).HasMaxLength(64).IsRequired();
@@ -106,8 +108,22 @@ public sealed class LedgerForgeDbContext(DbContextOptions<LedgerForgeDbContext> 
             entity.HasIndex(x => new { x.FiscalYearId, x.BudgetVersionId, x.ItemNumber }).IsUnique();
             entity.HasIndex(x => x.StableIdentifier);
             entity.HasIndex(x => x.Status);
+            entity.HasIndex(x => x.BudgetSectionId);
+            entity.HasIndex(x => x.FinanceTypeId);
+            entity.HasIndex(x => x.DepartmentId);
+            entity.HasIndex(x => x.LocationId);
+            entity.HasIndex(x => x.NeedLevelId);
+            entity.HasIndex(x => x.InternalCategoryId);
+            entity.HasIndex(x => x.FrequencyId);
             entity.HasOne<FiscalYear>().WithMany().HasForeignKey(x => x.FiscalYearId).OnDelete(DeleteBehavior.Restrict);
             entity.HasOne<BudgetVersion>().WithMany().HasForeignKey(x => x.BudgetVersionId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<BudgetSection>().WithMany().HasForeignKey(x => x.BudgetSectionId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<FinanceType>().WithMany().HasForeignKey(x => x.FinanceTypeId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<Department>().WithMany().HasForeignKey(x => x.DepartmentId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<Location>().WithMany().HasForeignKey(x => x.LocationId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<NeedLevel>().WithMany().HasForeignKey(x => x.NeedLevelId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<InternalCategory>().WithMany().HasForeignKey(x => x.InternalCategoryId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<Frequency>().WithMany().HasForeignKey(x => x.FrequencyId).OnDelete(DeleteBehavior.Restrict);
         });
 
         modelBuilder.Entity<BudgetItemAllocation>(entity =>
