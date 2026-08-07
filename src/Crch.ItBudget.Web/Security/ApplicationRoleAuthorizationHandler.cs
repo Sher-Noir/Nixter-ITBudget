@@ -7,6 +7,7 @@ namespace Crch.ItBudget.Web.Security;
 
 public sealed class ApplicationRoleAuthorizationHandler(
     ItBudgetDbContext dbContext,
+    IConfiguration configuration,
     ILogger<ApplicationRoleAuthorizationHandler> logger)
     : AuthorizationHandler<ApplicationRoleRequirement>
 {
@@ -25,14 +26,32 @@ public sealed class ApplicationRoleAuthorizationHandler(
             return;
         }
 
-        var now = DateTimeOffset.UtcNow;
-        var exceptions = await dbContext.Set<UserRoleException>()
-            .AsNoTracking()
-            .Where(x =>
-                x.IsActive &&
-                x.DomainIdentity == domainIdentity &&
-                (x.ExpiresAtUtc == null || x.ExpiresAtUtc > now))
-            .ToListAsync();
+        List<UserRoleException> exceptions;
+        List<AdGroupMapping> databaseMappings;
+        try
+        {
+            var now = DateTimeOffset.UtcNow;
+            exceptions = await dbContext.UserRoleExceptions
+                .AsNoTracking()
+                .Where(x =>
+                    x.IsActive &&
+                    x.DomainIdentity == domainIdentity &&
+                    (x.ExpiresAtUtc == null || x.ExpiresAtUtc > now))
+                .ToListAsync();
+
+            databaseMappings = await dbContext.AdGroupMappings
+                .AsNoTracking()
+                .Where(x => x.IsActive && requirement.AllowedRoles.Contains(x.Role))
+                .ToListAsync();
+        }
+        catch (Exception exception)
+        {
+            logger.LogWarning(
+                exception,
+                "Application role configuration could not be read for user {DomainIdentity}; authorization failed closed.",
+                domainIdentity);
+            return;
+        }
 
         var deniedRoles = exceptions
             .Where(x => x.Effect == UserRoleExceptionEffect.Deny)
@@ -53,23 +72,37 @@ public sealed class ApplicationRoleAuthorizationHandler(
 
         var allowedRoles = requirement.AllowedRoles
             .Where(role => !deniedRoles.Contains(role))
-            .ToArray();
+            .ToHashSet();
 
-        if (allowedRoles.Length == 0)
+        if (allowedRoles.Count == 0)
         {
             return;
         }
 
-        var mappings = await dbContext.Set<AdGroupMapping>()
-            .AsNoTracking()
-            .Where(x => x.IsActive && allowedRoles.Contains(x.Role))
-            .ToListAsync();
+        var candidateGroups = databaseMappings
+            .Where(x => allowedRoles.Contains(x.Role))
+            .Select(x => (x.Role, x.GroupName))
+            .ToList();
 
-        foreach (var mapping in mappings)
+        foreach (var role in allowedRoles)
+        {
+            var section = configuration.GetSection($"Security:AdGroups:{role}");
+            var configuredValues = section.GetChildren()
+                .Select(child => child.Value)
+                .Append(section.Value)
+                .Where(value => !string.IsNullOrWhiteSpace(value));
+
+            foreach (var groupName in configuredValues)
+            {
+                candidateGroups.Add((role, groupName!.Trim()));
+            }
+        }
+
+        foreach (var candidate in candidateGroups.Distinct())
         {
             try
             {
-                if (context.User.IsInRole(mapping.GroupName))
+                if (context.User.IsInRole(candidate.GroupName))
                 {
                     context.Succeed(requirement);
                     return;
