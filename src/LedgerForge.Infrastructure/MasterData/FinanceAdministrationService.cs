@@ -84,7 +84,7 @@ public sealed class FinanceAdministrationService(LedgerForgeDbContext dbContext)
         int sortOrder,
         CancellationToken cancellationToken = default)
     {
-        ValidateAccountInput(code, name, sortOrder);
+        ValidateAccountInput(code, name, description, sortOrder);
         code = code.Trim();
         name = name.Trim();
         financeCategoryId = NormalizeOptionalId(financeCategoryId, nameof(financeCategoryId));
@@ -111,7 +111,7 @@ public sealed class FinanceAdministrationService(LedgerForgeDbContext dbContext)
         CancellationToken cancellationToken = default)
     {
         if (id == Guid.Empty) throw new ArgumentException("Finance account ID is required.", nameof(id));
-        ValidateAccountInput("existing", name, sortOrder, validateCode: false);
+        ValidateAccountInput("existing", name, description, sortOrder, validateCode: false);
         financeCategoryId = NormalizeOptionalId(financeCategoryId, nameof(financeCategoryId));
 
         var account = await dbContext.FinanceAccounts
@@ -140,7 +140,7 @@ public sealed class FinanceAdministrationService(LedgerForgeDbContext dbContext)
             throw new InvalidOperationException("New finance accounts cannot be assigned to an inactive finance category.");
     }
 
-    private static void ValidateAccountInput(string code, string name, int sortOrder, bool validateCode = true)
+    private static void ValidateAccountInput(string code, string name, string? description, int sortOrder, bool validateCode = true)
     {
         if (validateCode)
         {
