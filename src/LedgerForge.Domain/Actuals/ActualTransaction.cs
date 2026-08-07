@@ -59,7 +59,7 @@ public sealed class ActualTransaction : AuditableEntity
     public Guid? ReversesTransactionId { get; private set; }
     public string? ReversalReason { get; private set; }
 
-    public ActualTransaction CreateReversal(DateOnly reversalDate, string reason)
+    public ActualTransaction CreateReversal(DateOnly reversalDate, string reason, Guid? reversalFiscalPeriodId = null)
     {
         if (Kind == ActualTransactionKind.Reversal)
             throw new InvalidOperationException("A reversal transaction cannot itself be reversed through this method.");
@@ -71,14 +71,14 @@ public sealed class ActualTransaction : AuditableEntity
             FiscalYearId = FiscalYearId,
             TransactionDate = reversalDate,
             Amount = -Amount,
-            Description = $"Reversal: {Description}",
+            Description = NormalizeRequired($"Reversal: {Description}", 500, nameof(Description)),
             Kind = ActualTransactionKind.Reversal,
             SourceReference = SourceReference,
             BudgetItemId = BudgetItemId,
             FinanceAccountId = FinanceAccountId,
             DepartmentId = DepartmentId,
             LocationId = LocationId,
-            FiscalPeriodId = FiscalPeriodId,
+            FiscalPeriodId = NormalizeId(reversalFiscalPeriodId, nameof(reversalFiscalPeriodId)),
             ReversesTransactionId = Id,
             ReversalReason = NormalizeRequired(reason, 1000, nameof(reason))
         };
