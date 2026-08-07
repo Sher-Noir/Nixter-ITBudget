@@ -9,4 +9,5 @@
 7. Documents are stored on a secured Windows file share outside the IIS application directory.
 8. SMTP is optional and internal; in-app notifications remain functional without SMTP.
 9. Finance users do not receive application logins in version one; Finance consumes controlled exports.
-10. The source workbooks named in the requirements are authoritative migration inputs but were not present during this scaffold commit. Migration code will reject unverified layouts rather than guessing headers.
+10. The two FY2027 workbooks have now been inspected. Their eight required sheet names and the exact `Raw Budget Info` / `Lists` headers are verified and enforced by migration code. `Raw Budget Info` is the primary 68-row migration source; `Raw Budget Detail` is a conflicting 66-row secondary planning source that requires reviewed enrichment rather than automatic merging.
+11. Workbook source files are production migration evidence and must not be committed to source control. Import batches retain source hashes and the secured immutable source attachment instead.
