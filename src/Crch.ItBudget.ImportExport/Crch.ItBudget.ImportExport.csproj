@@ -1,0 +1,6 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="../Crch.ItBudget.Application/Crch.ItBudget.Application.csproj" />
+    <ProjectReference Include="../Crch.ItBudget.Domain/Crch.ItBudget.Domain.csproj" />
+  </ItemGroup>
+</Project>
