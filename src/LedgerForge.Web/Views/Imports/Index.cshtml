@@ -1,34 +1,92 @@
-@model LedgerForge.Web.Models.Imports.ImportPreviewViewModel
+@model LedgerForge.Web.Models.Imports.ImportIndexViewModel
 @{
     ViewData["Title"] = "Imports & Exports";
 }
-<section class="lf-card" aria-labelledby="import-title">
-    <h1 id="import-title" class="lf-page-title">Legacy budget workbook preview</h1>
-    <p class="lf-subtitle">Upload a compatible Excel workbook. LedgerForge validates the workbook structure, recalculates planned totals from quantity × unit cost, resolves managed lookup values, and stores a preview before any authoritative budget records are committed.</p>
-    @if (!string.IsNullOrWhiteSpace(Model.ErrorMessage))
-    {
-        <div role="alert" class="lf-alert lf-alert-danger"><strong>Upload could not be previewed.</strong><br />@Model.ErrorMessage</div>
-    }
-    <form method="post" action="/imports/legacy-budget/preview" enctype="multipart/form-data">
-        @Html.AntiForgeryToken()
-        <div class="lf-form-field"><label for="workbook"><strong>Excel workbook</strong></label><input id="workbook" name="workbook" type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" required /></div>
-        <button type="submit" class="primary">Generate import preview</button>
-    </form>
-</section>
-@if (Model.Result is not null)
+
+<div class="lf-page-header">
+    <div>
+        <h1 class="lf-page-title">Imports &amp; Exports</h1>
+        <p class="lf-subtitle">Validate legacy workbooks, review exceptions, and preserve source lineage before any authoritative budget commit.</p>
+    </div>
+</div>
+
+@if (!string.IsNullOrWhiteSpace(Model.ErrorMessage))
 {
-    <section class="lf-card" aria-labelledby="preview-title">
-        <h2 id="preview-title">Preview result</h2>
-        <table class="lf-table"><tbody>
-            <tr><th>Import batch</th><td><code>@Model.Result.ImportBatchId</code></td></tr>
-            <tr><th>Status</th><td>@Model.Result.Status</td></tr>
-            <tr><th>Source rows</th><td>@Model.Result.SourceRowCount</td></tr>
-            <tr><th>Accepted rows</th><td>@Model.Result.AcceptedRowCount</td></tr>
-            <tr><th>Rejected rows</th><td>@Model.Result.RejectedRowCount</td></tr>
-            <tr><th>Warnings</th><td>@Model.Result.WarningCount</td></tr>
-            <tr><th>Errors</th><td>@Model.Result.ErrorCount</td></tr>
-            <tr><th>Configured reconciliation expectation</th><td>@(Model.Result.ReconciledToExpectedTargets ? "Matches" : "Requires review")</td></tr>
-        </tbody></table>
-        <p class="lf-muted">Preview creates import/audit records only. It does not commit budget lines to authoritative tables.</p>
-    </section>
+    <div role="alert" class="lf-card lf-alert lf-alert-danger"><strong>Upload could not be previewed.</strong><br />@Model.ErrorMessage</div>
 }
+
+<div class="lf-settings-grid">
+    <section class="lf-card" aria-labelledby="upload-title">
+        <h2 id="upload-title">Create import preview</h2>
+        <p class="lf-muted">The reference adapter accepts a compatible `.xlsx` workbook, validates its structure, recalculates planned totals server-side, resolves managed lookups, and stores an auditable preview.</p>
+        <form method="post" action="/imports/legacy-budget/preview" enctype="multipart/form-data">
+            @Html.AntiForgeryToken()
+            <div class="lf-form-field">
+                <label for="workbook"><strong>Excel workbook</strong></label>
+                <input id="workbook" name="workbook" type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" required />
+            </div>
+            <button type="submit" class="primary">Generate import preview</button>
+        </form>
+    </section>
+
+    <aside class="lf-card" aria-labelledby="import-guidance-title">
+        <h2 id="import-guidance-title">Review gates</h2>
+        <ul>
+            <li>Open error exceptions must be resolved before acceptance.</li>
+            <li>Rejected source rows require a written acceptance reason.</li>
+            <li>Configured reconciliation mismatches require explicit administrator acceptance.</li>
+            <li>Preview acceptance does not yet write authoritative budget records.</li>
+        </ul>
+    </aside>
+</div>
+
+<section class="lf-card" aria-labelledby="batch-history-title">
+    <div class="lf-panel-header">
+        <div>
+            <h2 id="batch-history-title">Import batch history</h2>
+            <p class="lf-muted">Most recent preview, validation, acceptance, rejection, and commit records.</p>
+        </div>
+        <span class="badge">@Model.Batches.Count batch@(Model.Batches.Count == 1 ? string.Empty : "es")</span>
+    </div>
+
+    @if (Model.Batches.Count == 0)
+    {
+        <div class="lf-empty-state"><p>No import batches have been created yet.</p></div>
+    }
+    else
+    {
+        <div class="lf-table-wrap">
+            <table class="lf-table">
+                <thead>
+                    <tr>
+                        <th>Created</th>
+                        <th>Source</th>
+                        <th>Type</th>
+                        <th>Status</th>
+                        <th>Rows</th>
+                        <th>Exceptions</th>
+                        <th class="lf-number">Planned Total</th>
+                        <th>Reconciliation</th>
+                        <th>Accepted By</th>
+                    </tr>
+                </thead>
+                <tbody>
+                @foreach (var batch in Model.Batches)
+                {
+                    <tr>
+                        <td><a href="/imports/@batch.Id">@batch.CreatedAtUtc.ToString("u")</a></td>
+                        <td><strong>@batch.SourceFileName</strong><br /><span class="lf-muted"><code>@batch.SourceSha256[..Math.Min(12, batch.SourceSha256.Length)]</code></span></td>
+                        <td>@batch.ImportType</td>
+                        <td><span class="badge">@batch.Status</span></td>
+                        <td>@(batch.SourceRowCount?.ToString() ?? "—")</td>
+                        <td>@(batch.ExceptionCount?.ToString() ?? "—")</td>
+                        <td class="lf-number">@(batch.RecalculatedPlannedTotal?.ToString("C2") ?? "—")</td>
+                        <td>@(batch.ReconciledToExpectedTargets is null ? "Not evaluated" : batch.ReconciledToExpectedTargets == true ? "Matches" : "Review")</td>
+                        <td>@(batch.AcceptedBy ?? "—")</td>
+                    </tr>
+                }
+                </tbody>
+            </table>
+        </div>
+    }
+</section>
