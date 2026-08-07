@@ -14,13 +14,18 @@
 .lf-activity-row small { display: block; margin-top: .2rem; color: var(--lf-muted); }
 .lf-activity-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--lf-primary); margin-top: .35rem; box-shadow: 0 0 0 4px color-mix(in srgb, var(--lf-primary) 12%, transparent); }
 
+.lf-report-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: .8rem; }
+.lf-report-card { border: 1px solid var(--lf-border); border-radius: 10px; padding: 1rem; background: var(--lf-surface-2); display: flex; flex-direction: column; align-items: flex-start; }
+.lf-report-card h3 { margin: 0; font-size: 1rem; }
+.lf-report-card p { color: var(--lf-muted); flex: 1; }
+
 @media (max-width: 1200px) {
   .lf-dashboard-panels { grid-template-columns: repeat(2,minmax(0,1fr)); }
   .lf-dashboard-wide { grid-column: span 2; }
 }
 
 @media (max-width: 760px) {
-  .lf-dashboard-panels { grid-template-columns: 1fr; }
+  .lf-dashboard-panels, .lf-report-grid { grid-template-columns: 1fr; }
   .lf-dashboard-wide { grid-column: auto; }
   .lf-dashboard-context { justify-content: flex-start; }
 }
