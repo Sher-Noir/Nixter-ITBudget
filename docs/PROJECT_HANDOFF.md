@@ -1,194 +1,121 @@
 # LedgerForge Project Handoff
 
-_Last implementation checkpoint verified on `agent/initial-scaffold` on 2026-08-07 at commit `336fd49ce2477ea78a1e3485d2b3290f4a4df756`. This handoff update is a later documentation-only commit. Always compare the live branch head to the implementation checkpoint before editing._
+_Last implementation checkpoint verified against `agent/initial-scaffold` on 2026-08-07 at commit `713562bc305e2217666b23f35f9808d00de871bb`. Later documentation-only commits may exist; always verify the live branch head before editing._
 
-This file is the authoritative continuation checkpoint for LedgerForge. Read it before making changes and inspect any commits newer than the checkpoint.
+This file is the authoritative checkpoint for continuing LedgerForge. Do not rely on prior-chat memory. Read this file, verify the live GitHub branch/PR head, and inspect any commits newer than the checkpoint before changing code.
 
 ## Repository state
 
 - Repository: `Sher-Noir/Nixter-ITBudget`
 - Active branch: `agent/initial-scaffold`
 - Draft PR: `#1` — LedgerForge open-source budget platform foundation
-- Base: `main`
-- Repository visibility: public
+- PR base: `main`
+- Verified implementation checkpoint: `713562bc305e2217666b23f35f9808d00de871bb`
 - Target stack: .NET 10 LTS, ASP.NET Core MVC/Razor, EF Core 10, SQL Server, IIS, Integrated Windows Authentication
-- SDK: `global.json` pins `10.0.302`
-- Runtime/EF packages are on the `10.0.10` servicing baseline
-- EF CLI is repository-pinned through `.config/dotnet-tools.json`
+- SDK pinned by `global.json`: .NET SDK `10.0.302`, `latestPatch`, prerelease disabled
+- EF CLI pinned by `.config/dotnet-tools.json`: `dotnet-ef` `10.0.0`
 
 ## Non-negotiable engineering rules
 
-- LedgerForge is organization-neutral and intended for free/open-source use.
-- Never commit real organization names, employee identities, production account mappings, private workbook names/data, internal URLs/paths, credentials, secrets, or adopter-specific directory groups.
+- LedgerForge is organization-neutral and intended for public/open-source release.
+- Never commit real organization names, employee identities, production account mappings, private workbook names/data, internal paths, credentials, secrets, or adopter-specific directory groups.
 - Organization identity, branding, fiscal-year labels, AD groups, accounts, departments, locations, import expectations, and similar values are configuration/master data.
 - SQL Server / EF Core is authoritative for financial system-of-record data.
-- Financial amounts use `decimal(19,4)` unless a field is deliberately a percentage/rate.
+- Financial amounts use `decimal(19,4)`.
 - Browser-calculated totals are never authoritative.
-- Preserve financial history with workflows, amendments, reversals, versions, and immutable audit history rather than destructive edits.
-- Financial relationships fail safe and use restrictive/no-action deletion.
+- Preserve approved/posted history through amendments, reversals, workflow records, versioning, and immutable history rather than destructive edits.
+- Financial relationships must fail safe and generally use restrictive/no-action deletion.
 - Authorization fails closed.
-- Keep CSP strict; do not introduce unsafe inline script/style behavior.
-- Sensitive documents stay outside the public web root and are streamed through authorized endpoints.
-- Production database migrations are explicit deployment operations. Never add automatic migration at normal web-app startup.
+- CSP remains strict; do not introduce inline scripts/styles casually.
+- Sensitive documents remain outside the public web root and are streamed only through authorized endpoints.
+- Production EF migrations are explicit deployment steps. Do not add automatic startup migrations.
 
 # Validation gate — GREEN
 
-The compile/test/migration gate is green for implementation checkpoint `336fd49ce2477ea78a1e3485d2b3290f4a4df756`.
+The restore/build/test/migration gate is green at the verified implementation checkpoint.
 
-## Build and tests
+- Release build succeeds with 0 warnings and 0 errors.
+- Tests pass: 63 unit, 4 integration, 1 UI smoke (68 total).
+- EF Core `InitialCreate` is committed and matches the model.
+- CI generates migration SQL, blocks destructive/cascade patterns, applies the migration to disposable SQL Server 2022, verifies schema invariants, runs `LedgerForge.Bootstrap initialize|verify`, and reruns tests.
+- Applied disposable schema has zero cascade-delete foreign keys.
+- Financial amount precision is validated at `decimal(19,4)` with the intentional budget-allocation percentage exception at `decimal(9,4)`.
 
-The current CI executes:
+# Setup Preview — FIRST REAL WINDOWS TEST
 
-```powershell
-dotnet restore LedgerForge.slnx
-dotnet build LedgerForge.slnx --configuration Release --no-restore
-dotnet test LedgerForge.slnx --configuration Release --no-build
-```
+The Windows packaging workflow builds successfully and produces a self-contained `LedgerForge.Setup.exe` with an embedded web/bootstrap payload.
 
-Verified on both Ubuntu and Windows packaging runners:
+The first real on-machine preview install reached all of the following successfully:
 
-- Release build: 0 warnings, 0 errors
-- Unit tests: 63 passed
-- Integration tests: 4 passed
-- UI smoke tests: 1 passed
-- Total: 68 passed, 0 failed, 0 skipped
+- administrator elevation
+- IIS detection
+- Hosting Bundle detection after installation
+- embedded payload validation
+- IIS Windows Authentication detection
+- payload extraction/copy to `C:\Program Files\LedgerForge`
+- non-web-root document directory preparation under `C:\ProgramData\LedgerForge\Documents`
+- deployment configuration write
+- application-pool filesystem ACLs
+- committed EF migrations
+- generic workflow lookup initialization
+- explicit first LedgerForge administrator provisioning
+- IIS application-pool SQL login/user provisioning
+- database initialization completion
+- IIS site configuration
+- bootstrap database verification
 
-Current CI workflow: `.github/workflows/ci.yml`.
+That first installer then timed out waiting for `/health`. This isolated the first field failure to the IIS-hosted web process/HTTP boundary rather than SQL migration/bootstrap.
 
-## Controlled EF migration
+## Fixes after first field test
 
-The initial migration is generated by EF Core and committed:
+Checkpoint `713562bc305e2217666b23f35f9808d00de871bb` addresses two setup defects and improves diagnostics:
 
-- `src/LedgerForge.Infrastructure/Persistence/Migrations/20260807204945_InitialCreate.cs`
-- `src/LedgerForge.Infrastructure/Persistence/Migrations/20260807204945_InitialCreate.Designer.cs`
-- `src/LedgerForge.Infrastructure/Persistence/Migrations/LedgerForgeDbContextModelSnapshot.cs`
+1. Setup Preview's generated production configuration now explicitly sets `Deployment:HttpsRedirection=false`, matching the current localhost-only HTTP preview binding. `Program.cs` honors this setting while defaulting HTTPS redirection to enabled when not explicitly configured. Production TLS work remains separate and must restore an HTTPS binding plus redirect policy together.
+2. Setup no longer silently ignores IIS application-pool/site start failures. It now queries and requires both objects to reach `state:Started`.
+3. Preflight separately verifies that `AspNetCoreModuleV2` is actually registered with IIS, not merely that `aspnetcorev2.dll` exists.
+4. If health still fails, Setup records the final HTTP status/reason/body plus IIS site, application-pool, worker-process, and ASP.NET Core Module registration diagnostics.
 
-Migration validation is now enforced by CI:
+The replacement Windows packaging workflow for this checkpoint completed successfully. Artifact: `LedgerForge-Setup-Preview-win-x64`; executable SHA-256: `98365df9bc28286f8fb624c8d2e7d38bec65c2dadf6c1f4354496593c931609a`.
 
-1. Require the committed `InitialCreate` migration.
-2. Run `dotnet ef migrations has-pending-model-changes`.
-3. Generate SQL from the committed migration.
-4. Reject destructive `DROP TABLE`, `DROP COLUMN`, `TRUNCATE TABLE`, and `ON DELETE CASCADE` tokens.
-5. Start disposable SQL Server 2022.
-6. Initialize it through the same deployment bootstrap used by Setup.
-7. Verify zero pending migrations.
-8. Inspect the applied schema.
-9. Run the full test suite after database validation.
+Re-running Setup over the first failed preview is supported for this path: migrations, generic seeds, initial administrator rule, and app-pool SQL principal provisioning are idempotent. Do not delete the database merely because the first health check failed.
 
-Verified initial-schema characteristics:
+# Deployment foundation
 
-- 43 application tables
-- 84 generated create-index statements
-- 39 unique-index markers
-- 45 check constraints
-- zero cascading foreign keys
-- financial decimal columns use `decimal(19,4)`; `BudgetItemAllocation.Percentage` is intentionally `decimal(9,4)`
-- EF migration history records `InitialCreate` with product version `10.0.10`
+- `LedgerForge.Bootstrap initialize|verify` owns explicit deployment migration/bootstrap operations; normal web startup does not auto-migrate.
+- `/health` returns ready only when the SQL database is reachable and there are no pending migrations.
+- Setup Preview currently requires IIS + Windows Authentication, the .NET 10 ASP.NET Core Hosting Bundle, and an existing local SQL Server/SQL Express instance.
+- Setup writes organization/connection/security configuration, configures IIS Windows Authentication, provisions initial admin access, and keeps document storage outside the web root.
+- `docs/deployment/setup-preview.md` documents the preview prerequisites, re-run behavior, and known limitations.
+- The production installer still needs automatic prerequisite handling, TLS/certificate support, remote SQL/service identities, clean-host automated smoke coverage, repair/upgrade/rollback/resume, unattended/offline modes, and signing.
 
-Do not hand-edit the model snapshot or pretend a manually written schema is EF-generated. Future model changes require a new reviewed migration and the same disposable-SQL gate.
+# Important product-semantic gaps still open
 
-# Explicit deployment bootstrap
+These are not build/migration blockers, but they remain product-readiness work before production financial use.
 
-`src/LedgerForge.Bootstrap` is the deployment-time database utility. It is separate from normal web startup.
+## Commitment accounting
 
-Supported commands:
+Dashboard/reporting currently use gross issued PO line totals. Posted PO-backed invoice amounts are not yet subtracted from outstanding commitments, so actual + committed can double count the same obligation. Implement one authoritative outstanding-commitment calculation and reuse it across dashboard/reporting/export.
 
-```text
-LedgerForge.Bootstrap initialize
-LedgerForge.Bootstrap verify
-```
+## Renewals/contracts
 
-Configuration is supplied through environment variables rather than command-line secrets:
+Renewal views/signals/export are still primarily budget-item renewal-date based. Make contracts/contract-renewal records authoritative where present, with budget-item fallback and duplicate suppression.
 
-- `LEDGERFORGE_CONNECTION_STRING` (or `ConnectionStrings__LedgerForge`)
-- `LEDGERFORGE_INITIAL_ADMIN_IDENTITY` for an explicitly selected first System Administrator
-- `LEDGERFORGE_DATABASE_APP_IDENTITY` for the local IIS application-pool virtual account
+## Unified approvals
 
-`initialize` explicitly applies committed migrations, initializes generic workflow lookup values, optionally provisions the first administrator, and can provision the local IIS application-pool Windows identity as a SQL login/user with `db_datareader` and `db_datawriter` membership. `verify` requires connectivity and zero pending migrations.
+`ApprovalQueueService` currently includes submitted budget items and pending purchase orders. Add invoice and budget-amendment approval work so dashboard/queue counts agree.
 
-The bootstrap initialization and verification path has been executed successfully against disposable SQL Server in CI.
+## Forecasting
 
-# Web deployment readiness
+`ForecastLine` does not persist a separate baseline snapshot. Dashboard does not yet consume the latest published forecast, and forecast CSV export is absent. Define the persistence and selection semantics, then add regression coverage.
 
-`src/LedgerForge.Web/Program.cs` exposes anonymous `/health` for deployment verification. It returns success only when the database is reachable and has no pending migrations. It does not migrate the database.
+## Fiscal close/rollover
 
-Document storage supports `Documents:StoragePath`. A configured storage directory is rejected if it points at or below `wwwroot`. The default remains `App_Data/Documents`, also outside the public web root.
+Complete explicit fiscal-year close/carry-forward/version creation only after the above accounting semantics are authoritative and tested.
 
-Strict CSP, Windows Authentication, fail-closed role resolution, and authorized document streaming remain in place.
+# Next actions
 
-# Windows Setup Preview — BUILD GREEN
-
-A WPF Setup Preview now exists:
-
-- `src/LedgerForge.Setup.Engine` — platform-neutral, unit-tested configuration/validation engine
-- `src/LedgerForge.Setup` — WPF `net10.0-windows` Setup executable
-- `.github/workflows/package-preview.yml` — Windows build/package lane
-- `docs/deployment/setup-preview.md` — evaluation instructions and limitations
-- `docs/deployment/windows-installer-wizard.md` — production-installer target design
-
-The Windows packaging run for checkpoint `336fd49ce2477ea78a1e3485d2b3290f4a4df756` completed successfully and produced:
-
-- artifact `LedgerForge-Setup-Preview-win-x64`
-- artifact `LedgerForge-Server-Payload-win-x64`
-- `LedgerForge.Setup.exe` SHA-256: `51616eaebc1a382022cf53c409c5e270e968d0f8c0093f81b1092e448c933b21`
-
-The Setup executable is self-contained for .NET desktop execution and requests administrator elevation. Its embedded server payload remains framework-dependent because IIS uses the installed .NET 10 ASP.NET Core Hosting Bundle.
-
-## What Setup Preview currently does
-
-- Checks administrator elevation.
-- Checks IIS/appcmd availability.
-- Checks ASP.NET Core Module V2 / Hosting Bundle presence.
-- Checks Windows Authentication configuration availability.
-- Validates that the deployment payload is embedded.
-- Collects organization name, install path, document path, local SQL instance/database, first administrator, optional administrator AD group, and preview HTTP port.
-- Writes adopter-specific production configuration at install time; no real organization settings are shipped in the public payload.
-- Creates/uses a separate non-web-root document directory.
-- Creates/configures the IIS application pool and local preview site.
-- Configures Windows Authentication on and anonymous authentication off.
-- Uses the explicit deployment bootstrap to apply the committed schema and generic workflow seeds.
-- Provisions the selected first Windows identity as a LedgerForge System Administrator.
-- Provisions the local IIS application-pool virtual account for database read/write access.
-- Calls `/health` and requires readiness before reporting success.
-
-## Setup Preview limitations
-
-This executable is suitable for **evaluation/preview testing**, not a production deployment claim.
-
-- The compiled installer has not yet been executed end-to-end by CI on a real target host with IIS + Hosting Bundle + SQL Express; its Windows/IIS orchestration still needs a real-machine smoke test.
-- IIS, Windows Authentication, the .NET 10 Hosting Bundle, and a local SQL Server/SQL Express instance must already be installed.
-- Setup Preview currently supports local SQL Server only.
-- Preview binding is localhost HTTP (default port 8080); production must use reviewed DNS/TLS.
-- Prerequisite download/install, remote SQL/service identities, certificate selection, transactional rollback, repair/upgrade/resume, unattended mode, and offline prerequisite cache are still production-installer work.
-- Do not label Setup Preview as a stable production release.
-
-# Known product-semantic gaps before production readiness
-
-The application is broad enough for hands-on evaluation, but several financial behaviors remain intentionally marked incomplete and must be fixed before a production-ready release:
-
-1. **Commitment accounting:** dashboard/reporting currently use gross issued PO line totals. Posted invoices linked to those POs are not yet subtracted from outstanding commitment, so actual + commitment can double count.
-2. **Renewals:** renewal calendar/dashboard/reporting are still budget-item-date based rather than contract-first with duplicate suppression.
-3. **Approvals:** the unified queue currently covers submitted budget items and pending purchase orders, not yet invoice and budget-amendment approvals.
-4. **Forecasts:** persisted forecast lines do not yet carry an explicit baseline snapshot; dashboard does not yet use latest published forecast as its authoritative forecast source.
-5. **Exports:** forecast export is still missing.
-6. **Fiscal lifecycle:** full close/rollover workflow remains to be completed and hardened.
-
-These are product-readiness gaps, not compile/migration blockers.
-
-# Recommended continuation order
-
-1. **Real-machine Setup Preview smoke test.** Install prerequisites on a disposable Windows VM/server, run `LedgerForge.Setup.exe`, verify IIS/site/auth/database/storage/first-admin/health behavior, and fix any orchestration issues.
-2. **Financial semantic hardening.** Implement one authoritative outstanding-commitment calculation and use it consistently in dashboard/reporting/export; then contract-first renewals, expanded approvals, forecast baseline/latest-published behavior, and forecast export.
-3. **Fiscal-year close and rollover.** Preserve immutable historical values and explicit opening state.
-4. **Operational hardening.** Logging, backups/restore guidance, publish/runbooks, deployment diagnostics, security review.
-5. **Production installer.** Add prerequisite installation/verification, HTTPS, Advanced/remote SQL options, offline cache, hashes/signatures, rollback/repair/upgrade/resume/unattended behavior, then execute full clean-server validation.
-6. **Release hygiene.** Final public-content/secrets review, README screenshots/docs, versioning/changelog, signed release artifacts.
-
-# Security/deployment reminders
-
-- Never weaken authorization to make the preview easier to launch; bootstrap the first administrator explicitly instead.
-- Never give the IIS application pool `db_owner` merely for convenience.
-- Never put document storage inside `wwwroot`.
-- Never log connection strings, credentials, access tokens, or sensitive source-row payloads.
-- Never run EF migrations automatically from `Program.cs`.
-- Treat Setup Preview as evaluation software until a clean Windows-host install has been executed and documented.
+1. Run the replacement Setup Preview on the same evaluation Windows host and preserve the full Setup log.
+2. If `/health` still fails, use the newly surfaced HTTP/IIS diagnostic detail to fix the exact runtime boundary rather than guessing.
+3. Once the preview installs cleanly end-to-end, add automated or scripted clean-host IIS/SQL Express smoke validation where practical.
+4. Continue product-semantic priorities: commitments, contract-first renewals, unified approvals, published forecasts/export, then fiscal rollover.
+5. Continue the production installer roadmap only after the evaluation install path remains green.
