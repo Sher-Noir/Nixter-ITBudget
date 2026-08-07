@@ -13,17 +13,27 @@ public static class AuthorizationPolicies
     public const string ViewAudit = nameof(ViewAudit);
     public const string Administration = nameof(Administration);
 
+    private static readonly ApplicationRole[] AllApplicationRoles =
+    [
+        ApplicationRole.SystemAdministrator,
+        ApplicationRole.BudgetAdministrator,
+        ApplicationRole.BudgetEditor,
+        ApplicationRole.Approver,
+        ApplicationRole.ReadOnly,
+        ApplicationRole.Auditor
+    ];
+
     public static void Configure(AuthorizationOptions options)
     {
-        options.FallbackPolicy = options.DefaultPolicy;
+        var defaultPolicy = new AuthorizationPolicyBuilder()
+            .RequireAuthenticatedUser()
+            .AddRequirements(new ApplicationRoleRequirement(AllApplicationRoles))
+            .Build();
 
-        Add(options, ViewBudget,
-            ApplicationRole.SystemAdministrator,
-            ApplicationRole.BudgetAdministrator,
-            ApplicationRole.BudgetEditor,
-            ApplicationRole.Approver,
-            ApplicationRole.ReadOnly,
-            ApplicationRole.Auditor);
+        options.DefaultPolicy = defaultPolicy;
+        options.FallbackPolicy = defaultPolicy;
+
+        Add(options, ViewBudget, AllApplicationRoles);
 
         Add(options, EditPlanningBudget,
             ApplicationRole.SystemAdministrator,
