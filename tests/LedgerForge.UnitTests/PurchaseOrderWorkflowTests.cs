@@ -67,4 +67,24 @@ public sealed class PurchaseOrderWorkflowTests
         Assert.Equal("Funding source changed.", order.RejectionReason);
         Assert.Throws<InvalidOperationException>(() => order.Approve("DOMAIN\\approver", now.AddMinutes(2)));
     }
+
+    [Fact]
+    public void ChangeOrder_RequiresSupersededOrderAndPositiveSequence()
+    {
+        var sourceId = Guid.NewGuid();
+        var order = new PurchaseOrder(Guid.NewGuid(), Guid.NewGuid(), "PO-1005-CO1", "Change order", sourceId, 1);
+
+        Assert.True(order.IsChangeOrder);
+        Assert.Equal(sourceId, order.SupersedesPurchaseOrderId);
+        Assert.Equal(1, order.ChangeOrderSequence);
+    }
+
+    [Fact]
+    public void ChangeOrder_RejectsInvalidLineageCombinations()
+    {
+        Assert.Throws<ArgumentException>(() =>
+            new PurchaseOrder(Guid.NewGuid(), Guid.NewGuid(), "PO-1006", "Bad base sequence", null, 1));
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            new PurchaseOrder(Guid.NewGuid(), Guid.NewGuid(), "PO-1007", "Bad change sequence", Guid.NewGuid(), 0));
+    }
 }
