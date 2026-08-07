@@ -54,6 +54,27 @@ public sealed class PurchaseOrdersController(
     }
 
     [Authorize(Policy = AuthorizationPolicies.ManageProcurement)]
+    [HttpPost("{id:guid}/change-orders")]
+    public async Task<IActionResult> CreateChangeOrder(
+        Guid id,
+        string newNumber,
+        string description,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var changeOrderId = await procurementService.CreateChangeOrderAsync(id, newNumber, description, cancellationToken);
+            return RedirectToAction(nameof(Details), new { id = changeOrderId, saved = true });
+        }
+        catch (KeyNotFoundException) { return NotFound(); }
+        catch (Exception exception) when (exception is ArgumentException or InvalidOperationException or OverflowException)
+        {
+            TempData["PurchaseOrderError"] = exception.Message;
+            return RedirectToAction(nameof(Details), new { id });
+        }
+    }
+
+    [Authorize(Policy = AuthorizationPolicies.ManageProcurement)]
     [HttpPost("{id:guid}/lines")]
     public async Task<IActionResult> AddLine(
         Guid id,
@@ -71,10 +92,37 @@ public sealed class PurchaseOrdersController(
             await procurementService.AddLineAsync(id, description, quantity, unitCost, budgetItemId, financeAccountId, departmentId, locationId, cancellationToken);
             return RedirectToAction(nameof(Details), new { id, saved = true });
         }
-        catch (KeyNotFoundException)
+        catch (KeyNotFoundException) { return NotFound(); }
+        catch (Exception exception) when (exception is ArgumentException or InvalidOperationException or OverflowException)
         {
-            return NotFound();
+            TempData["PurchaseOrderError"] = exception.Message;
+            return RedirectToAction(nameof(Details), new { id });
         }
+    }
+
+    [Authorize(Policy = AuthorizationPolicies.ManageProcurement)]
+    [HttpPost("{id:guid}/receipts")]
+    public async Task<IActionResult> RecordReceipt(
+        Guid id,
+        string receiptNumber,
+        DateOnly receivedDate,
+        string? note,
+        Dictionary<Guid, decimal>? quantities,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await procurementService.RecordReceiptAsync(
+                id,
+                receiptNumber,
+                receivedDate,
+                RequireActor(),
+                note,
+                quantities ?? new Dictionary<Guid, decimal>(),
+                cancellationToken);
+            return RedirectToAction(nameof(Details), new { id, saved = true });
+        }
+        catch (KeyNotFoundException) { return NotFound(); }
         catch (Exception exception) when (exception is ArgumentException or InvalidOperationException or OverflowException)
         {
             TempData["PurchaseOrderError"] = exception.Message;
@@ -111,10 +159,7 @@ public sealed class PurchaseOrdersController(
             await procurementService.CancelAsync(id, RequireActor(), reason, cancellationToken);
             return RedirectToAction(nameof(Details), new { id, saved = true });
         }
-        catch (KeyNotFoundException)
-        {
-            return NotFound();
-        }
+        catch (KeyNotFoundException) { return NotFound(); }
         catch (Exception exception) when (exception is ArgumentException or InvalidOperationException)
         {
             TempData["PurchaseOrderError"] = exception.Message;
@@ -129,10 +174,7 @@ public sealed class PurchaseOrdersController(
             await action();
             return RedirectToAction(nameof(Details), new { id, saved = true });
         }
-        catch (KeyNotFoundException)
-        {
-            return NotFound();
-        }
+        catch (KeyNotFoundException) { return NotFound(); }
         catch (Exception exception) when (exception is ArgumentException or InvalidOperationException)
         {
             TempData["PurchaseOrderError"] = exception.Message;
