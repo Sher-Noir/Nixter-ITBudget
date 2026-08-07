@@ -7,7 +7,7 @@
 <div class="lf-page-header">
     <div>
         <h1 class="lf-page-title">Renewal Calendar</h1>
-        <p class="lf-subtitle">Upcoming and overdue budget-item renewals from the latest planning version.</p>
+        <p class="lf-subtitle">Contract renewals are authoritative where available, with budget-item dates used as fallback.</p>
     </div>
 </div>
 
@@ -43,13 +43,13 @@
 
     @if (Model.Items.Count == 0)
     {
-        <div class="lf-empty-state"><p>No budget items in the latest version have a renewal date.</p></div>
+        <div class="lf-empty-state"><p>No contract or fallback budget renewals are scheduled for this fiscal year.</p></div>
     }
     else
     {
         <div class="lf-table-wrap">
             <table class="lf-table">
-                <thead><tr><th>Item</th><th>Description</th><th>Renewal date</th><th>Timing</th><th>Status</th><th class="lf-number">Estimate</th></tr></thead>
+                <thead><tr><th>Reference</th><th>Source</th><th>Vendor / description</th><th>Renewal date</th><th>Notice date</th><th>Timing</th><th>Status</th><th class="lf-number">Estimate</th></tr></thead>
                 <tbody>
                 @foreach (var item in Model.Items)
                 {
@@ -61,9 +61,24 @@
                         _ => $"Due in {item.DaysUntilRenewal} day(s)"
                     };
                     <tr>
-                        <td><a href="/budget/items/@item.BudgetItemId"><strong>@item.ItemNumber</strong></a></td>
-                        <td>@item.Description</td>
+                        <td>
+                            @if (item.ContractId is not null)
+                            {
+                                <a href="/contracts/@item.ContractId"><strong>@item.Reference</strong></a>
+                            }
+                            else if (item.BudgetItemId is not null)
+                            {
+                                <a href="/budget/items/@item.BudgetItemId"><strong>@item.Reference</strong></a>
+                            }
+                            else
+                            {
+                                <strong>@item.Reference</strong>
+                            }
+                        </td>
+                        <td><span class="badge">@item.Source</span></td>
+                        <td>@(string.IsNullOrWhiteSpace(item.Vendor) ? item.Description : $"{item.Vendor} · {item.Description}")</td>
                         <td>@item.RenewalDate.ToString("yyyy-MM-dd")</td>
+                        <td>@(item.NoticeDate?.ToString("yyyy-MM-dd") ?? "—")</td>
                         <td><span class="badge">@timingLabel</span></td>
                         <td>@item.Status</td>
                         <td class="lf-number">@item.EstimatedAmount.ToString("C2")</td>
