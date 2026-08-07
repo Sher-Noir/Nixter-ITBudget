@@ -52,9 +52,17 @@ public sealed class BudgetItem : AuditableEntity
     public DateOnly? EstimatedPurchaseDate { get; private set; }
     public DateOnly? RenewalDate { get; private set; }
     public BudgetItemStatus Status { get; private set; }
+    public string? SubmittedBy { get; private set; }
+    public DateTimeOffset? SubmittedAtUtc { get; private set; }
+    public string? DecisionBy { get; private set; }
+    public DateTimeOffset? DecisionAtUtc { get; private set; }
+    public string? DecisionNote { get; private set; }
+
+    public bool IsPlanningEditable => Status is BudgetItemStatus.Draft or BudgetItemStatus.Proposed or BudgetItemStatus.Deferred;
 
     public void ChangeCost(decimal quantity, decimal unitCost)
     {
+        EnsurePlanningEditable();
         ValidateCost(quantity, unitCost);
         Quantity = quantity;
         UnitCost = unitCost;
@@ -76,6 +84,7 @@ public sealed class BudgetItem : AuditableEntity
         Guid? internalCategoryId,
         Guid? frequencyId)
     {
+        EnsurePlanningEditable();
         ValidateItemNumber(itemNumber);
         ValidateDescription(description);
         if (!Enum.IsDefined(purchaseType)) throw new ArgumentOutOfRangeException(nameof(purchaseType));
@@ -95,6 +104,45 @@ public sealed class BudgetItem : AuditableEntity
         FrequencyId = NormalizeId(frequencyId, nameof(frequencyId));
     }
 
+    public void Submit(string actor, DateTimeOffset submittedAtUtc)
+    {
+        EnsurePlanningEditable();
+        SubmittedBy = NormalizeActor(actor);
+        SubmittedAtUtc = submittedAtUtc;
+        DecisionBy = null;
+        DecisionAtUtc = null;
+        DecisionNote = null;
+        Status = BudgetItemStatus.Submitted;
+    }
+
+    public void Approve(string actor, DateTimeOffset decidedAtUtc, string? note = null)
+    {
+        EnsureSubmitted();
+        DecisionBy = NormalizeActor(actor);
+        DecisionAtUtc = decidedAtUtc;
+        DecisionNote = NormalizeNote(note, required: false);
+        ApprovedTotal = RevisedTotal ?? PlannedTotal;
+        Status = BudgetItemStatus.Approved;
+    }
+
+    public void Deny(string actor, string reason, DateTimeOffset decidedAtUtc)
+    {
+        EnsureSubmitted();
+        DecisionBy = NormalizeActor(actor);
+        DecisionAtUtc = decidedAtUtc;
+        DecisionNote = NormalizeNote(reason, required: true);
+        Status = BudgetItemStatus.Denied;
+    }
+
+    public void Defer(string actor, string reason, DateTimeOffset decidedAtUtc)
+    {
+        EnsureSubmitted();
+        DecisionBy = NormalizeActor(actor);
+        DecisionAtUtc = decidedAtUtc;
+        DecisionNote = NormalizeNote(reason, required: true);
+        Status = BudgetItemStatus.Deferred;
+    }
+
     public void SetStatus(BudgetItemStatus status)
     {
         if (!Enum.IsDefined(status)) throw new ArgumentOutOfRangeException(nameof(status));
@@ -111,6 +159,18 @@ public sealed class BudgetItem : AuditableEntity
     {
         if (revisedTotal is < 0m) throw new ArgumentOutOfRangeException(nameof(revisedTotal));
         RevisedTotal = revisedTotal;
+    }
+
+    private void EnsurePlanningEditable()
+    {
+        if (!IsPlanningEditable)
+            throw new InvalidOperationException($"Budget item cannot be edited from status {Status}.");
+    }
+
+    private void EnsureSubmitted()
+    {
+        if (Status != BudgetItemStatus.Submitted)
+            throw new InvalidOperationException($"Budget item cannot receive an approval decision from status {Status}.");
     }
 
     private static void ValidateItemNumber(string itemNumber)
@@ -133,6 +193,27 @@ public sealed class BudgetItem : AuditableEntity
 
     private static string? NormalizeOptional(string? value)
         => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+
+    private static string NormalizeActor(string actor)
+    {
+        if (string.IsNullOrWhiteSpace(actor)) throw new ArgumentException("Actor is required.", nameof(actor));
+        var normalized = actor.Trim();
+        if (normalized.Length > 256) throw new ArgumentException("Actor cannot exceed 256 characters.", nameof(actor));
+        return normalized;
+    }
+
+    private static string? NormalizeNote(string? value, bool required)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            if (required) throw new ArgumentException("Decision reason is required.", nameof(value));
+            return null;
+        }
+
+        var normalized = value.Trim();
+        if (normalized.Length > 2000) throw new ArgumentException("Decision note cannot exceed 2000 characters.", nameof(value));
+        return normalized;
+    }
 
     private static Guid? NormalizeId(Guid? value, string parameterName)
     {
