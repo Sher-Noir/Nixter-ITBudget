@@ -7,7 +7,8 @@ public enum ActualTransactionKind
     Manual,
     Invoice,
     Adjustment,
-    Reversal
+    Reversal,
+    Import
 }
 
 public sealed class ActualTransaction : AuditableEntity
