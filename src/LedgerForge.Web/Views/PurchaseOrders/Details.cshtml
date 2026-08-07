@@ -44,6 +44,7 @@
             @if (canApprove && Model.Order.State == PurchaseOrderState.PendingApproval)
             {
                 <form method="post" action="/purchase-orders/@Model.Order.Id/approve">@Html.AntiForgeryToken()<button class="primary" type="submit">Approve purchase order</button></form>
+                <a class="button" href="/approvals">Open approval queue to reject</a>
             }
             @if (canManage && Model.Order.State == PurchaseOrderState.Approved)
             {
@@ -54,7 +55,7 @@
                 <form method="post" action="/purchase-orders/@Model.Order.Id/close">@Html.AntiForgeryToken()<button type="submit">Close purchase order</button></form>
             }
         </div>
-        @if (canManage && Model.Order.State is not (PurchaseOrderState.Closed or PurchaseOrderState.Cancelled))
+        @if (canManage && Model.Order.State is not (PurchaseOrderState.Closed or PurchaseOrderState.Cancelled or PurchaseOrderState.Rejected))
         {
             <details>
                 <summary>Cancel purchase order</summary>
