@@ -24,7 +24,9 @@ public sealed record PurchaseOrderSummary(
     string Vendor,
     string Description,
     PurchaseOrderState State,
-    decimal Total);
+    decimal Total,
+    Guid? SupersedesPurchaseOrderId = null,
+    int ChangeOrderSequence = 0);
 
 public sealed record PurchaseOrderLineSummary(
     Guid Id,
@@ -36,7 +38,22 @@ public sealed record PurchaseOrderLineSummary(
     string? BudgetItem,
     string? FinanceAccount,
     string? Department,
-    string? Location);
+    string? Location,
+    decimal ReceivedQuantity = 0m,
+    decimal RemainingQuantity = 0m);
+
+public sealed record PurchaseReceiptLineSummary(
+    int PurchaseOrderLineNumber,
+    string Description,
+    decimal QuantityReceived);
+
+public sealed record PurchaseReceiptSummary(
+    Guid Id,
+    string ReceiptNumber,
+    DateOnly ReceivedDate,
+    string ReceivedBy,
+    string? Note,
+    IReadOnlyList<PurchaseReceiptLineSummary> Lines);
 
 public sealed record PurchaseOrderIndexSnapshot(
     IReadOnlyList<PurchaseOrderSummary> Orders,
@@ -49,7 +66,10 @@ public sealed record PurchaseOrderDetailSnapshot(
     IReadOnlyList<ProcurementOption> BudgetItems,
     IReadOnlyList<ProcurementOption> FinanceAccounts,
     IReadOnlyList<ProcurementOption> Departments,
-    IReadOnlyList<ProcurementOption> Locations);
+    IReadOnlyList<ProcurementOption> Locations,
+    IReadOnlyList<PurchaseReceiptSummary> Receipts,
+    PurchaseOrderSummary? SupersededOrder,
+    PurchaseOrderSummary? ChangeOrder);
 
 public sealed class ProcurementService(LedgerForgeDbContext dbContext)
 {
@@ -119,7 +139,7 @@ public sealed class ProcurementService(LedgerForgeDbContext dbContext)
         var orderRows = await dbContext.PurchaseOrders.AsNoTracking()
             .OrderByDescending(x => x.CreatedAtUtc)
             .ThenBy(x => x.Number)
-            .Select(x => new { x.Id, x.Number, x.FiscalYearId, x.VendorId, x.Description, x.State })
+            .Select(x => new { x.Id, x.Number, x.FiscalYearId, x.VendorId, x.Description, x.State, x.SupersedesPurchaseOrderId, x.ChangeOrderSequence })
             .ToListAsync(cancellationToken);
 
         var orders = orderRows.Select(x => new PurchaseOrderSummary(
@@ -129,7 +149,9 @@ public sealed class ProcurementService(LedgerForgeDbContext dbContext)
             vendorNames.TryGetValue(x.VendorId, out var vendorName) ? vendorName : "Unknown vendor",
             x.Description,
             x.State,
-            totals.TryGetValue(x.Id, out var total) ? total : 0m)).ToArray();
+            totals.TryGetValue(x.Id, out var total) ? total : 0m,
+            x.SupersedesPurchaseOrderId,
+            x.ChangeOrderSequence)).ToArray();
 
         return new(orders, years, vendors);
     }
@@ -145,6 +167,15 @@ public sealed class ProcurementService(LedgerForgeDbContext dbContext)
             .Where(x => x.PurchaseOrderId == id)
             .OrderBy(x => x.LineNumber)
             .ToListAsync(cancellationToken);
+        var lineIds = lineRows.Select(x => x.Id).ToArray();
+
+        var receivedByLine = lineIds.Length == 0
+            ? new Dictionary<Guid, decimal>()
+            : await dbContext.Set<PurchaseReceiptLine>().AsNoTracking()
+                .Where(x => lineIds.Contains(x.PurchaseOrderLineId))
+                .GroupBy(x => x.PurchaseOrderLineId)
+                .Select(x => new { Id = x.Key, Quantity = x.Sum(line => line.QuantityReceived) })
+                .ToDictionaryAsync(x => x.Id, x => x.Quantity, cancellationToken);
 
         var budgetNames = await dbContext.BudgetItems.AsNoTracking()
             .Where(x => x.FiscalYearId == order.FiscalYearId)
@@ -153,17 +184,23 @@ public sealed class ProcurementService(LedgerForgeDbContext dbContext)
         var departmentNames = await dbContext.Departments.AsNoTracking().ToDictionaryAsync(x => x.Id, x => x.Code + " · " + x.Name, cancellationToken);
         var locationNames = await dbContext.Locations.AsNoTracking().ToDictionaryAsync(x => x.Id, x => x.Code + " · " + x.Name, cancellationToken);
 
-        var lines = lineRows.Select(x => new PurchaseOrderLineSummary(
-            x.Id,
-            x.LineNumber,
-            x.Description,
-            x.Quantity,
-            x.UnitCost,
-            x.LineTotal,
-            NameFor(x.BudgetItemId, budgetNames),
-            NameFor(x.FinanceAccountId, accountNames),
-            NameFor(x.DepartmentId, departmentNames),
-            NameFor(x.LocationId, locationNames))).ToArray();
+        var lines = lineRows.Select(x =>
+        {
+            var received = receivedByLine.GetValueOrDefault(x.Id);
+            return new PurchaseOrderLineSummary(
+                x.Id,
+                x.LineNumber,
+                x.Description,
+                x.Quantity,
+                x.UnitCost,
+                x.LineTotal,
+                NameFor(x.BudgetItemId, budgetNames),
+                NameFor(x.FinanceAccountId, accountNames),
+                NameFor(x.DepartmentId, departmentNames),
+                NameFor(x.LocationId, locationNames),
+                received,
+                Math.Max(0m, x.Quantity - received));
+        }).ToArray();
 
         var latestVersionId = await dbContext.BudgetVersions.AsNoTracking()
             .Where(x => x.FiscalYearId == order.FiscalYearId)
@@ -186,8 +223,26 @@ public sealed class ProcurementService(LedgerForgeDbContext dbContext)
         var departments = await ActiveOptionsAsync(dbContext.Departments, cancellationToken);
         var locations = await ActiveOptionsAsync(dbContext.Locations, cancellationToken);
 
-        var summary = new PurchaseOrderSummary(order.Id, order.Number, year.DisplayName, vendor.Name, order.Description, order.State, lines.Sum(x => x.LineTotal));
-        return new(summary, lines, budgetItems, financeAccounts, departments, locations);
+        var receipts = await GetReceiptSummariesAsync(id, lineRows, cancellationToken);
+        var summary = ToSummary(order, year.DisplayName, vendor.Name, lines.Sum(x => x.LineTotal));
+
+        PurchaseOrderSummary? supersededOrder = null;
+        if (order.SupersedesPurchaseOrderId is Guid sourceId)
+        {
+            var source = await dbContext.PurchaseOrders.AsNoTracking().SingleOrDefaultAsync(x => x.Id == sourceId, cancellationToken);
+            if (source is not null)
+                supersededOrder = ToSummary(source, year.DisplayName, vendor.Name, await TotalAsync(source.Id, cancellationToken));
+        }
+
+        PurchaseOrderSummary? changeOrder = null;
+        var child = await dbContext.PurchaseOrders.AsNoTracking()
+            .Where(x => x.SupersedesPurchaseOrderId == order.Id)
+            .OrderByDescending(x => x.ChangeOrderSequence)
+            .FirstOrDefaultAsync(cancellationToken);
+        if (child is not null)
+            changeOrder = ToSummary(child, year.DisplayName, vendor.Name, await TotalAsync(child.Id, cancellationToken));
+
+        return new(summary, lines, budgetItems, financeAccounts, departments, locations, receipts, supersededOrder, changeOrder);
     }
 
     public async Task<Guid> CreatePurchaseOrderAsync(
@@ -210,6 +265,57 @@ public sealed class ProcurementService(LedgerForgeDbContext dbContext)
         dbContext.PurchaseOrders.Add(order);
         await dbContext.SaveChangesAsync(cancellationToken);
         return order.Id;
+    }
+
+    public async Task<Guid> CreateChangeOrderAsync(
+        Guid sourcePurchaseOrderId,
+        string newNumber,
+        string description,
+        CancellationToken cancellationToken = default)
+    {
+        var source = await RequireOrderAsync(sourcePurchaseOrderId, cancellationToken);
+        if (source.State != PurchaseOrderState.Issued)
+            throw new InvalidOperationException("A change order can only be created from an issued purchase order.");
+        if (await dbContext.PurchaseOrders.AnyAsync(
+                x => x.SupersedesPurchaseOrderId == source.Id && x.State != PurchaseOrderState.Cancelled && x.State != PurchaseOrderState.Rejected,
+                cancellationToken))
+            throw new InvalidOperationException("This purchase order already has an active change order. Continue from that revision instead.");
+
+        newNumber = newNumber?.Trim() ?? string.Empty;
+        if (await dbContext.PurchaseOrders.AnyAsync(x => x.FiscalYearId == source.FiscalYearId && x.Number == newNumber, cancellationToken))
+            throw new InvalidOperationException($"Purchase order number '{newNumber}' already exists in the selected fiscal year.");
+
+        var sourceLines = await dbContext.PurchaseOrderLines.AsNoTracking()
+            .Where(x => x.PurchaseOrderId == source.Id)
+            .OrderBy(x => x.LineNumber)
+            .ToListAsync(cancellationToken);
+        if (sourceLines.Count == 0) throw new InvalidOperationException("Issued purchase order has no lines to revise.");
+
+        await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
+        var changeOrder = new PurchaseOrder(
+            source.FiscalYearId,
+            source.VendorId,
+            newNumber,
+            description,
+            source.Id,
+            source.ChangeOrderSequence + 1);
+        dbContext.PurchaseOrders.Add(changeOrder);
+        foreach (var line in sourceLines)
+        {
+            dbContext.PurchaseOrderLines.Add(new PurchaseOrderLine(
+                changeOrder.Id,
+                line.LineNumber,
+                line.Description,
+                line.Quantity,
+                line.UnitCost,
+                line.BudgetItemId,
+                line.FinanceAccountId,
+                line.DepartmentId,
+                line.LocationId));
+        }
+        await dbContext.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+        return changeOrder.Id;
     }
 
     public async Task AddLineAsync(
@@ -256,10 +362,60 @@ public sealed class ProcurementService(LedgerForgeDbContext dbContext)
         await dbContext.SaveChangesAsync(cancellationToken);
     }
 
+    public async Task RecordReceiptAsync(
+        Guid purchaseOrderId,
+        string receiptNumber,
+        DateOnly receivedDate,
+        string actor,
+        string? note,
+        IReadOnlyDictionary<Guid, decimal> quantities,
+        CancellationToken cancellationToken = default)
+    {
+        var order = await RequireOrderAsync(purchaseOrderId, cancellationToken);
+        if (order.State != PurchaseOrderState.Issued)
+            throw new InvalidOperationException("Receipts can only be posted against an issued purchase order.");
+        if (receivedDate > DateOnly.FromDateTime(DateTime.UtcNow))
+            throw new InvalidOperationException("Receipt date cannot be in the future.");
+        if (quantities.Count == 0 || quantities.All(x => x.Value <= 0m))
+            throw new InvalidOperationException("Enter a positive received quantity for at least one purchase order line.");
+        if (await dbContext.Set<PurchaseReceipt>().AnyAsync(x => x.PurchaseOrderId == purchaseOrderId && x.ReceiptNumber == receiptNumber.Trim(), cancellationToken))
+            throw new InvalidOperationException($"Receipt number '{receiptNumber.Trim()}' already exists for this purchase order.");
+
+        var lines = await dbContext.PurchaseOrderLines.Where(x => x.PurchaseOrderId == purchaseOrderId).ToListAsync(cancellationToken);
+        var lineById = lines.ToDictionary(x => x.Id);
+        var selectedLineIds = quantities.Where(x => x.Value > 0m).Select(x => x.Key).ToArray();
+        if (selectedLineIds.Any(id => !lineById.ContainsKey(id)))
+            throw new InvalidOperationException("One or more receipt lines do not belong to this purchase order.");
+
+        var existingReceived = selectedLineIds.Length == 0
+            ? new Dictionary<Guid, decimal>()
+            : await dbContext.Set<PurchaseReceiptLine>().AsNoTracking()
+                .Where(x => selectedLineIds.Contains(x.PurchaseOrderLineId))
+                .GroupBy(x => x.PurchaseOrderLineId)
+                .Select(x => new { Id = x.Key, Quantity = x.Sum(line => line.QuantityReceived) })
+                .ToDictionaryAsync(x => x.Id, x => x.Quantity, cancellationToken);
+
+        foreach (var pair in quantities.Where(x => x.Value > 0m))
+        {
+            var ordered = lineById[pair.Key].Quantity;
+            var previouslyReceived = existingReceived.GetValueOrDefault(pair.Key);
+            if (pair.Value + previouslyReceived > ordered)
+                throw new InvalidOperationException($"Line {lineById[pair.Key].LineNumber} would exceed ordered quantity {ordered:N4}. Remaining receivable quantity is {Math.Max(0m, ordered - previouslyReceived):N4}.");
+        }
+
+        await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
+        var receipt = new PurchaseReceipt(purchaseOrderId, receiptNumber, receivedDate, actor, note);
+        dbContext.Set<PurchaseReceipt>().Add(receipt);
+        foreach (var pair in quantities.Where(x => x.Value > 0m))
+            dbContext.Set<PurchaseReceiptLine>().Add(new PurchaseReceiptLine(receipt.Id, pair.Key, pair.Value));
+        await dbContext.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+    }
+
     public async Task SubmitAsync(Guid id, string actor, CancellationToken cancellationToken = default)
     {
         var order = await RequireOrderAsync(id, cancellationToken);
-        var total = await dbContext.PurchaseOrderLines.Where(x => x.PurchaseOrderId == id).SumAsync(x => (decimal?)x.LineTotal, cancellationToken) ?? 0m;
+        var total = await TotalAsync(id, cancellationToken);
         if (total <= 0m) throw new InvalidOperationException("A purchase order must contain at least one positive-value line before submission.");
         order.Submit(actor, DateTimeOffset.UtcNow);
         await dbContext.SaveChangesAsync(cancellationToken);
@@ -275,8 +431,19 @@ public sealed class ProcurementService(LedgerForgeDbContext dbContext)
     public async Task IssueAsync(Guid id, string actor, CancellationToken cancellationToken = default)
     {
         var order = await RequireOrderAsync(id, cancellationToken);
-        order.Issue(actor, DateTimeOffset.UtcNow);
+        await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
+        var now = DateTimeOffset.UtcNow;
+        order.Issue(actor, now);
+        if (order.SupersedesPurchaseOrderId is Guid sourceId)
+        {
+            var source = await dbContext.PurchaseOrders.SingleOrDefaultAsync(x => x.Id == sourceId, cancellationToken)
+                ?? throw new InvalidOperationException("The purchase order revision source no longer exists.");
+            if (source.State != PurchaseOrderState.Issued)
+                throw new InvalidOperationException($"The superseded purchase order must still be Issued when the change order is issued; current state is {source.State}.");
+            source.Close(actor, now);
+        }
         await dbContext.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
     }
 
     public async Task CloseAsync(Guid id, string actor, CancellationToken cancellationToken = default)
@@ -292,6 +459,45 @@ public sealed class ProcurementService(LedgerForgeDbContext dbContext)
         order.Cancel(actor, reason, DateTimeOffset.UtcNow);
         await dbContext.SaveChangesAsync(cancellationToken);
     }
+
+    private async Task<IReadOnlyList<PurchaseReceiptSummary>> GetReceiptSummariesAsync(
+        Guid purchaseOrderId,
+        IReadOnlyList<PurchaseOrderLine> orderLines,
+        CancellationToken cancellationToken)
+    {
+        var receipts = await dbContext.Set<PurchaseReceipt>().AsNoTracking()
+            .Where(x => x.PurchaseOrderId == purchaseOrderId)
+            .OrderByDescending(x => x.ReceivedDate)
+            .ThenByDescending(x => x.CreatedAtUtc)
+            .ToListAsync(cancellationToken);
+        if (receipts.Count == 0) return [];
+
+        var receiptIds = receipts.Select(x => x.Id).ToArray();
+        var receiptLines = await dbContext.Set<PurchaseReceiptLine>().AsNoTracking()
+            .Where(x => receiptIds.Contains(x.PurchaseReceiptId))
+            .ToListAsync(cancellationToken);
+        var poLines = orderLines.ToDictionary(x => x.Id);
+        return receipts.Select(receipt => new PurchaseReceiptSummary(
+            receipt.Id,
+            receipt.ReceiptNumber,
+            receipt.ReceivedDate,
+            receipt.ReceivedBy,
+            receipt.Note,
+            receiptLines.Where(x => x.PurchaseReceiptId == receipt.Id)
+                .Select(x => poLines.TryGetValue(x.PurchaseOrderLineId, out var poLine)
+                    ? new PurchaseReceiptLineSummary(poLine.LineNumber, poLine.Description, x.QuantityReceived)
+                    : new PurchaseReceiptLineSummary(0, "Removed purchase-order line", x.QuantityReceived))
+                .OrderBy(x => x.PurchaseOrderLineNumber)
+                .ToArray())).ToArray();
+    }
+
+    private async Task<decimal> TotalAsync(Guid purchaseOrderId, CancellationToken cancellationToken)
+        => await dbContext.PurchaseOrderLines.AsNoTracking()
+            .Where(x => x.PurchaseOrderId == purchaseOrderId)
+            .SumAsync(x => (decimal?)x.LineTotal, cancellationToken) ?? 0m;
+
+    private static PurchaseOrderSummary ToSummary(PurchaseOrder order, string fiscalYear, string vendor, decimal total)
+        => new(order.Id, order.Number, fiscalYear, vendor, order.Description, order.State, total, order.SupersedesPurchaseOrderId, order.ChangeOrderSequence);
 
     private async Task<PurchaseOrder> RequireOrderAsync(Guid id, CancellationToken cancellationToken)
     {
