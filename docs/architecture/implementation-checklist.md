@@ -26,13 +26,36 @@
 ### Milestone 2 — schema/persistence
 
 Completed foundation:
-- Core FiscalYear/BudgetVersion/BudgetItem foreign-key constraints and financial check constraints.
-- ImportBatch, ImportRow, and ImportException persistence models with rowversion concurrency, source lineage, indexes, and restricted deletes.
+- FiscalYear, FiscalPeriod, BudgetVersion, BudgetItem, and BudgetItemAllocation persistence models.
+- Foreign-key constraints, financial/date/allocation check constraints, rowversion concurrency, and restrictive deletes.
+- Managed lookup/master-data tables using stable codes, editable labels, active flags, sort order, and alias mapping.
+- Workbook-derived and workflow lookup seed catalogs.
+- Idempotent reference-data initializer that inserts missing stable codes without overwriting administrator-renamed values.
+- ImportBatch, ImportRow, and ImportException persistence with source lineage and indexes.
+- AdGroupMapping and UserRoleException security persistence.
 
 Remaining before milestone completion:
-- Managed lookup/master-data tables and lookup seed catalog.
 - Remaining version-one domain tables and relationship constraints.
 - Initial EF migration generated and applied to a disposable SQL Server database.
+- Database-level migration verification after CI/build tooling is available.
+
+### Milestone 3 — Windows/AD authorization
+
+Completed foundation:
+- Integrated Windows Authentication through ASP.NET Core Negotiate.
+- Default/fallback authorization requires both authentication and a logical application role.
+- Named policies for editing, budget administration, approvals, imports, audit, and system administration.
+- Database-backed AD group mappings plus deployment-config bootstrap mappings.
+- Per-user role grant/deny model; active deny exceptions override grants/group membership.
+- AD membership/configuration failures fail closed and are logged.
+- Friendly 401/403 application page.
+- System Administrator AD group mapping screen with activate/deactivate support.
+- AD bootstrap/deployment documentation.
+
+Remaining before milestone completion:
+- User-role exception administration UI.
+- Automated authorization tests with test Windows principals.
+- IIS-hosted Windows Authentication verification against CRCH AD.
 
 ### Milestone 6 — FY2027 migration
 
@@ -43,19 +66,36 @@ Completed foundation:
 - ClosedXML reader validates structure and reads the current 68-row source.
 - Planned totals are recalculated from quantity × unit cost using decimal values.
 - Source workbook SHA-256 and row/sheet lineage are represented.
-- Reconciliation model checks the 68 / $830,683.48 / 44 Must Have targets.
+- Reconciliation checks the 68 / $830,683.48 / 44 Must Have targets.
 - Source item numbering gaps are preserved and warned, not renumbered.
-- Unit tests cover recalculation, header rejection, duplicate source item numbers, and sequence-gap warnings.
 - `Raw Budget Detail` conflicts are documented and prohibited from silent description-only merging.
+- Persisted preview writes ImportBatch, ImportRow, and ImportException records in a transaction.
+- Preview resolves Finance Type, Department, Location, Need Level, Internal Category, and Frequency against active managed lookups/aliases.
+- Contradictory workflow flags and unknown lookup values reject source rows; total differences and missing vendors are warnings.
+- Import batch workflow requires explicit acceptance before commit and requires a reason when reconciliation targets are missed.
+- Protected FY2027 upload/preview UI with configurable size limit, `.xlsx` restriction, ZIP signature validation, CSRF protection, and `ManageImports` authorization.
+- Unit tests cover workbook parsing, allocation reconciliation, and import batch workflow guards.
 
 Remaining before milestone completion:
-- Persist a parsed preview into ImportBatch/ImportRow/ImportException.
-- Lookup resolution and alias mapping.
-- Deterministic secondary-source enrichment and exception workflow.
-- Transactional commit into FiscalYear/BudgetVersion/BudgetItem records.
+- Deterministic secondary-source enrichment from `Raw Budget Detail`/renewal-related sheets and reviewed exception mappings.
+- Transactional commit into FiscalYear/BudgetVersion/BudgetItem and related master records.
 - Secured immutable source-workbook attachment.
-- Administrator acceptance path for reconciliation exceptions.
+- Preview detail/exception-resolution UI and administrator acceptance action.
 - Integration regression using the production source files outside source control.
+
+### Milestone 17 — administration
+
+Completed foundation:
+- System Administrator security mapping page uses friendly forms rather than raw JSON.
+- Deployment-config bootstrap group mappings are documented and separated from normal database administration.
+- Managed lookup initializer exists as an explicit service and is not auto-run during production startup.
+
+Remaining before milestone completion:
+- Full lookup management screens, role-exception administration, fiscal settings, import/export profiles, storage/SMTP settings, diagnostics, connection tests, retention, branding, and feature flags.
+
+## Validation blocker
+
+The agent runtime does not contain the .NET SDK. GitHub Actions is triggered for branch/PR commits, but the hosted `build-test` job currently fails before GitHub reports any executable steps or downloadable job logs through the connected API. There is therefore no code-level CI failure output available yet. This must be resolved before a milestone can satisfy its build/test exit criteria.
 
 ## Milestone exit criteria
 
