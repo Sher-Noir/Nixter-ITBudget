@@ -1,0 +1,39 @@
+name: generate-forecast-baseline-migration
+
+on:
+  push:
+    branches: [ 'agent/**' ]
+    paths:
+      - '.github/workflows/generate-forecast-baseline-migration.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+      - name: Restore EF tool and solution
+        run: |
+          dotnet tool restore
+          dotnet restore LedgerForge.slnx
+      - name: Generate EF migration from the current model
+        run: |
+          dotnet ef migrations add AddForecastBaselineSnapshot \
+            --project src/LedgerForge.Infrastructure/LedgerForge.Infrastructure.csproj \
+            --startup-project src/LedgerForge.Web/LedgerForge.Web.csproj \
+            --context LedgerForgeDbContext \
+            --output-dir Persistence/Migrations
+      - name: Upload generated migration files
+        uses: actions/upload-artifact@v4
+        with:
+          name: ledgerforge-generated-forecast-baseline-migration
+          if-no-files-found: error
+          path: |
+            src/LedgerForge.Infrastructure/Persistence/Migrations/*AddForecastBaselineSnapshot.cs
+            src/LedgerForge.Infrastructure/Persistence/Migrations/*AddForecastBaselineSnapshot.Designer.cs
+            src/LedgerForge.Infrastructure/Persistence/Migrations/LedgerForgeDbContextModelSnapshot.cs
