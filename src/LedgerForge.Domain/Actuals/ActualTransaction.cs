@@ -71,7 +71,7 @@ public sealed class ActualTransaction : AuditableEntity
             FiscalYearId = FiscalYearId,
             TransactionDate = reversalDate,
             Amount = -Amount,
-            Description = NormalizeRequired($"Reversal: {Description}", 500, nameof(Description)),
+            Description = Description,
             Kind = ActualTransactionKind.Reversal,
             SourceReference = SourceReference,
             BudgetItemId = BudgetItemId,
