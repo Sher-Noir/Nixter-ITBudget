@@ -77,6 +77,9 @@ input, select, textarea {
   border-radius: 9px;
   padding: .6rem .72rem;
 }
+small { display: block; margin-top: .28rem; }
+dt { font-weight: 750; margin-top: .7rem; }
+dd { margin: .18rem 0 0; color: var(--lf-muted); }
 :focus-visible { outline: 3px solid color-mix(in srgb, var(--lf-primary) 38%, transparent); outline-offset: 2px; }
 
 .lf-shell { min-height: 100vh; }
@@ -103,6 +106,7 @@ input, select, textarea {
   color: var(--lf-sidebar-text);
 }
 .lf-brand:hover { text-decoration: none; }
+.lf-brand-logo { width: 38px; height: 38px; object-fit: contain; flex: 0 0 38px; }
 .lf-brand-mark {
   position: relative;
   width: 36px;
