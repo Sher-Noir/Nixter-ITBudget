@@ -1,4 +1,7 @@
+using Crch.ItBudget.ImportExport.Fy2027;
+using Crch.ItBudget.Infrastructure.Importing;
 using Crch.ItBudget.Infrastructure.Persistence;
+using Crch.ItBudget.Infrastructure.Persistence.Seeding;
 using Microsoft.AspNetCore.Authentication.Negotiate;
 using Microsoft.EntityFrameworkCore;
 
@@ -17,6 +20,9 @@ builder.Services.AddControllersWithViews(options =>
 var connectionString = builder.Configuration.GetConnectionString("ItBudget")
     ?? throw new InvalidOperationException("Connection string 'ItBudget' is required.");
 builder.Services.AddDbContext<ItBudgetDbContext>(options => options.UseSqlServer(connectionString));
+builder.Services.AddSingleton<Fy2027WorkbookReader>();
+builder.Services.AddScoped<Fy2027ImportPreviewService>();
+builder.Services.AddScoped<ManagedLookupInitializer>();
 
 var app = builder.Build();
 
