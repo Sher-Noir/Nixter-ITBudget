@@ -1,0 +1,11 @@
+<Solution>
+  <Project Path="src/LedgerForge.Domain/LedgerForge.Domain.csproj" />
+  <Project Path="src/LedgerForge.Application/LedgerForge.Application.csproj" />
+  <Project Path="src/LedgerForge.Infrastructure/LedgerForge.Infrastructure.csproj" />
+  <Project Path="src/LedgerForge.Reporting/LedgerForge.Reporting.csproj" />
+  <Project Path="src/LedgerForge.ImportExport/LedgerForge.ImportExport.csproj" />
+  <Project Path="src/LedgerForge.Web/LedgerForge.Web.csproj" />
+  <Project Path="tests/LedgerForge.UnitTests/LedgerForge.UnitTests.csproj" />
+  <Project Path="tests/LedgerForge.IntegrationTests/LedgerForge.IntegrationTests.csproj" />
+  <Project Path="tests/LedgerForge.UiTests/LedgerForge.UiTests.csproj" />
+</Solution>
