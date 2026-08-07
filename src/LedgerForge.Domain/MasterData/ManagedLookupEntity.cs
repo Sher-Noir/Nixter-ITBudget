@@ -27,7 +27,7 @@ public abstract class ManagedLookupEntity : AuditableEntity
     {
         if (string.IsNullOrWhiteSpace(name)) throw new ArgumentException("Lookup name is required.", nameof(name));
         if (name.Trim().Length > 250) throw new ArgumentException("Lookup name cannot exceed 250 characters.", nameof(name));
-        if (description?.Trim().Length > 1000) throw new ArgumentException("Lookup description cannot exceed 1000 characters.", nameof(description));
+        if (description is not null && description.Trim().Length > 1000) throw new ArgumentException("Lookup description cannot exceed 1000 characters.", nameof(description));
         if (sortOrder < 0) throw new ArgumentOutOfRangeException(nameof(sortOrder));
 
         Name = name.Trim();
