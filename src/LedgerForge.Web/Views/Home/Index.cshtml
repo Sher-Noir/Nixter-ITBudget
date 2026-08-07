@@ -1,6 +1,7 @@
 @model LedgerForge.Infrastructure.Dashboard.DashboardSnapshot
 @{
     ViewData["Title"] = "Dashboard";
+    var canManageImports = ViewData["CanManageImports"] as bool? == true;
 }
 
 <div class="lf-page-header">
@@ -50,12 +51,15 @@
         }
     </article>
 
-    <article class="lf-card lf-panel">
-        <div class="lf-panel-header"><h2>Import review</h2><a href="/imports">Open imports</a></div>
-        <div class="lf-dashboard-empty-chart">
-            <p><strong>@Model.ImportBatchesNeedingReview</strong> import batch@(Model.ImportBatchesNeedingReview == 1 ? string.Empty : "es") currently awaiting review.</p>
-        </div>
-    </article>
+    @if (canManageImports)
+    {
+        <article class="lf-card lf-panel">
+            <div class="lf-panel-header"><h2>Import review</h2><a href="/imports">Open imports</a></div>
+            <div class="lf-dashboard-empty-chart">
+                <p><strong>@Model.ImportBatchesNeedingReview</strong> import batch@(Model.ImportBatchesNeedingReview == 1 ? string.Empty : "es") currently awaiting review.</p>
+            </div>
+        </article>
+    }
 
     <article class="lf-card lf-panel lf-dashboard-wide">
         <div class="lf-panel-header"><h2>Upcoming renewals</h2><a href="/budget">Review budget items</a></div>
