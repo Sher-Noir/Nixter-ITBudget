@@ -1,0 +1,125 @@
+name: release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  windows-release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      - name: Restore, build, and test
+        shell: pwsh
+        run: |
+          dotnet tool restore
+          dotnet restore LedgerForge.slnx
+          dotnet build LedgerForge.slnx --configuration Release --no-restore
+          dotnet test tests\LedgerForge.UnitTests\LedgerForge.UnitTests.csproj --configuration Release --no-build
+          dotnet test tests\LedgerForge.IntegrationTests\LedgerForge.IntegrationTests.csproj --configuration Release --no-build
+          dotnet test tests\LedgerForge.UiTests\LedgerForge.UiTests.csproj --configuration Release --no-build
+          dotnet ef migrations has-pending-model-changes `
+            --project src\LedgerForge.Infrastructure\LedgerForge.Infrastructure.csproj `
+            --startup-project src\LedgerForge.Web\LedgerForge.Web.csproj `
+            --context LedgerForgeDbContext
+
+      - name: Publish deployment payload
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path artifacts\payload\web | Out-Null
+          New-Item -ItemType Directory -Force -Path artifacts\payload\bootstrap | Out-Null
+          dotnet publish src\LedgerForge.Web\LedgerForge.Web.csproj `
+            --configuration Release --runtime win-x64 --self-contained false `
+            --output artifacts\payload\web
+          dotnet publish src\LedgerForge.Bootstrap\LedgerForge.Bootstrap.csproj `
+            --configuration Release --runtime win-x64 --self-contained false `
+            --output artifacts\payload\bootstrap
+          if (Test-Path artifacts\payload\web\appsettings.Production.json) {
+            throw 'Production settings must not be embedded in the public payload.'
+          }
+          Compress-Archive -Path artifacts\payload\* -DestinationPath artifacts\LedgerForge.Server.win-x64.zip -Force
+
+      - name: Publish self-contained Setup
+        shell: pwsh
+        run: |
+          $payloadZip = (Resolve-Path 'artifacts\LedgerForge.Server.win-x64.zip').Path
+          New-Item -ItemType Directory -Force -Path artifacts\setup | Out-Null
+          dotnet publish src\LedgerForge.Setup\LedgerForge.Setup.csproj `
+            --configuration Release --runtime win-x64 --self-contained true `
+            --output artifacts\setup `
+            /p:PayloadZipPath="$payloadZip"
+          if (-not (Test-Path artifacts\setup\LedgerForge.Setup.exe)) {
+            throw 'LedgerForge.Setup.exe was not produced.'
+          }
+
+      - name: Optionally Authenticode-sign Setup
+        if: ${{ secrets.LEDGERFORGE_SIGNING_CERT_BASE64 != '' }}
+        shell: pwsh
+        env:
+          SIGNING_CERT_BASE64: ${{ secrets.LEDGERFORGE_SIGNING_CERT_BASE64 }}
+          SIGNING_CERT_PASSWORD: ${{ secrets.LEDGERFORGE_SIGNING_CERT_PASSWORD }}
+        run: |
+          $pfx = Join-Path $env:RUNNER_TEMP 'ledgerforge-signing.pfx'
+          [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:SIGNING_CERT_BASE64))
+          $signtool = Get-ChildItem 'C:\Program Files (x86)\Windows Kits\10\bin' -Recurse -Filter signtool.exe `
+            | Where-Object { $_.FullName -match '\\x64\\signtool\.exe$' } `
+            | Sort-Object FullName -Descending `
+            | Select-Object -First 1
+          if (-not $signtool) { throw 'signtool.exe was not found on the Windows runner.' }
+          & $signtool.FullName sign /fd SHA256 /td SHA256 /tr http://timestamp.digicert.com `
+            /f $pfx /p $env:SIGNING_CERT_PASSWORD artifacts\setup\LedgerForge.Setup.exe
+          if ($LASTEXITCODE -ne 0) { throw 'Authenticode signing failed.' }
+          Remove-Item -Force $pfx
+
+      - name: Generate checksums and release manifest
+        shell: pwsh
+        run: |
+          $setupHash = (Get-FileHash artifacts\setup\LedgerForge.Setup.exe -Algorithm SHA256).Hash.ToLowerInvariant()
+          $serverHash = (Get-FileHash artifacts\LedgerForge.Server.win-x64.zip -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$setupHash  LedgerForge.Setup.exe" | Set-Content -Encoding ascii artifacts\LedgerForge.Setup.exe.sha256
+          "$serverHash  LedgerForge.Server.win-x64.zip" | Set-Content -Encoding ascii artifacts\LedgerForge.Server.win-x64.zip.sha256
+          @{
+            product = 'LedgerForge'
+            version = $env:GITHUB_REF_NAME
+            commit = $env:GITHUB_SHA
+            runtime = 'win-x64'
+            setupSha256 = $setupHash
+            serverPayloadSha256 = $serverHash
+            generatedAtUtc = [DateTimeOffset]::UtcNow.ToString('O')
+          } | ConvertTo-Json | Set-Content -Encoding utf8 artifacts\release-manifest.json
+
+      - name: Upload immutable workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: LedgerForge-${{ github.ref_name }}-win-x64
+          if-no-files-found: error
+          path: |
+            artifacts/setup/LedgerForge.Setup.exe
+            artifacts/LedgerForge.Setup.exe.sha256
+            artifacts/LedgerForge.Server.win-x64.zip
+            artifacts/LedgerForge.Server.win-x64.zip.sha256
+            artifacts/release-manifest.json
+
+      - name: Publish GitHub Release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create $env:GITHUB_REF_NAME `
+            artifacts\setup\LedgerForge.Setup.exe `
+            artifacts\LedgerForge.Setup.exe.sha256 `
+            artifacts\LedgerForge.Server.win-x64.zip `
+            artifacts\LedgerForge.Server.win-x64.zip.sha256 `
+            artifacts\release-manifest.json `
+            --title "LedgerForge $env:GITHUB_REF_NAME" `
+            --generate-notes `
+            --verify-tag
