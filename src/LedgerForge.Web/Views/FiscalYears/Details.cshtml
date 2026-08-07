@@ -27,11 +27,11 @@
 
 @if (saved)
 {
-    <div class="card" role="status" style="margin-bottom:1rem;border-color:var(--lf-success)">Fiscal year created.</div>
+    <div class="card lf-alert lf-alert-success" role="status">Fiscal year created.</div>
 }
 @if (!string.IsNullOrWhiteSpace(error))
 {
-    <div class="card" role="alert" style="margin-bottom:1rem;border-color:var(--lf-danger)">@error</div>
+    <div class="card lf-alert lf-alert-danger" role="alert">@error</div>
 }
 
 <div class="lf-kpi-grid">
@@ -52,7 +52,7 @@
     }
     else
     {
-        <div style="overflow-x:auto">
+        <div class="lf-table-wrap">
             <table class="lf-table">
                 <thead><tr><th>Version</th><th>Type</th><th>Effective</th><th>State</th><th>Approved</th></tr></thead>
                 <tbody>
