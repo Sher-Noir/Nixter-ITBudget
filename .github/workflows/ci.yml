@@ -12,6 +12,7 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '10.0.x'
-      - run: dotnet restore Crch.ItBudget.slnx
-      - run: dotnet build Crch.ItBudget.slnx --configuration Release --no-restore
-      - run: dotnet test Crch.ItBudget.slnx --configuration Release --no-build
+          cache: true
+      - run: dotnet restore LedgerForge.slnx
+      - run: dotnet build LedgerForge.slnx --configuration Release --no-restore
+      - run: dotnet test LedgerForge.slnx --configuration Release --no-build --logger "trx;LogFileName=ledgerforge-tests.trx"
