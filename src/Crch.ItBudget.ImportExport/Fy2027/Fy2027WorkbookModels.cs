@@ -5,7 +5,7 @@ public sealed record Fy2027BudgetRow(
     int ItemNumber,
     string ItemDescription,
     string ReasonPurpose,
-    string? EstimatedMonth,
+    DateOnly? EstimatedMonth,
     string FinanceType,
     string Department,
     string Location,
