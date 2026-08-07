@@ -1,11 +1,17 @@
 @using LedgerForge.Web.Configuration
+@using LedgerForge.Web.Security
+@using Microsoft.AspNetCore.Authorization
 @inject OrganizationSettingsStore OrganizationSettings
+@inject IAuthorizationService AuthorizationService
 @{
     var branding = await OrganizationSettings.GetAsync(Context.RequestAborted);
     var pageTitle = ViewData["Title"] as string;
     var title = string.IsNullOrWhiteSpace(pageTitle) ? branding.ProductName : $"{pageTitle} - {branding.ProductName}";
     var userName = User.Identity?.Name ?? "Signed-in user";
     var userInitial = userName.Split('\\', StringSplitOptions.RemoveEmptyEntries).LastOrDefault()?.FirstOrDefault().ToString().ToUpperInvariant() ?? "U";
+    var canManageBudget = (await AuthorizationService.AuthorizeAsync(User, AuthorizationPolicies.ManageBudget)).Succeeded;
+    var canManageImports = (await AuthorizationService.AuthorizeAsync(User, AuthorizationPolicies.ManageImports)).Succeeded;
+    var canAdminister = (await AuthorizationService.AuthorizeAsync(User, AuthorizationPolicies.Administration)).Succeeded;
     bool IsActive(string prefix) => Context.Request.Path.StartsWithSegments(prefix, StringComparison.OrdinalIgnoreCase);
 }
 <!doctype html>
@@ -48,10 +54,20 @@
             <a href="/documents" class="@(IsActive("/documents") ? "active" : null)"><span class="lf-nav-icon">□</span><span>Documents</span></a>
             <a href="/approvals" class="@(IsActive("/approvals") ? "active" : null)"><span class="lf-nav-icon">✓</span><span>Approvals</span></a>
             <a href="/reports" class="@(IsActive("/reports") ? "active" : null)"><span class="lf-nav-icon">▥</span><span>Reports</span></a>
-            <a href="/fiscal-years" class="@(IsActive("/fiscal-years") ? "active" : null)"><span class="lf-nav-icon">▣</span><span>Fiscal Years</span></a>
-            <a href="/imports" class="@(IsActive("/imports") ? "active" : null)"><span class="lf-nav-icon">⇅</span><span>Imports &amp; Exports</span></a>
-            <a href="/admin/organization" class="@(IsActive("/admin/organization") ? "active" : null)"><span class="lf-nav-icon">✦</span><span>Organization</span></a>
-            <a href="/admin/security" class="@(IsActive("/admin/security") ? "active" : null)"><span class="lf-nav-icon">⚙</span><span>Security</span></a>
+            @if (canManageBudget)
+            {
+                <a href="/fiscal-years" class="@(IsActive("/fiscal-years") ? "active" : null)"><span class="lf-nav-icon">▣</span><span>Fiscal Years</span></a>
+            }
+            @if (canManageImports)
+            {
+                <a href="/imports" class="@(IsActive("/imports") ? "active" : null)"><span class="lf-nav-icon">⇅</span><span>Imports &amp; Exports</span></a>
+            }
+            @if (canAdminister)
+            {
+                <a href="/admin/lookups" class="@(IsActive("/admin/lookups") ? "active" : null)"><span class="lf-nav-icon">≡</span><span>Managed Lookups</span></a>
+                <a href="/admin/organization" class="@(IsActive("/admin/organization") ? "active" : null)"><span class="lf-nav-icon">✦</span><span>Organization</span></a>
+                <a href="/admin/security" class="@(IsActive("/admin/security") ? "active" : null)"><span class="lf-nav-icon">⚙</span><span>Security</span></a>
+            }
         </nav>
         <div class="lf-sidebar-footer"><strong>@branding.OrganizationName</strong><br />@branding.ApplicationTitle</div>
     </aside>
