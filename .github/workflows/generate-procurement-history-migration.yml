@@ -128,14 +128,18 @@ jobs:
             --startup-project src/LedgerForge.Web/LedgerForge.Web.csproj \
             --context LedgerForgeDbContext \
             --output-dir Persistence/Migrations
-      - name: Reject unexpected destructive operations
-        shell: bash
+      - name: Reject unexpected destructive Up operations
+        shell: python
         run: |
-          migration=$(ls src/LedgerForge.Infrastructure/Persistence/Migrations/*_AddProcurementHistory.cs)
-          if grep -E 'Drop(Table|Column|ForeignKey)|DeleteData' "$migration"; then
-            echo 'Unexpected destructive operation in procurement migration.'
-            exit 1
-          fi
+          from pathlib import Path
+          import re
+
+          migration = next(Path('src/LedgerForge.Infrastructure/Persistence/Migrations').glob('*_AddProcurementHistory.cs'))
+          text = migration.read_text(encoding='utf-8-sig')
+          up = text.split('protected override void Down', 1)[0]
+          destructive = re.findall(r'migrationBuilder\.(DropTable|DropColumn|DropForeignKey|DeleteData)\s*\(', up)
+          if destructive:
+              raise SystemExit(f'Unexpected destructive Up operation(s): {destructive}')
       - name: Commit model and generated migration to PR branch
         run: |
           git config user.name 'github-actions[bot]'
