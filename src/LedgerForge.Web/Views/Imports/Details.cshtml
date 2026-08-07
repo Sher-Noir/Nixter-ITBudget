@@ -1,0 +1,200 @@
+@model LedgerForge.Web.Models.Imports.ImportBatchDetailViewModel
+@using LedgerForge.Domain.Importing
+@{
+    ViewData["Title"] = $"Import {Model.Detail.Batch.SourceFileName}";
+    var detail = Model.Detail;
+    var batch = detail.Batch;
+    var reviewOpen = batch.Status == ImportBatchStatus.PreviewReady && string.IsNullOrWhiteSpace(batch.AcceptedBy);
+}
+
+<div class="lf-page-header">
+    <div>
+        <h1 class="lf-page-title">Import Review</h1>
+        <p class="lf-subtitle">@batch.SourceFileName · @batch.ImportType · created @batch.CreatedAtUtc.ToString("u")</p>
+    </div>
+    <a class="button" href="/imports">Back to imports</a>
+</div>
+
+@if (!string.IsNullOrWhiteSpace(Model.ErrorMessage))
+{
+    <div class="lf-card lf-alert lf-alert-danger" role="alert">@Model.ErrorMessage</div>
+}
+@if (Model.Saved)
+{
+    <div class="lf-card lf-alert lf-alert-success" role="status">Import review saved.</div>
+}
+@if (Model.Accepted)
+{
+    <div class="lf-card lf-alert lf-alert-success" role="status">Import preview accepted for a future authoritative commit.</div>
+}
+
+<div class="lf-kpi-grid">
+    <article class="lf-card lf-kpi"><div class="lf-kpi-icon blue">R</div><div><div class="lf-card-title">Source Rows</div><div class="lf-kpi-value">@(batch.SourceRowCount ?? detail.Rows.Count)</div><div class="lf-kpi-note">Rows captured from source</div></div></article>
+    <article class="lf-card lf-kpi"><div class="lf-kpi-icon green">A</div><div><div class="lf-card-title">Accepted Rows</div><div class="lf-kpi-value">@(batch.AcceptedRowCount ?? 0)</div><div class="lf-kpi-note">Accepted in preview</div></div></article>
+    <article class="lf-card lf-kpi"><div class="lf-kpi-icon red">E</div><div><div class="lf-card-title">Open Errors</div><div class="lf-kpi-value">@detail.OpenErrorCount</div><div class="lf-kpi-note">Must resolve before acceptance</div></div></article>
+    <article class="lf-card lf-kpi"><div class="lf-kpi-icon gold">W</div><div><div class="lf-card-title">Open Warnings</div><div class="lf-kpi-value">@detail.OpenWarningCount</div><div class="lf-kpi-note">Require review but may be accepted</div></div></article>
+</div>
+
+<div class="lf-settings-grid">
+    <section class="lf-card" aria-labelledby="batch-summary-title">
+        <h2 id="batch-summary-title">Batch summary</h2>
+        <dl class="lf-detail-grid">
+            <div><dt>Status</dt><dd><span class="badge">@batch.Status</span></dd></div>
+            <div><dt>Recalculated planned total</dt><dd>@(batch.RecalculatedPlannedTotal?.ToString("C2") ?? "—")</dd></div>
+            <div><dt>Configured reconciliation</dt><dd>@(batch.ReconciledToExpectedTargets is null ? "Not configured" : batch.ReconciledToExpectedTargets == true ? "Matches" : "Requires review")</dd></div>
+            <div><dt>Rejected rows</dt><dd>@detail.RejectedRowCount</dd></div>
+            <div><dt>Accepted by</dt><dd>@(batch.AcceptedBy ?? "Not accepted")</dd></div>
+            <div><dt>SHA-256</dt><dd class="lf-break"><code>@batch.SourceSha256</code></dd></div>
+        </dl>
+    </section>
+
+    <aside class="lf-card" aria-labelledby="batch-actions-title">
+        <h2 id="batch-actions-title">Batch actions</h2>
+        @if (reviewOpen)
+        {
+            @if (detail.CanAcceptPreview)
+            {
+                <form method="post" action="/imports/@batch.Id/accept">
+                    @Html.AntiForgeryToken()
+                    <p>
+                        <label for="acceptanceReason"><strong>Acceptance reason</strong></label>
+                        <textarea id="acceptanceReason" name="acceptanceReason" rows="4" maxlength="2000" placeholder="Required when reconciliation does not match or rejected source rows remain."></textarea>
+                    </p>
+                    <button class="primary" type="submit">Accept preview</button>
+                </form>
+            }
+            else
+            {
+                <p class="lf-muted">Resolve all open error exceptions before this preview can be accepted.</p>
+            }
+            <form method="post" action="/imports/@batch.Id/reject" class="lf-secondary-form">
+                @Html.AntiForgeryToken()
+                <button type="submit">Reject batch</button>
+            </form>
+        }
+        else if (!string.IsNullOrWhiteSpace(batch.AcceptedBy))
+        {
+            <p><strong>Accepted for commit</strong></p>
+            <p class="lf-muted">Authoritative commit is intentionally not available yet. Acceptance records administrator intent while the transactional commit workflow is completed.</p>
+        }
+        else
+        {
+            <p class="lf-muted">No additional review actions are available for a batch in @batch.Status status.</p>
+        }
+    </aside>
+</div>
+
+<section class="lf-card" aria-labelledby="exceptions-title">
+    <div class="lf-panel-header">
+        <div>
+            <h2 id="exceptions-title">Exceptions</h2>
+            <p class="lf-muted">Warnings and errors generated during structural validation, lookup resolution, and reconciliation.</p>
+        </div>
+        <span class="badge">@detail.Exceptions.Count exception@(detail.Exceptions.Count == 1 ? string.Empty : "s")</span>
+    </div>
+
+    @if (detail.Exceptions.Count == 0)
+    {
+        <div class="lf-empty-state"><p>No exceptions were recorded for this import batch.</p></div>
+    }
+    else
+    {
+        <div class="lf-import-exceptions">
+            @foreach (var exception in detail.Exceptions)
+            {
+                <article class="lf-import-exception @(exception.Severity == ImportExceptionSeverity.Error ? "lf-import-error" : "lf-import-warning")">
+                    <div class="lf-import-exception-head">
+                        <div>
+                            <strong>@exception.Code</strong>
+                            <span class="badge">@exception.Severity</span>
+                            <span class="badge">@exception.ResolutionStatus</span>
+                        </div>
+                        @if (exception.ImportRowId is not null)
+                        {
+                            <a href="#row-@exception.ImportRowId">Source row</a>
+                        }
+                    </div>
+                    <p>@exception.Message</p>
+                    @if (!string.IsNullOrWhiteSpace(exception.AssignedTo))
+                    {
+                        <p class="lf-muted">Assigned to: <strong>@exception.AssignedTo</strong></p>
+                    }
+                    @if (exception.ResolutionStatus == ImportExceptionResolutionStatus.Open && reviewOpen)
+                    {
+                        <div class="lf-import-exception-actions">
+                            <form method="post" action="/imports/@batch.Id/exceptions/@exception.Id/assign">
+                                @Html.AntiForgeryToken()
+                                <label for="assigned-@exception.Id">Assign</label>
+                                <div class="lf-inline-form"><input id="assigned-@exception.Id" name="assignedTo" value="@exception.AssignedTo" maxlength="256" placeholder="DOMAIN\username" /><button type="submit">Save assignment</button></div>
+                            </form>
+                            <form method="post" action="/imports/@batch.Id/exceptions/@exception.Id/resolve">
+                                @Html.AntiForgeryToken()
+                                <div class="lf-form-grid">
+                                    <div>
+                                        <label for="resolution-@exception.Id">Resolution</label>
+                                        <select id="resolution-@exception.Id" name="resolutionStatus">
+                                            <option value="Accepted">Accepted</option>
+                                            <option value="Corrected">Corrected</option>
+                                            <option value="Rejected">Rejected</option>
+                                        </select>
+                                    </div>
+                                    <div class="lf-span-all">
+                                        <label for="note-@exception.Id">Resolution note</label>
+                                        <textarea id="note-@exception.Id" name="resolutionNote" rows="3" maxlength="2000" required></textarea>
+                                    </div>
+                                </div>
+                                <button class="primary" type="submit">Resolve exception</button>
+                            </form>
+                        </div>
+                    }
+                    else if (exception.ResolutionStatus != ImportExceptionResolutionStatus.Open)
+                    {
+                        <div class="lf-resolution-summary">
+                            <strong>@exception.ResolutionStatus by @exception.ResolvedBy</strong>
+                            @if (exception.ResolvedAtUtc is not null) { <span> · @exception.ResolvedAtUtc.Value.ToString("u")</span> }
+                            <p>@exception.ResolutionNote</p>
+                            @if (reviewOpen)
+                            {
+                                <form method="post" action="/imports/@batch.Id/exceptions/@exception.Id/reopen">
+                                    @Html.AntiForgeryToken()
+                                    <button type="submit">Reopen</button>
+                                </form>
+                            }
+                        </div>
+                    }
+                </article>
+            }
+        </div>
+    }
+</section>
+
+<section class="lf-card" aria-labelledby="rows-title">
+    <div class="lf-panel-header">
+        <div>
+            <h2 id="rows-title">Source rows</h2>
+            <p class="lf-muted">Immutable row snapshots captured during preview generation.</p>
+        </div>
+        <span class="badge">@detail.Rows.Count row@(detail.Rows.Count == 1 ? string.Empty : "s")</span>
+    </div>
+
+    @if (detail.Rows.Count == 0)
+    {
+        <div class="lf-empty-state"><p>No source rows were captured.</p></div>
+    }
+    else
+    {
+        <div class="lf-import-rows">
+            @foreach (var row in detail.Rows)
+            {
+                <details id="row-@row.Id" class="lf-import-row">
+                    <summary><strong>@row.SourceSheet row @row.SourceRowNumber</strong> · @(row.SourceKey ?? "No source key") · <span class="badge">@row.Outcome</span></summary>
+                    <pre class="lf-json-snapshot">@row.RawDataJson</pre>
+                    @if (row.TargetEntityId is not null)
+                    {
+                        <p class="lf-muted">Committed to @row.TargetEntityType <code>@row.TargetEntityId</code></p>
+                    }
+                </details>
+            }
+        </div>
+    }
+</section>
