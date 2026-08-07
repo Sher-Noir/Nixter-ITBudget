@@ -1,0 +1,71 @@
+@using Microsoft.Extensions.Options
+@inject IOptions<LedgerForge.Web.Configuration.BrandingOptions> BrandingOptionsAccessor
+@{
+    var branding = BrandingOptionsAccessor.Value;
+    var pageTitle = ViewData["Title"] as string;
+    var title = string.IsNullOrWhiteSpace(pageTitle) ? branding.ProductName : $"{pageTitle} - {branding.ProductName}";
+    var userName = User.Identity?.Name ?? "Signed-in user";
+    var userInitial = userName.Split('\\', StringSplitOptions.RemoveEmptyEntries).LastOrDefault()?.FirstOrDefault().ToString().ToUpperInvariant() ?? "U";
+}
+<!doctype html>
+<html lang="en" data-default-theme="@branding.DefaultTheme">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light dark" />
+    <title>@title</title>
+    <link rel="stylesheet" href="~/css/ledgerforge.css" asp-append-version="true" />
+</head>
+<body>
+<div class="lf-shell">
+    <aside class="lf-sidebar" aria-label="Primary navigation">
+        <a class="lf-brand" href="/" aria-label="@branding.ProductName home">
+            @if (!string.IsNullOrWhiteSpace(branding.LogoPath))
+            {
+                <img src="@branding.LogoPath" alt="" class="lf-brand-logo" />
+            }
+            else
+            {
+                <span class="lf-brand-mark" aria-hidden="true">LF</span>
+            }
+            <span>@branding.ProductName</span>
+        </a>
+        <nav class="lf-nav">
+            <a href="/" class="@(Context.Request.Path == "/" ? "active" : null)"><span class="lf-nav-icon">⌂</span><span>Dashboard</span></a>
+            <a href="/budget"><span class="lf-nav-icon">◔</span><span>Budget</span></a>
+            <a href="/actuals"><span class="lf-nav-icon">▥</span><span>Actuals</span></a>
+            <a href="/purchase-orders"><span class="lf-nav-icon">◫</span><span>Purchase Orders</span></a>
+            <a href="/invoices"><span class="lf-nav-icon">▤</span><span>Invoices</span></a>
+            <a href="/vendors"><span class="lf-nav-icon">♧</span><span>Vendors</span></a>
+            <a href="/contracts"><span class="lf-nav-icon">▧</span><span>Contracts</span></a>
+            <a href="/renewals"><span class="lf-nav-icon">↻</span><span>Renewals</span></a>
+            <a href="/documents"><span class="lf-nav-icon">□</span><span>Documents</span></a>
+            <a href="/approvals"><span class="lf-nav-icon">✓</span><span>Approvals</span></a>
+            <a href="/reports"><span class="lf-nav-icon">▥</span><span>Reports</span></a>
+            <a href="/fiscal-years"><span class="lf-nav-icon">▣</span><span>Fiscal Years</span></a>
+            <a href="/imports"><span class="lf-nav-icon">⇅</span><span>Imports &amp; Exports</span></a>
+            <a href="/admin/security"><span class="lf-nav-icon">⚙</span><span>Administration</span></a>
+        </nav>
+        <div class="lf-sidebar-footer"><strong>@branding.OrganizationName</strong><br />@branding.ApplicationTitle</div>
+    </aside>
+    <div class="lf-main">
+        <header class="lf-topbar">
+            <button class="lf-mobile-menu" type="button" data-mobile-menu aria-label="Open navigation">☰</button>
+            <div class="lf-fy"><select aria-label="Fiscal year"><option>@branding.DefaultFiscalYearLabel</option></select></div>
+            <div class="lf-search"><span aria-hidden="true">⌕</span><input type="search" placeholder="Search budgets, vendors, POs, invoices, contracts..." aria-label="Search LedgerForge" /></div>
+            <div class="lf-top-actions">
+                <a class="button" href="/exports">⇩ Export</a>
+                <button class="lf-theme-toggle" type="button" data-theme-toggle aria-label="Toggle color theme" title="Toggle color theme"><span data-theme-icon aria-hidden="true">☾</span><span class="visually-hidden" data-theme-label>Dark mode</span></button>
+                <div class="lf-user"><span class="lf-avatar" aria-hidden="true">@userInitial</span><span class="lf-user-name">@userName</span></div>
+            </div>
+        </header>
+        <main class="lf-content" role="main">
+            @RenderBody()
+            <footer class="lf-footer">@branding.FooterText</footer>
+        </main>
+    </div>
+</div>
+<script src="~/js/ledgerforge-theme.js" asp-append-version="true"></script>
+@await RenderSectionAsync("Scripts", required: false)
+</body>
+</html>
