@@ -36,6 +36,12 @@ jobs:
           block = workflow[start + len(start_marker):end]
           lines = block.splitlines()
           script = '\n'.join(line[10:] if line.startswith('          ') else line for line in lines) + '\n'
+          script = script.replace(
+              'text = pattern.sub(scanner, text, count=1)',
+              'text = pattern.sub(lambda _: scanner, text, count=1)')
+          script = script.replace(
+              'text = pattern.sub(gate_scanner, text, count=1)',
+              'text = pattern.sub(lambda _: gate_scanner, text, count=1)')
           compile(script, 'finalize_v1.py', 'exec')
           exec(script, {'__name__': '__main__'})
 
