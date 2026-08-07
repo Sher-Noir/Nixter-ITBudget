@@ -1,6 +1,7 @@
 using LedgerForge.Domain.Budgeting;
 using LedgerForge.Domain.Procurement;
 using LedgerForge.Infrastructure.Persistence;
+using LedgerForge.Infrastructure.Procurement;
 using Microsoft.EntityFrameworkCore;
 
 namespace LedgerForge.Infrastructure.Reporting;
@@ -57,15 +58,9 @@ public sealed record CommitmentExportRow(
     string PurchaseOrder,
     string Vendor,
     string State,
-    int LineNumber,
-    string Description,
-    string? BudgetItem,
-    string? FinanceAccount,
-    string? Department,
-    string? Location,
-    decimal Quantity,
-    decimal UnitCost,
-    decimal LineTotal);
+    decimal IssuedTotal,
+    decimal PostedLinkedInvoices,
+    decimal OutstandingCommitment);
 
 public sealed record RenewalExportRow(
     string FiscalYear,
@@ -75,7 +70,9 @@ public sealed record RenewalExportRow(
     decimal EstimatedAmount,
     string Status);
 
-public sealed class ReportingService(LedgerForgeDbContext dbContext)
+public sealed class ReportingService(
+    LedgerForgeDbContext dbContext,
+    OutstandingCommitmentService outstandingCommitmentService)
 {
     public async Task<ReportCenterSnapshot> GetCenterAsync(Guid? fiscalYearId, CancellationToken cancellationToken = default)
     {
@@ -100,15 +97,7 @@ public sealed class ReportingService(LedgerForgeDbContext dbContext)
         var actualCount = await dbContext.ActualTransactions.AsNoTracking()
             .CountAsync(x => x.FiscalYearId == selectedId.Value, cancellationToken);
 
-        var issuedOrderIds = await dbContext.PurchaseOrders.AsNoTracking()
-            .Where(x => x.FiscalYearId == selectedId.Value && x.State == PurchaseOrderState.Issued)
-            .Select(x => x.Id)
-            .ToListAsync(cancellationToken);
-        var committed = issuedOrderIds.Count == 0
-            ? 0m
-            : await dbContext.PurchaseOrderLines.AsNoTracking()
-                .Where(x => issuedOrderIds.Contains(x.PurchaseOrderId))
-                .SumAsync(x => (decimal?)x.LineTotal, cancellationToken) ?? 0m;
+        var committed = await outstandingCommitmentService.GetTotalForFiscalYearAsync(selectedId.Value, cancellationToken);
         var purchaseOrderCount = await dbContext.PurchaseOrders.AsNoTracking()
             .CountAsync(x => x.FiscalYearId == selectedId.Value, cancellationToken);
         var pendingPurchaseOrders = await dbContext.PurchaseOrders.AsNoTracking()
@@ -241,43 +230,22 @@ public sealed class ReportingService(LedgerForgeDbContext dbContext)
     {
         var year = await dbContext.FiscalYears.AsNoTracking().SingleOrDefaultAsync(x => x.Id == fiscalYearId, cancellationToken)
             ?? throw new KeyNotFoundException("Fiscal year was not found.");
-        var orders = await dbContext.PurchaseOrders.AsNoTracking()
-            .Where(x => x.FiscalYearId == fiscalYearId && x.State == PurchaseOrderState.Issued)
-            .ToListAsync(cancellationToken);
-        if (orders.Count == 0) return [];
+        var commitments = await outstandingCommitmentService.GetForFiscalYearAsync(fiscalYearId, cancellationToken);
+        if (commitments.Count == 0) return [];
 
-        var orderIds = orders.Select(x => x.Id).ToArray();
-        var lines = await dbContext.PurchaseOrderLines.AsNoTracking()
-            .Where(x => orderIds.Contains(x.PurchaseOrderId))
-            .OrderBy(x => x.PurchaseOrderId)
-            .ThenBy(x => x.LineNumber)
-            .ToListAsync(cancellationToken);
-        var vendorNames = await dbContext.Vendors.AsNoTracking().ToDictionaryAsync(x => x.Id, x => x.Name, cancellationToken);
-        var orderById = orders.ToDictionary(x => x.Id);
-        var budgetNames = await dbContext.BudgetItems.AsNoTracking().Where(x => x.FiscalYearId == fiscalYearId)
-            .ToDictionaryAsync(x => x.Id, x => x.ItemNumber + " · " + x.Description, cancellationToken);
-        var accountNames = await dbContext.FinanceAccounts.AsNoTracking().ToDictionaryAsync(x => x.Id, x => x.Code + " · " + x.Name, cancellationToken);
-        var departmentNames = await dbContext.Departments.AsNoTracking().ToDictionaryAsync(x => x.Id, x => x.Code + " · " + x.Name, cancellationToken);
-        var locationNames = await dbContext.Locations.AsNoTracking().ToDictionaryAsync(x => x.Id, x => x.Code + " · " + x.Name, cancellationToken);
+        var vendorIds = commitments.Select(x => x.VendorId).Distinct().ToArray();
+        var vendorNames = await dbContext.Vendors.AsNoTracking()
+            .Where(x => vendorIds.Contains(x.Id))
+            .ToDictionaryAsync(x => x.Id, x => x.Name, cancellationToken);
 
-        return lines.Select(line =>
-        {
-            var order = orderById[line.PurchaseOrderId];
-            return new CommitmentExportRow(
-                year.DisplayName,
-                order.Number,
-                vendorNames.TryGetValue(order.VendorId, out var vendor) ? vendor : "Unknown vendor",
-                order.State.ToString(),
-                line.LineNumber,
-                line.Description,
-                NameFor(line.BudgetItemId, budgetNames),
-                NameFor(line.FinanceAccountId, accountNames),
-                NameFor(line.DepartmentId, departmentNames),
-                NameFor(line.LocationId, locationNames),
-                line.Quantity,
-                line.UnitCost,
-                line.LineTotal);
-        }).ToArray();
+        return commitments.Select(commitment => new CommitmentExportRow(
+            year.DisplayName,
+            commitment.PurchaseOrderNumber,
+            vendorNames.TryGetValue(commitment.VendorId, out var vendor) ? vendor : "Unknown vendor",
+            PurchaseOrderState.Issued.ToString(),
+            commitment.IssuedTotal,
+            commitment.PostedLinkedInvoiceTotal,
+            commitment.OutstandingTotal)).ToArray();
     }
 
     public async Task<IReadOnlyList<RenewalExportRow>> GetRenewalExportAsync(Guid fiscalYearId, CancellationToken cancellationToken = default)
