@@ -91,15 +91,14 @@ public sealed class ForecastService(LedgerForgeDbContext dbContext)
         var summaries = lines.Select(line =>
         {
             items.TryGetValue(line.BudgetItemId, out var item);
-            var baseline = item is null ? 0m : item.RevisedTotal ?? item.ApprovedTotal ?? item.PlannedTotal;
             return new ForecastLineSummary(
                 line.Id,
                 line.BudgetItemId,
                 item?.ItemNumber ?? "Unknown",
                 item?.Description ?? "Budget item unavailable",
-                baseline,
+                line.BaselineTotal,
                 line.ForecastTotal,
-                line.ForecastTotal - baseline,
+                line.ForecastTotal - line.BaselineTotal,
                 line.Note);
         }).OrderBy(x => x.ItemNumber).ThenBy(x => x.Description).ToArray();
 
@@ -151,10 +150,8 @@ public sealed class ForecastService(LedgerForgeDbContext dbContext)
         dbContext.ForecastScenarios.Add(scenario);
         foreach (var item in items)
         {
-            dbContext.ForecastLines.Add(new ForecastLine(
-                scenario.Id,
-                item.Id,
-                item.RevisedTotal ?? item.ApprovedTotal ?? item.PlannedTotal));
+            var baseline = item.RevisedTotal ?? item.ApprovedTotal ?? item.PlannedTotal;
+            dbContext.ForecastLines.Add(new ForecastLine(scenario.Id, item.Id, baseline, baseline));
         }
         await dbContext.SaveChangesAsync(cancellationToken);
         return scenario.Id;
@@ -197,17 +194,23 @@ public sealed class ForecastService(LedgerForgeDbContext dbContext)
         Guid budgetVersionId,
         CancellationToken cancellationToken = default)
     {
-        var scenarioId = await dbContext.ForecastScenarios.AsNoTracking()
-            .Where(x => x.FiscalYearId == fiscalYearId && x.BudgetVersionId == budgetVersionId && x.State == ForecastScenarioState.Published)
-            .OrderByDescending(x => x.PublishedAtUtc)
-            .ThenByDescending(x => x.AsOfDate)
-            .Select(x => (Guid?)x.Id)
-            .FirstOrDefaultAsync(cancellationToken);
+        var scenarioId = await GetLatestPublishedScenarioIdAsync(fiscalYearId, budgetVersionId, cancellationToken);
         if (scenarioId is null) return null;
         return await dbContext.ForecastLines.AsNoTracking()
             .Where(x => x.ForecastScenarioId == scenarioId.Value)
             .SumAsync(x => (decimal?)x.ForecastTotal, cancellationToken) ?? 0m;
     }
+
+    public async Task<Guid?> GetLatestPublishedScenarioIdAsync(
+        Guid fiscalYearId,
+        Guid budgetVersionId,
+        CancellationToken cancellationToken = default)
+        => await dbContext.ForecastScenarios.AsNoTracking()
+            .Where(x => x.FiscalYearId == fiscalYearId && x.BudgetVersionId == budgetVersionId && x.State == ForecastScenarioState.Published)
+            .OrderByDescending(x => x.PublishedAtUtc)
+            .ThenByDescending(x => x.AsOfDate)
+            .Select(x => (Guid?)x.Id)
+            .FirstOrDefaultAsync(cancellationToken);
 
     private async Task<ForecastScenario> RequireScenario(Guid id, CancellationToken cancellationToken)
     {
