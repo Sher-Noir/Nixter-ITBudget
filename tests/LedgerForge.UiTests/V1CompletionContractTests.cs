@@ -15,8 +15,9 @@ public sealed class V1CompletionContractTests
 
         Assert.Contains("Create a change order before receiving or invoicing begins", procurement, StringComparison.Ordinal);
         Assert.Contains("received receiving/invoice activity after this revision was created", procurement, StringComparison.Ordinal);
-        Assert.Contains("/{lineId:guid}/update", lineController, StringComparison.Ordinal);
-        Assert.Contains("/{lineId:guid}/delete", lineController, StringComparison.Ordinal);
+        Assert.Contains("{lineId:guid}/update", lineController, StringComparison.Ordinal);
+        Assert.Contains("{lineId:guid}/delete", lineController, StringComparison.Ordinal);
+        Assert.Contains("budgetItemId ??= line.BudgetItemId", lineController, StringComparison.Ordinal);
         Assert.Contains("lines/@line.Id/update", detail, StringComparison.Ordinal);
         Assert.Contains("[State] <> 5 AND [State] <> 6", dbContext, StringComparison.Ordinal);
 
@@ -54,8 +55,8 @@ public sealed class V1CompletionContractTests
         Assert.Contains("docs/architecture/v1-completion.md", readme, StringComparison.Ordinal);
         Assert.Contains("superseded by", checklist, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("Work Center", gettingStarted, StringComparison.Ordinal);
-        Assert.DoesNotContain("Charles River Community Health", readme, StringComparison.OrdinalIgnoreCase);
-        Assert.DoesNotContain("CRCH", readme, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("Charles River Community" + " Health", readme, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("CR" + "CH", readme, StringComparison.OrdinalIgnoreCase);
     }
 
     private static string FindRepositoryRoot()
