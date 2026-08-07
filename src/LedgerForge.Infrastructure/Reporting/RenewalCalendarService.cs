@@ -12,10 +12,15 @@ public enum RenewalTiming
 }
 
 public sealed record RenewalCalendarItem(
-    Guid BudgetItemId,
-    string ItemNumber,
+    Guid Id,
+    string Source,
+    Guid? BudgetItemId,
+    Guid? ContractId,
+    string Reference,
     string Description,
+    string? Vendor,
     DateOnly RenewalDate,
+    DateOnly? NoticeDate,
     int DaysUntilRenewal,
     RenewalTiming Timing,
     decimal EstimatedAmount,
@@ -31,7 +36,9 @@ public sealed record RenewalCalendarSnapshot(
     int DueWithin90DaysCount,
     decimal DueWithin90DaysAmount);
 
-public sealed class RenewalCalendarService(LedgerForgeDbContext dbContext)
+public sealed class RenewalCalendarService(
+    LedgerForgeDbContext dbContext,
+    RenewalProjectionService renewalProjectionService)
 {
     public async Task<RenewalCalendarSnapshot> GetAsync(Guid? fiscalYearId, CancellationToken cancellationToken = default)
     {
@@ -47,35 +54,11 @@ public sealed class RenewalCalendarService(LedgerForgeDbContext dbContext)
         if (selectedId is null)
             return new(years, null, "No fiscal year", [], 0, 0, 0, 0m);
 
-        var versionId = await dbContext.BudgetVersions.AsNoTracking()
-            .Where(x => x.FiscalYearId == selectedId.Value)
-            .OrderByDescending(x => x.VersionNumber)
-            .Select(x => (Guid?)x.Id)
-            .FirstOrDefaultAsync(cancellationToken);
-        if (versionId is null)
-            return new(years, selectedId, years.Single(x => x.Id == selectedId.Value).Name, [], 0, 0, 0, 0m);
-
-        var rows = await dbContext.BudgetItems.AsNoTracking()
-            .Where(x => x.FiscalYearId == selectedId.Value && x.BudgetVersionId == versionId.Value && x.RenewalDate != null)
-            .OrderBy(x => x.RenewalDate)
-            .Select(x => new
-            {
-                x.Id,
-                x.ItemNumber,
-                x.Description,
-                x.RenewalDate,
-                x.RevisedTotal,
-                x.ApprovedTotal,
-                x.PlannedTotal,
-                x.Status
-            })
-            .ToListAsync(cancellationToken);
-
+        var rows = await renewalProjectionService.GetForFiscalYearAsync(selectedId.Value, cancellationToken);
         var today = DateOnly.FromDateTime(DateTime.UtcNow);
         var items = rows.Select(x =>
         {
-            var renewalDate = x.RenewalDate!.Value;
-            var days = renewalDate.DayNumber - today.DayNumber;
+            var days = x.RenewalDate.DayNumber - today.DayNumber;
             var timing = days < 0
                 ? RenewalTiming.Overdue
                 : days <= 30
@@ -86,13 +69,18 @@ public sealed class RenewalCalendarService(LedgerForgeDbContext dbContext)
 
             return new RenewalCalendarItem(
                 x.Id,
-                x.ItemNumber,
+                x.Source,
+                x.BudgetItemId,
+                x.ContractId,
+                x.Reference,
                 x.Description,
-                renewalDate,
+                x.Vendor,
+                x.RenewalDate,
+                x.NoticeDate,
                 days,
                 timing,
-                x.RevisedTotal ?? x.ApprovedTotal ?? x.PlannedTotal,
-                x.Status.ToString());
+                x.EstimatedAmount,
+                x.Status);
         }).ToArray();
 
         return new(
