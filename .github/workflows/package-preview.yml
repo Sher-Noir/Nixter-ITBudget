@@ -11,6 +11,14 @@ on:
       - 'LedgerForge.slnx'
       - 'src/LedgerForge.*/**'
       - 'tests/**'
+  pull_request:
+    paths:
+      - '.github/workflows/package-preview.yml'
+      - 'global.json'
+      - 'Directory.Build.props'
+      - 'LedgerForge.slnx'
+      - 'src/LedgerForge.*/**'
+      - 'tests/**'
 
 permissions:
   contents: read
