@@ -203,7 +203,7 @@ public sealed class BudgetPlanningService(
             cancellationToken))
             throw new InvalidOperationException("That item number already exists in the selected budget version.");
 
-        var stableIdentifier = $"LF-{fiscalYearId:N}-{Guid.NewGuid():N}";
+        var stableIdentifier = $"LF-{Guid.NewGuid():N}";
         var item = new BudgetItem(
             fiscalYearId,
             version.Id,
