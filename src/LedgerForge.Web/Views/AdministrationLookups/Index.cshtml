@@ -3,12 +3,13 @@
     ViewData["Title"] = "Managed Lookups";
     var snapshot = Model.Snapshot;
     var selectedDefinition = snapshot.Types.Single(x => x.Key == snapshot.SelectedType);
+    var notice = ViewData["Notice"] as string;
 }
 
 <div class="lf-page-header">
     <div>
         <h1 class="lf-page-title">Managed Lookups</h1>
-        <p class="lf-subtitle">Maintain stable codes and organization-facing labels without changing source code.</p>
+        <p class="lf-subtitle">Add, edit, retire, and safely delete organization-facing configuration without changing source code.</p>
     </div>
     <form method="post" action="/admin/lookups/initialize-defaults">
         @Html.AntiForgeryToken()
@@ -20,6 +21,10 @@
 @if (!string.IsNullOrWhiteSpace(Model.ErrorMessage))
 {
     <div class="card lf-alert lf-alert-danger" role="alert">@Model.ErrorMessage</div>
+}
+@if (!string.IsNullOrWhiteSpace(notice))
+{
+    <div class="card lf-alert lf-alert-info" role="status">@notice</div>
 }
 @if (Model.Saved)
 {
@@ -47,8 +52,8 @@
     <section class="card" aria-labelledby="lookup-values-title">
         <div class="lf-panel-header">
             <div>
-                <h2 id="lookup-values-title">@selectedDefinition.DisplayName</h2>
-                <p class="muted">Codes are immutable identifiers. Rename display labels instead of changing a code that may already be referenced.</p>
+                <h2 id="lookup-values-title">Edit @selectedDefinition.DisplayName</h2>
+                <p class="muted">Codes are permanent identifiers. Edit labels and sort order here. Delete / Retire removes unused values and automatically retires values already referenced by history.</p>
             </div>
             <span class="badge">@snapshot.Values.Count value@(snapshot.Values.Count == 1 ? string.Empty : "s")</span>
         </div>
@@ -74,7 +79,10 @@
                             <div><label for="numeric-@value.Id">Rank</label><input id="numeric-@value.Id" name="numericValue" type="number" min="0" value="@value.NumericValue" required /></div>
                         }
                         <div class="lf-admin-state"><label><input type="checkbox" name="isActive" value="true" checked="@value.IsActive" /> Active</label></div>
-                        <div class="lf-admin-action"><button type="submit">Save</button></div>
+                        <div class="lf-admin-action lf-admin-actions">
+                            <button type="submit">Save changes</button>
+                            <button type="submit" class="danger" formaction="/admin/lookups/values/@value.Id/delete" title="Unused values are deleted. Referenced values are retired instead.">Delete / Retire</button>
+                        </div>
                     </form>
                 }
             </div>
