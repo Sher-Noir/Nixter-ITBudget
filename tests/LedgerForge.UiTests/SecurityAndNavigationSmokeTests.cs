@@ -64,6 +64,20 @@ public sealed class SecurityAndNavigationSmokeTests
     }
 
     [Fact]
+    public void GlobalHeaderSearch_UsesExistingCrossModuleSearchRoute()
+    {
+        var layout = Read("src", "LedgerForge.Web", "Views", "Shared", "_Layout.cshtml");
+        var search = Read("src", "LedgerForge.Web", "Controllers", "SearchController.cs");
+
+        Assert.Contains("action=\"/search\"", layout, StringComparison.Ordinal);
+        Assert.Contains("name=\"q\"", layout, StringComparison.Ordinal);
+        Assert.Contains("Budget Items", search, StringComparison.Ordinal);
+        Assert.Contains("Purchase Orders", search, StringComparison.Ordinal);
+        Assert.Contains("Invoices", search, StringComparison.Ordinal);
+        Assert.Contains("Contracts", search, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void AdministrationContext_ExposesOperationalAndAdminDestinations()
     {
         var layout = Read("src", "LedgerForge.Web", "Views", "Shared", "_Layout.cshtml");
@@ -75,6 +89,21 @@ public sealed class SecurityAndNavigationSmokeTests
 
         Assert.Contains("lf-admin-subnav", layout, StringComparison.Ordinal);
         Assert.All(routes, route => Assert.Contains($"href=\"{route}\"", layout, StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void DashboardFilters_AreBackedByServerSideDimensionScoping()
+    {
+        var home = Read("src", "LedgerForge.Web", "Views", "Home", "Index.cshtml");
+        var service = Read("src", "LedgerForge.Infrastructure", "Dashboard", "DashboardService.cs");
+
+        Assert.Contains("name=\"fiscalYearId\"", home, StringComparison.Ordinal);
+        Assert.Contains("name=\"locationId\"", home, StringComparison.Ordinal);
+        Assert.Contains("name=\"categoryId\"", home, StringComparison.Ordinal);
+        Assert.Contains("GetScopedCommitmentAsync", service, StringComparison.Ordinal);
+        Assert.Contains("GetScopedPublishedForecastAsync", service, StringComparison.Ordinal);
+        Assert.Contains("x.LocationId == selectedLocationId.Value", service, StringComparison.Ordinal);
+        Assert.Contains("x.InternalCategoryId == selectedCategoryId.Value", service, StringComparison.Ordinal);
     }
 
     [Fact]
