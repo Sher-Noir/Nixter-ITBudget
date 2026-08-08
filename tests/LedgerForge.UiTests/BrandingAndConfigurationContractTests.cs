@@ -82,6 +82,19 @@ public sealed class BrandingAndConfigurationContractTests
         Assert.Contains("UpdateUserExceptionAsync", service, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void UnusedPlanningItems_CanBeDeletedWithoutDeletingHistory()
+    {
+        var view = Read("src", "LedgerForge.Web", "Views", "Budget", "Item.cshtml");
+        var controller = Read("src", "LedgerForge.Web", "Controllers", "BudgetItemMaintenanceController.cs");
+
+        Assert.Contains("Delete planning item", view, StringComparison.Ordinal);
+        Assert.Contains("!item.IsPlanningEditable", controller, StringComparison.Ordinal);
+        Assert.Contains("Remove linked documents and the item-specific logo", controller, StringComparison.Ordinal);
+        Assert.Contains("SqlException { Number: 547 }", controller, StringComparison.Ordinal);
+        Assert.Contains("cannot be deleted", controller, StringComparison.Ordinal);
+    }
+
     private static string Read(params string[] segments)
     {
         var root = FindRepositoryRoot();
