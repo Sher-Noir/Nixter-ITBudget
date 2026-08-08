@@ -1,14 +1,19 @@
 @model LedgerForge.Web.Configuration.BrandingOptions
+@inject LedgerForge.Web.Documents.BrandingAssetService BrandingAssets
 @{
     ViewData["Title"] = "Organization & Appearance";
     var saved = ViewData["Saved"] as bool? == true;
     var reset = ViewData["Reset"] as bool? == true;
+    var brandingSaved = Request.Query.ContainsKey("brandingSaved");
+    var brandingError = TempData["OrganizationBrandingError"] as string;
+    var uploadedLogo = await BrandingAssets.GetOrganizationLogoAsync(Context.RequestAborted);
+    var uploadedIcon = await BrandingAssets.GetOrganizationIconAsync(Context.RequestAborted);
 }
 
 <div class="lf-page-header">
     <div>
         <h1 class="lf-page-title">Organization &amp; Appearance</h1>
-        <p class="lf-subtitle">Customize this LedgerForge installation without changing source code.</p>
+        <p class="lf-subtitle">Customize this LedgerForge installation without changing source code, including uploaded organization branding.</p>
     </div>
 </div>
 
@@ -16,9 +21,17 @@
 {
     <div class="card lf-alert lf-alert-success" role="status">Organization settings saved.</div>
 }
+@if (brandingSaved)
+{
+    <div class="card lf-alert lf-alert-success" role="status">Organization branding updated.</div>
+}
 @if (reset)
 {
     <div class="card lf-alert lf-alert-info" role="status">Local overrides were removed. Deployment defaults are active again.</div>
+}
+@if (!string.IsNullOrWhiteSpace(brandingError))
+{
+    <div class="card lf-alert lf-alert-danger" role="alert">@brandingError</div>
 }
 @if (!ViewData.ModelState.IsValid)
 {
@@ -29,6 +42,93 @@
         }
     </div>
 }
+
+<section id="branding-assets" class="card" aria-labelledby="branding-assets-title">
+    <div class="lf-panel-header">
+        <div>
+            <h2 id="branding-assets-title">Organization branding</h2>
+            <p class="muted">Upload the organization logo and browser icon directly. Uploaded files are stored outside the public web root and take precedence over the advanced path fallbacks below.</p>
+        </div>
+    </div>
+
+    <div class="lf-settings-grid">
+        <div class="lf-setting-preview">
+            <h3>Organization logo</h3>
+            <div class="lf-branding-preview">
+                <div class="lf-logo-tile">
+                    @if (uploadedLogo is not null)
+                    {
+                        <img src="/branding-assets/organization/logo" alt="Current organization logo" />
+                    }
+                    else if (!string.IsNullOrWhiteSpace(Model.LogoPath))
+                    {
+                        <img src="@Model.LogoPath" alt="Current organization logo" />
+                    }
+                    else
+                    {
+                        <span aria-hidden="true">LF</span>
+                    }
+                </div>
+                <div>
+                    <strong>@(uploadedLogo is null ? "Path/default branding" : "Uploaded organization logo")</strong>
+                    <p class="muted">PNG or JPEG, maximum 5 MB.</p>
+                </div>
+            </div>
+            <form method="post" enctype="multipart/form-data" action="/branding-assets/organization/logo" class="lf-branding-upload">
+                @Html.AntiForgeryToken()
+                <label for="organization-logo"><strong>Upload logo</strong></label>
+                <input id="organization-logo" type="file" name="logo" accept="image/png,image/jpeg" required />
+                <button type="submit">@(uploadedLogo is null ? "Upload organization logo" : "Replace organization logo")</button>
+            </form>
+            @if (uploadedLogo is not null)
+            {
+                <form method="post" action="/branding-assets/organization/logo/remove">
+                    @Html.AntiForgeryToken()
+                    <button type="submit" class="danger">Remove uploaded logo</button>
+                    <small class="muted">LedgerForge will fall back to the configured logo path or built-in mark.</small>
+                </form>
+            }
+        </div>
+
+        <div class="lf-setting-preview">
+            <h3>Browser icon</h3>
+            <div class="lf-branding-preview">
+                <div class="lf-logo-tile lf-logo-tile-small">
+                    @if (uploadedIcon is not null)
+                    {
+                        <img src="/branding-assets/organization/icon" alt="Current browser icon" />
+                    }
+                    else if (!string.IsNullOrWhiteSpace(Model.IconPath))
+                    {
+                        <img src="@Model.IconPath" alt="Current browser icon" />
+                    }
+                    else
+                    {
+                        <span aria-hidden="true">LF</span>
+                    }
+                </div>
+                <div>
+                    <strong>@(uploadedIcon is null ? "Path/default icon" : "Uploaded browser icon")</strong>
+                    <p class="muted">PNG or JPEG, maximum 5 MB. Square artwork is recommended.</p>
+                </div>
+            </div>
+            <form method="post" enctype="multipart/form-data" action="/branding-assets/organization/icon" class="lf-branding-upload">
+                @Html.AntiForgeryToken()
+                <label for="organization-icon"><strong>Upload browser icon</strong></label>
+                <input id="organization-icon" type="file" name="icon" accept="image/png,image/jpeg" required />
+                <button type="submit">@(uploadedIcon is null ? "Upload browser icon" : "Replace browser icon")</button>
+            </form>
+            @if (uploadedIcon is not null)
+            {
+                <form method="post" action="/branding-assets/organization/icon/remove">
+                    @Html.AntiForgeryToken()
+                    <button type="submit" class="danger">Remove uploaded icon</button>
+                    <small class="muted">LedgerForge will fall back to the configured icon path.</small>
+                </form>
+            }
+        </div>
+    </div>
+</section>
 
 <div class="lf-settings-grid">
     <section class="card" aria-labelledby="organization-settings-title">
@@ -68,12 +168,14 @@
                     <small class="muted">Individual users can still toggle their own theme in the header.</small>
                 </div>
                 <div>
-                    <label for="LogoPath"><strong>Logo path</strong></label>
+                    <label for="LogoPath"><strong>Advanced logo path fallback</strong></label>
                     <input id="LogoPath" name="LogoPath" value="@Model.LogoPath" maxlength="260" placeholder="/images/ledgerforge-logo.png" />
+                    <small class="muted">Used only when no organization logo has been uploaded above.</small>
                 </div>
                 <div>
-                    <label for="IconPath"><strong>Browser icon path</strong></label>
+                    <label for="IconPath"><strong>Advanced browser-icon path fallback</strong></label>
                     <input id="IconPath" name="IconPath" value="@Model.IconPath" maxlength="260" placeholder="/images/ledgerforge-icon.png" />
+                    <small class="muted">Used only when no browser icon has been uploaded above.</small>
                 </div>
                 <div class="full">
                     <label for="SupportText"><strong>Support text</strong></label>
@@ -89,8 +191,8 @@
 
         <form method="post" action="/admin/organization/reset">
             @Html.AntiForgeryToken()
-            <p class="muted">Reset removes only the host-local override file and restores deployment defaults.</p>
-            <button type="submit">Reset to deployment defaults</button>
+            <p class="muted">Reset removes only the host-local organization settings override and restores deployment defaults. Uploaded branding files are managed separately above.</p>
+            <button type="submit">Reset organization settings to defaults</button>
         </form>
     </section>
 
@@ -105,8 +207,40 @@
             <dt>Fiscal year selector</dt><dd>@Model.DefaultFiscalYearLabel</dd>
             <dt>Time zone</dt><dd>@Model.TimeZone</dd>
             <dt>Default theme</dt><dd>@Model.DefaultTheme</dd>
-            <dt>Logo</dt><dd>@(string.IsNullOrWhiteSpace(Model.LogoPath) ? "Built-in LedgerForge mark" : Model.LogoPath)</dd>
+            <dt>Organization logo</dt><dd>@(uploadedLogo is not null ? "Uploaded file" : string.IsNullOrWhiteSpace(Model.LogoPath) ? "Built-in LedgerForge mark" : Model.LogoPath)</dd>
+            <dt>Browser icon</dt><dd>@(uploadedIcon is not null ? "Uploaded file" : string.IsNullOrWhiteSpace(Model.IconPath) ? "No custom icon" : Model.IconPath)</dd>
         </dl>
-        <p class="muted">These values are stored in <code>App_Data/organization-settings.json</code> on the host and are not intended for source control.</p>
+        <p class="muted">Settings and uploaded assets are stored under LedgerForge's writable non-web-root host storage and are not intended for source control.</p>
     </aside>
 </div>
+
+<section class="card" aria-labelledby="configuration-maintenance-title">
+    <div class="lf-panel-header">
+        <div>
+            <h2 id="configuration-maintenance-title">Configuration maintenance</h2>
+            <p class="muted">This organization page is a single profile, so it uses Save and Reset rather than Delete / Retire. List-based configuration is maintained in the destinations below.</p>
+        </div>
+    </div>
+    <div class="lf-form-grid">
+        <div>
+            <h3>Managed lookups</h3>
+            <p class="muted">Departments, locations, categories, priorities, statuses, frequencies, and other configurable lookup values.</p>
+            <a class="button" href="/admin/lookups">Edit / Delete / Retire lookups</a>
+        </div>
+        <div>
+            <h3>Finance accounts</h3>
+            <p class="muted">Edit account labels, categories, active state, and safely delete or retire unused/referenced accounts.</p>
+            <a class="button" href="/admin/finance">Edit / Delete / Retire finance accounts</a>
+        </div>
+        <div>
+            <h3>Vendors</h3>
+            <p class="muted">Edit vendor details, upload vendor logos, and delete unused vendors or retire referenced vendors.</p>
+            <a class="button" href="/vendors">Edit / Delete / Retire vendors</a>
+        </div>
+        <div>
+            <h3>Security</h3>
+            <p class="muted">Edit or remove directory mappings and per-user application-role exceptions.</p>
+            <a class="button" href="/admin/security">Edit security configuration</a>
+        </div>
+    </div>
+</section>
