@@ -13,6 +13,7 @@
     var canManageBudget = (await AuthorizationService.AuthorizeAsync(User, AuthorizationPolicies.ManageBudget)).Succeeded;
     var canApprove = (await AuthorizationService.AuthorizeAsync(User, AuthorizationPolicies.Approve)).Succeeded;
     var canAdminister = (await AuthorizationService.AuthorizeAsync(User, AuthorizationPolicies.Administration)).Succeeded;
+    var headerSearchQuery = Context.Request.Path.StartsWithSegments("/search") ? Context.Request.Query["q"].ToString() : string.Empty;
     bool IsActive(string prefix) => Context.Request.Path.StartsWithSegments(prefix, StringComparison.OrdinalIgnoreCase);
 }
 <!doctype html>
@@ -85,10 +86,10 @@
                 <strong>@branding.DefaultFiscalYearLabel</strong>
                 <span aria-hidden="true">⌄</span>
             </a>
-            <div class="lf-search">
+            <form class="lf-search" method="get" action="/search" role="search">
                 <span aria-hidden="true">⌕</span>
-                <input type="search" placeholder="Search budgets, vendors, POs, invoices, contracts..." aria-label="Search LedgerForge" />
-            </div>
+                <input type="search" name="q" value="@headerSearchQuery" minlength="2" maxlength="100" placeholder="Search budgets, vendors, POs, invoices, contracts..." aria-label="Search LedgerForge" />
+            </form>
             <div class="lf-top-actions">
                 <a class="button lf-export-button" href="/exports"><span aria-hidden="true">⇩</span> Export <span aria-hidden="true">⌄</span></a>
                 @if (canApprove)
