@@ -356,16 +356,20 @@ public sealed class DashboardService(
     }
 
     private async Task<IReadOnlyList<DashboardActivityItem>> LoadRecentActivityAsync(CancellationToken cancellationToken)
-        => await dbContext.AuditEvents.AsNoTracking()
+    {
+        var rows = await dbContext.AuditEvents.AsNoTracking()
             .OrderByDescending(x => x.OccurredAtUtc)
             .Take(6)
-            .Select(x => new DashboardActivityItem(
-                x.Id,
-                x.EntityType,
-                x.Action.ToString(),
-                x.Actor,
-                x.OccurredAtUtc))
+            .Select(x => new { x.Id, x.EntityType, x.Action, x.Actor, x.OccurredAtUtc })
             .ToListAsync(cancellationToken);
+
+        return rows.Select(x => new DashboardActivityItem(
+            x.Id,
+            x.EntityType,
+            x.Action.ToString(),
+            x.Actor,
+            x.OccurredAtUtc)).ToArray();
+    }
 
     private async Task<int> CountImportReviewAsync(CancellationToken cancellationToken)
         => await dbContext.ImportBatches.CountAsync(
