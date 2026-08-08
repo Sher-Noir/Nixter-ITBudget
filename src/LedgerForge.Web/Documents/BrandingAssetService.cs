@@ -6,7 +6,9 @@ namespace LedgerForge.Web.Documents;
 public enum BrandingLogoSource
 {
     BudgetItem,
-    Vendor
+    Vendor,
+    OrganizationLogo,
+    OrganizationIcon
 }
 
 public sealed record BrandingLogoReference(
@@ -22,6 +24,11 @@ public sealed class BrandingAssetService
 {
     public const string DisplayLogoTitle = "LedgerForge Display Logo";
     public const long MaxLogoFileSizeBytes = 5L * 1024 * 1024;
+
+    private const string OrganizationLogoEntityType = "OrganizationLogo";
+    private const string OrganizationIconEntityType = "OrganizationIcon";
+    private static readonly Guid OrganizationLogoEntityId = Guid.Parse("25e650bb-4467-45b6-8af5-7b912c18221a");
+    private static readonly Guid OrganizationIconEntityId = Guid.Parse("bbb76d06-c273-4266-936f-d0f39ce83d63");
 
     private readonly PhysicalDocumentStore _store;
     private readonly LedgerForgeDbContext _dbContext;
@@ -70,6 +77,12 @@ public sealed class BrandingAssetService
     public Task<BrandingLogoReference?> GetVendorLogoAsync(Guid vendorId, CancellationToken cancellationToken = default)
         => GetEntityLogoAsync(nameof(BrandingLogoSource.Vendor), vendorId, BrandingLogoSource.Vendor, cancellationToken);
 
+    public Task<BrandingLogoReference?> GetOrganizationLogoAsync(CancellationToken cancellationToken = default)
+        => GetEntityLogoAsync(OrganizationLogoEntityType, OrganizationLogoEntityId, BrandingLogoSource.OrganizationLogo, cancellationToken);
+
+    public Task<BrandingLogoReference?> GetOrganizationIconAsync(CancellationToken cancellationToken = default)
+        => GetEntityLogoAsync(OrganizationIconEntityType, OrganizationIconEntityId, BrandingLogoSource.OrganizationIcon, cancellationToken);
+
     public async Task<IReadOnlySet<Guid>> GetVendorIdsWithLogosAsync(CancellationToken cancellationToken = default)
     {
         var documents = await _store.ListAsync(cancellationToken);
@@ -105,11 +118,31 @@ public sealed class BrandingAssetService
         await SaveEntityLogoAsync(nameof(BrandingLogoSource.Vendor), vendorId, source, fileName, actor, cancellationToken);
     }
 
+    public Task SaveOrganizationLogoAsync(
+        Stream source,
+        string fileName,
+        string actor,
+        CancellationToken cancellationToken = default)
+        => SaveEntityLogoAsync(OrganizationLogoEntityType, OrganizationLogoEntityId, source, fileName, actor, cancellationToken);
+
+    public Task SaveOrganizationIconAsync(
+        Stream source,
+        string fileName,
+        string actor,
+        CancellationToken cancellationToken = default)
+        => SaveEntityLogoAsync(OrganizationIconEntityType, OrganizationIconEntityId, source, fileName, actor, cancellationToken);
+
     public Task<bool> RemoveBudgetItemLogoAsync(Guid budgetItemId, CancellationToken cancellationToken = default)
         => RemoveEntityLogoAsync(nameof(BrandingLogoSource.BudgetItem), budgetItemId, cancellationToken);
 
     public Task<bool> RemoveVendorLogoAsync(Guid vendorId, CancellationToken cancellationToken = default)
         => RemoveEntityLogoAsync(nameof(BrandingLogoSource.Vendor), vendorId, cancellationToken);
+
+    public Task<bool> RemoveOrganizationLogoAsync(CancellationToken cancellationToken = default)
+        => RemoveEntityLogoAsync(OrganizationLogoEntityType, OrganizationLogoEntityId, cancellationToken);
+
+    public Task<bool> RemoveOrganizationIconAsync(CancellationToken cancellationToken = default)
+        => RemoveEntityLogoAsync(OrganizationIconEntityType, OrganizationIconEntityId, cancellationToken);
 
     public FileStream OpenRead(BrandingLogoReference logo)
     {
