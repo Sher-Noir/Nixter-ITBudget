@@ -31,6 +31,7 @@
     <link rel="stylesheet" href="~/css/ledgerforge-dashboard.css" asp-append-version="true" />
     <link rel="stylesheet" href="~/css/ledgerforge-workspace.css" asp-append-version="true" />
     <link rel="stylesheet" href="~/css/ledgerforge-item.css" asp-append-version="true" />
+    <link rel="stylesheet" href="~/css/ledgerforge-adminnav.css" asp-append-version="true" />
 </head>
 <body>
 <div class="lf-shell">
@@ -104,6 +105,18 @@
         </header>
 
         <main class="lf-content" role="main">
+            @if (canAdminister && IsActive("/admin"))
+            {
+                <nav class="lf-admin-subnav" aria-label="Administration sections">
+                    <a href="/admin/organization" class="@(IsActive("/admin/organization") ? "active" : null)">Organization</a>
+                    <a href="/admin/lookups" class="@(IsActive("/admin/lookups") ? "active" : null)">Managed Lookups</a>
+                    <a href="/admin/finance" class="@(IsActive("/admin/finance") ? "active" : null)">Finance</a>
+                    <a href="/admin/security" class="@(IsActive("/admin/security") ? "active" : null)">Security</a>
+                    <a href="/admin/diagnostics" class="@(IsActive("/admin/diagnostics") ? "active" : null)">Diagnostics</a>
+                    <a href="/imports">Imports</a>
+                    <a href="/work">Work Center</a>
+                </nav>
+            }
             @RenderBody()
             <footer class="lf-footer">@branding.FooterText</footer>
         </main>
