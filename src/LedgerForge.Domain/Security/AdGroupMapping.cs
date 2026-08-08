@@ -8,10 +8,8 @@ public sealed class AdGroupMapping : AuditableEntity
 
     public AdGroupMapping(ApplicationRole role, string groupName, string? description = null)
     {
-        if (string.IsNullOrWhiteSpace(groupName)) throw new ArgumentException("AD group name is required.", nameof(groupName));
         Role = role;
-        GroupName = groupName.Trim();
-        Description = string.IsNullOrWhiteSpace(description) ? null : description.Trim();
+        Update(groupName, description);
         IsActive = true;
     }
 
@@ -20,12 +18,18 @@ public sealed class AdGroupMapping : AuditableEntity
     public string? Description { get; private set; }
     public bool IsActive { get; private set; }
 
-    public void UpdateGroupName(string groupName)
+    public void Update(string groupName, string? description)
     {
         if (string.IsNullOrWhiteSpace(groupName)) throw new ArgumentException("AD group name is required.", nameof(groupName));
-        GroupName = groupName.Trim();
+        var normalizedGroup = groupName.Trim();
+        if (normalizedGroup.Length > 256) throw new ArgumentException("AD group name cannot exceed 256 characters.", nameof(groupName));
+        var normalizedDescription = string.IsNullOrWhiteSpace(description) ? null : description.Trim();
+        if (normalizedDescription?.Length > 1000) throw new ArgumentException("Description cannot exceed 1000 characters.", nameof(description));
+        GroupName = normalizedGroup;
+        Description = normalizedDescription;
     }
 
+    public void UpdateGroupName(string groupName) => Update(groupName, Description);
     public void Activate() => IsActive = true;
     public void Deactivate() => IsActive = false;
 }

@@ -1,9 +1,14 @@
 using LedgerForge.Infrastructure.Budgeting;
+using LedgerForge.Web.Documents;
 
 namespace LedgerForge.Web.Models.Budgeting;
 
 public sealed record BudgetItemEditViewModel(
-    BudgetItemEditSnapshot Item,
+    BudgetItemWorkspaceSnapshot Workspace,
+    IReadOnlyList<StoredDocument> Documents,
     bool CanEdit,
     string? ErrorMessage = null,
-    bool Saved = false);
+    bool Saved = false)
+{
+    public BudgetItemEditSnapshot Item => Workspace.Item;
+}

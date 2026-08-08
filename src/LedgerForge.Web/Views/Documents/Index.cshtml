@@ -4,6 +4,8 @@
     var canManage = ViewData["CanManageDocuments"] as bool? == true;
     var errorMessage = ViewData["ErrorMessage"] as string;
     var saved = ViewData["Saved"] as bool? == true;
+    var requestedEntityType = Context.Request.Query["linkedEntityType"].ToString();
+    var requestedEntityId = Context.Request.Query["linkedEntityId"].ToString();
 }
 
 <div class="lf-page-header">
@@ -35,15 +37,15 @@
                 <div>
                     <label for="linkedEntityType">Linked entity type</label>
                     <select id="linkedEntityType" name="linkedEntityType">
-                        <option value="">No entity link</option>
-                        <option value="BudgetItem">Budget item</option>
-                        <option value="PurchaseOrder">Purchase order</option>
-                        <option value="Invoice">Invoice</option>
-                        <option value="Vendor">Vendor</option>
-                        <option value="FiscalYear">Fiscal year</option>
+                        <option value="" selected="@(string.IsNullOrWhiteSpace(requestedEntityType))">No entity link</option>
+                        <option value="BudgetItem" selected="@(requestedEntityType == "BudgetItem")">Budget item</option>
+                        <option value="PurchaseOrder" selected="@(requestedEntityType == "PurchaseOrder")">Purchase order</option>
+                        <option value="Invoice" selected="@(requestedEntityType == "Invoice")">Invoice</option>
+                        <option value="Vendor" selected="@(requestedEntityType == "Vendor")">Vendor</option>
+                        <option value="FiscalYear" selected="@(requestedEntityType == "FiscalYear")">Fiscal year</option>
                     </select>
                 </div>
-                <div><label for="linkedEntityId">Linked entity ID</label><input id="linkedEntityId" name="linkedEntityId" placeholder="Optional GUID" /></div>
+                <div><label for="linkedEntityId">Linked entity ID</label><input id="linkedEntityId" name="linkedEntityId" value="@requestedEntityId" placeholder="Optional GUID" /></div>
             </div>
             <p class="lf-muted">Allowed: PDF, XLSX, DOCX, CSV, TXT, PNG, JPG/JPEG. File signatures are validated; browser-provided MIME types are not trusted.</p>
             <button class="primary" type="submit">Upload document</button>

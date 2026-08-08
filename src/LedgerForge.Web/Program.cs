@@ -16,6 +16,7 @@ using LedgerForge.Infrastructure.Security;
 using LedgerForge.Web.Auditing;
 using LedgerForge.Web.Configuration;
 using LedgerForge.Web.Diagnostics;
+using LedgerForge.Web.Documents;
 using LedgerForge.Web.Security;
 using Microsoft.AspNetCore.Authentication.Negotiate;
 using Microsoft.AspNetCore.Authorization;
@@ -57,9 +58,11 @@ builder.Services.AddScoped<LegacyBudgetImportCommitService>();
 builder.Services.AddScoped<ManagedLookupInitializer>();
 builder.Services.AddScoped<LookupAdministrationService>();
 builder.Services.AddScoped<FinanceAdministrationService>();
+builder.Services.AddScoped<ConfigurationDeletionService>();
 builder.Services.AddScoped<SecurityAdministrationService>();
 builder.Services.AddScoped<FiscalYearAdministrationService>();
 builder.Services.AddScoped<BudgetPlanningService>();
+builder.Services.AddScoped<BudgetItemWorkspaceService>();
 builder.Services.AddScoped<BudgetAmendmentService>();
 builder.Services.AddScoped<ForecastService>();
 builder.Services.AddScoped<ActualLedgerService>();
@@ -77,6 +80,7 @@ builder.Services.AddScoped<RenewalCalendarService>();
 builder.Services.AddScoped<DashboardService>();
 builder.Services.AddScoped<WorkQueueService>();
 builder.Services.AddScoped<DeploymentDiagnosticsService>();
+builder.Services.AddScoped<BrandingAssetService>();
 
 var app = builder.Build();
 

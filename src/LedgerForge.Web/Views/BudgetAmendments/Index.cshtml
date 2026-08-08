@@ -4,6 +4,7 @@
     ViewData["Title"] = "Budget Amendments";
     var canEdit = ViewData["CanEdit"] as bool? == true;
     var canApprove = ViewData["CanApprove"] as bool? == true;
+    var selectedBudgetItemId = ViewData["SelectedBudgetItemId"] as Guid?;
     var errorMessage = ViewData["ErrorMessage"] as string;
     var saved = ViewData["Saved"] as bool? == true;
 }
@@ -28,7 +29,7 @@
 @if (canEdit)
 {
     <section class="lf-card" aria-labelledby="create-amendment-title">
-        <h2 id="create-amendment-title">Create amendment</h2>
+        <div class="lf-panel-header"><div><h2 id="create-amendment-title">Create amendment</h2><p class="lf-muted">Create a draft first, then submit it into the approval workflow.</p></div></div>
         @if (Model.EligibleBudgetItems.Count == 0)
         {
             <p class="lf-muted">No eligible budget items are available in an unlocked fiscal year/latest version.</p>
@@ -41,7 +42,10 @@
                     <div class="lf-span-all">
                         <label for="budgetItemId"><strong>Budget item</strong></label>
                         <select id="budgetItemId" name="budgetItemId" required>
-                            @foreach (var option in Model.EligibleBudgetItems) { <option value="@option.Id">@option.Label</option> }
+                            @foreach (var option in Model.EligibleBudgetItems)
+                            {
+                                <option value="@option.Id" selected="@(option.Id == selectedBudgetItemId)">@option.Label</option>
+                            }
                         </select>
                     </div>
                     <div>

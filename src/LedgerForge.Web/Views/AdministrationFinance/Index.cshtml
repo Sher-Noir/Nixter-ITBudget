@@ -2,6 +2,7 @@
 @{
     ViewData["Title"] = "Finance Configuration";
     var errorMessage = ViewData["ErrorMessage"] as string;
+    var notice = ViewData["Notice"] as string;
     var saved = ViewData["Saved"] as bool? == true;
     var activeCategories = Model.Categories.Where(x => x.IsActive).ToArray();
 }
@@ -9,7 +10,7 @@
 <div class="lf-page-header">
     <div>
         <h1 class="lf-page-title">Finance Configuration</h1>
-        <p class="lf-subtitle">Manage stable finance account codes and their finance-category relationships.</p>
+        <p class="lf-subtitle">Add, edit, retire, and safely delete finance account configuration.</p>
     </div>
     <a class="button" href="/admin/lookups?type=FinanceCategory">Manage finance categories</a>
 </div>
@@ -17,6 +18,10 @@
 @if (!string.IsNullOrWhiteSpace(errorMessage))
 {
     <div class="lf-card lf-alert lf-alert-danger" role="alert">@errorMessage</div>
+}
+@if (!string.IsNullOrWhiteSpace(notice))
+{
+    <div class="lf-card lf-alert lf-alert-info" role="status">@notice</div>
 }
 @if (saved)
 {
@@ -63,8 +68,8 @@
 <section class="lf-card" aria-labelledby="accounts-title">
     <div class="lf-panel-header">
         <div>
-            <h2 id="accounts-title">Finance accounts</h2>
-            <p class="lf-muted">Deactivating an account preserves historical references while removing it from normal entry choices.</p>
+            <h2 id="accounts-title">Edit finance accounts</h2>
+            <p class="lf-muted">Delete / Retire removes unused accounts. Accounts already referenced by financial history are automatically retired instead of being destroyed.</p>
         </div>
         <span class="badge">@Model.Accounts.Count account@(Model.Accounts.Count == 1 ? string.Empty : "s")</span>
     </div>
@@ -111,8 +116,9 @@
                         <label for="active-@account.Id">Active</label>
                         <input id="active-@account.Id" name="isActive" type="checkbox" value="true" checked="@(account.IsActive ? "checked" : null)" />
                     </div>
-                    <div class="lf-admin-action">
-                        <button type="submit">Save</button>
+                    <div class="lf-admin-action lf-admin-actions">
+                        <button type="submit">Save changes</button>
+                        <button type="submit" class="danger" formaction="/admin/finance/accounts/@account.Id/delete" title="Unused accounts are deleted. Referenced accounts are retired instead.">Delete / Retire</button>
                     </div>
                 </form>
             }

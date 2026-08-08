@@ -11,10 +11,14 @@ public sealed class HomeController(
     IAuthorizationService authorizationService) : Controller
 {
     [HttpGet]
-    public async Task<IActionResult> Index(CancellationToken cancellationToken)
+    public async Task<IActionResult> Index(
+        Guid? fiscalYearId,
+        Guid? locationId,
+        Guid? categoryId,
+        CancellationToken cancellationToken)
     {
         ViewData["CanManageImports"] = (await authorizationService.AuthorizeAsync(User, AuthorizationPolicies.ManageImports)).Succeeded;
-        return View(await dashboardService.GetAsync(cancellationToken));
+        return View(await dashboardService.GetAsync(fiscalYearId, locationId, categoryId, cancellationToken));
     }
 
     // Error/status re-execution preserves the original HTTP method. These endpoints

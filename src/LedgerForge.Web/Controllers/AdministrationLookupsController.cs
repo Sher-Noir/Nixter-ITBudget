@@ -11,7 +11,8 @@ namespace LedgerForge.Web.Controllers;
 [Route("admin/lookups")]
 public sealed class AdministrationLookupsController(
     LookupAdministrationService service,
-    ManagedLookupInitializer initializer) : Controller
+    ManagedLookupInitializer initializer,
+    ConfigurationDeletionService deletionService) : Controller
 {
     [HttpGet("")]
     public async Task<IActionResult> Index(string? type, CancellationToken cancellationToken)
@@ -26,6 +27,7 @@ public sealed class AdministrationLookupsController(
             snapshot = await service.GetAsync(null, cancellationToken);
         }
 
+        ViewData["Notice"] = TempData["LookupNotice"] as string;
         return View(new LookupAdministrationViewModel(
             snapshot,
             TempData["LookupError"] as string,
@@ -70,6 +72,26 @@ public sealed class AdministrationLookupsController(
         {
             await service.UpdateAsync(type, id, name, description, sortOrder, numericValue, isActive, cancellationToken);
             return RedirectToAction(nameof(Index), new { type, saved = true });
+        }
+        catch (KeyNotFoundException)
+        {
+            return NotFound();
+        }
+        catch (Exception exception) when (exception is ArgumentException or InvalidOperationException)
+        {
+            TempData["LookupError"] = exception.Message;
+            return RedirectToAction(nameof(Index), new { type });
+        }
+    }
+
+    [HttpPost("values/{id:guid}/delete")]
+    public async Task<IActionResult> Delete(Guid id, string type, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var result = await deletionService.DeleteLookupAsync(type, id, cancellationToken);
+            TempData["LookupNotice"] = result.Message;
+            return RedirectToAction(nameof(Index), new { type });
         }
         catch (KeyNotFoundException)
         {

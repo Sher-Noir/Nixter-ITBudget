@@ -1,6 +1,7 @@
 using LedgerForge.Domain.Budgeting;
 using LedgerForge.Infrastructure.Approvals;
 using LedgerForge.Infrastructure.Budgeting;
+using LedgerForge.Web.Documents;
 using LedgerForge.Web.Models.Budgeting;
 using LedgerForge.Web.Security;
 using Microsoft.AspNetCore.Authorization;
@@ -12,8 +13,11 @@ namespace LedgerForge.Web.Controllers;
 [Route("budget")]
 public sealed class BudgetController(
     BudgetPlanningService planningService,
+    BudgetItemWorkspaceService workspaceService,
     ApprovalQueueService approvalQueueService,
-    IAuthorizationService authorizationService) : Controller
+    IAuthorizationService authorizationService,
+    IWebHostEnvironment environment,
+    IConfiguration configuration) : Controller
 {
     [HttpGet("")]
     public async Task<IActionResult> Index(
@@ -23,6 +27,7 @@ public sealed class BudgetController(
     {
         var snapshot = await planningService.GetSnapshotAsync(fiscalYearId, versionId, cancellationToken);
         var canEdit = (await authorizationService.AuthorizeAsync(User, AuthorizationPolicies.EditPlanningBudget)).Succeeded;
+        ViewData["CanManageImports"] = (await authorizationService.AuthorizeAsync(User, AuthorizationPolicies.ManageImports)).Succeeded;
         var errorMessage = TempData["BudgetError"] as string;
 
         return View(new BudgetPlanningViewModel(
@@ -70,16 +75,29 @@ public sealed class BudgetController(
     [HttpGet("items/{id:guid}")]
     public async Task<IActionResult> Item(Guid id, CancellationToken cancellationToken)
     {
-        var snapshot = await planningService.GetItemAsync(id, cancellationToken);
-        if (snapshot is null) return NotFound();
+        var workspace = await workspaceService.GetAsync(id, cancellationToken);
+        if (workspace is null) return NotFound();
 
+        var snapshot = workspace.Item;
         var canEditRole = (await authorizationService.AuthorizeAsync(User, AuthorizationPolicies.EditPlanningBudget)).Succeeded;
         var workflowEditable = snapshot.Status is BudgetItemStatus.Draft or BudgetItemStatus.Proposed or BudgetItemStatus.Deferred;
         ViewData["CanSubmit"] = canEditRole && !snapshot.VersionLocked && workflowEditable;
         ViewData["Submitted"] = Request.Query.ContainsKey("submitted");
 
+        var configuredLimit = configuration.GetValue<long?>("Documents:MaxFileSizeBytes");
+        var configuredStoragePath = configuration.GetValue<string>("Documents:StoragePath");
+        var documentStore = new PhysicalDocumentStore(
+            environment.ContentRootPath,
+            configuredStoragePath,
+            configuredLimit is > 0 ? configuredLimit.Value : 25L * 1024 * 1024);
+        var documents = (await documentStore.ListAsync(cancellationToken))
+            .Where(x => string.Equals(x.LinkedEntityType, nameof(BudgetItem), StringComparison.OrdinalIgnoreCase) && x.LinkedEntityId == id)
+            .OrderByDescending(x => x.CreatedAtUtc)
+            .ToArray();
+
         return View("Item", new BudgetItemEditViewModel(
-            snapshot,
+            workspace,
+            documents,
             canEditRole && !snapshot.VersionLocked && workflowEditable,
             TempData["BudgetItemError"] as string,
             Request.Query.ContainsKey("saved")));
