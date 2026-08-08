@@ -60,6 +60,7 @@ builder.Services.AddScoped<FinanceAdministrationService>();
 builder.Services.AddScoped<SecurityAdministrationService>();
 builder.Services.AddScoped<FiscalYearAdministrationService>();
 builder.Services.AddScoped<BudgetPlanningService>();
+builder.Services.AddScoped<BudgetItemWorkspaceService>();
 builder.Services.AddScoped<BudgetAmendmentService>();
 builder.Services.AddScoped<ForecastService>();
 builder.Services.AddScoped<ActualLedgerService>();
