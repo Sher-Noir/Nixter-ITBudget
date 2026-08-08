@@ -4,7 +4,7 @@
     ViewData["Title"] = "Organization & Appearance";
     var saved = ViewData["Saved"] as bool? == true;
     var reset = ViewData["Reset"] as bool? == true;
-    var brandingSaved = Request.Query.ContainsKey("brandingSaved");
+    var brandingSaved = Context.Request.Query.ContainsKey("brandingSaved");
     var brandingError = TempData["OrganizationBrandingError"] as string;
     var uploadedLogo = await BrandingAssets.GetOrganizationLogoAsync(Context.RequestAborted);
     var uploadedIcon = await BrandingAssets.GetOrganizationIconAsync(Context.RequestAborted);
