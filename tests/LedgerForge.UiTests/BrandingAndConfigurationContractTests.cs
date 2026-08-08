@@ -35,6 +35,30 @@ public sealed class BrandingAndConfigurationContractTests
         Assert.Contains("File content does not match a JPEG signature", store, StringComparison.Ordinal);
         Assert.Contains("AuthorizationPolicies.EditPlanningBudget", controller, StringComparison.Ordinal);
         Assert.Contains("AuthorizationPolicies.ManageProcurement", controller, StringComparison.Ordinal);
+        Assert.Contains("AuthorizationPolicies.Administration", controller, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void OrganizationConfiguration_ExposesDirectBrandingUploadsAndMaintenanceLinks()
+    {
+        var view = Read("src", "LedgerForge.Web", "Views", "AdministrationOrganization", "Index.cshtml");
+        var layout = Read("src", "LedgerForge.Web", "Views", "Shared", "_Layout.cshtml");
+        var service = Read("src", "LedgerForge.Web", "Documents", "BrandingAssetService.cs");
+        var controller = Read("src", "LedgerForge.Web", "Controllers", "BrandingAssetsController.cs");
+
+        Assert.Contains("Upload organization logo", view, StringComparison.Ordinal);
+        Assert.Contains("Upload browser icon", view, StringComparison.Ordinal);
+        Assert.Contains("Remove uploaded logo", view, StringComparison.Ordinal);
+        Assert.Contains("Configuration maintenance", view, StringComparison.Ordinal);
+        Assert.Contains("Edit / Delete / Retire lookups", view, StringComparison.Ordinal);
+        Assert.Contains("Edit / Delete / Retire finance accounts", view, StringComparison.Ordinal);
+        Assert.Contains("Edit / Delete / Retire vendors", view, StringComparison.Ordinal);
+        Assert.Contains("/branding-assets/organization/logo", layout, StringComparison.Ordinal);
+        Assert.Contains("/branding-assets/organization/icon", layout, StringComparison.Ordinal);
+        Assert.Contains("GetOrganizationLogoAsync", service, StringComparison.Ordinal);
+        Assert.Contains("GetOrganizationIconAsync", service, StringComparison.Ordinal);
+        Assert.Contains("UploadOrganizationLogo", controller, StringComparison.Ordinal);
+        Assert.Contains("RemoveOrganizationLogo", controller, StringComparison.Ordinal);
     }
 
     [Fact]
