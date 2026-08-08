@@ -17,8 +17,10 @@ public sealed class HomeController(
         return View(await dashboardService.GetAsync(cancellationToken));
     }
 
+    // Error/status re-execution preserves the original HTTP method. These endpoints
+    // intentionally accept any verb so a failing POST is not incorrectly converted
+    // into HTTP 405 while the real 4xx/5xx status is being rendered.
     [AllowAnonymous]
-    [HttpGet]
     public IActionResult AccessDenied(int code = StatusCodes.Status403Forbidden)
     {
         Response.StatusCode = code;
@@ -27,6 +29,5 @@ public sealed class HomeController(
     }
 
     [AllowAnonymous]
-    [HttpGet]
     public IActionResult Error() => View("Error");
 }
