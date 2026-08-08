@@ -24,6 +24,7 @@ public sealed class BudgetController(
     {
         var snapshot = await planningService.GetSnapshotAsync(fiscalYearId, versionId, cancellationToken);
         var canEdit = (await authorizationService.AuthorizeAsync(User, AuthorizationPolicies.EditPlanningBudget)).Succeeded;
+        ViewData["CanManageImports"] = (await authorizationService.AuthorizeAsync(User, AuthorizationPolicies.ManageImports)).Succeeded;
         var errorMessage = TempData["BudgetError"] as string;
 
         return View(new BudgetPlanningViewModel(
