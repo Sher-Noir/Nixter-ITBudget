@@ -13,7 +13,7 @@ public sealed class BrandingAndConfigurationContractTests
         Assert.Contains("ResolveBudgetItemLogoAsync", service, StringComparison.Ordinal);
         Assert.Contains("BrandingLogoSource.BudgetItem", service, StringComparison.Ordinal);
         Assert.Contains("BrandingLogoSource.Vendor", service, StringComparison.Ordinal);
-        Assert.Contains("order by order.CreatedAtUtc descending", service, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("orderby order.CreatedAtUtc descending", service, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("/branding-assets/budget-items/@item.Id/logo", itemView, StringComparison.Ordinal);
         Assert.Contains("Vendor logo fallback", itemView, StringComparison.Ordinal);
         Assert.Contains("Upload item logo", itemView, StringComparison.Ordinal);
