@@ -1,145 +1,274 @@
 @model LedgerForge.Web.Models.Budgeting.BudgetPlanningViewModel
+@using LedgerForge.Domain.Budgeting
 @{
     ViewData["Title"] = "Budget";
     var snapshot = Model.Snapshot;
-}
+    var sectionFilter = Context.Request.Query["section"].ToString();
+    var categoryFilter = Context.Request.Query["category"].ToString();
+    var locationFilter = Context.Request.Query["location"].ToString();
+    var vendorFilter = Context.Request.Query["vendor"].ToString();
+    var needFilter = Context.Request.Query["need"].ToString();
+    var statusFilter = Context.Request.Query["status"].ToString();
+    var searchFilter = Context.Request.Query["q"].ToString();
 
-<div class="lf-page-header">
-    <div>
-        <h1 class="lf-page-title">Budget Planning</h1>
-        <p class="lf-subtitle">Plan line items in versioned fiscal-year budgets. Approved or locked versions remain read-only.</p>
-    </div>
-</div>
+    var filteredItems = snapshot.Items
+        .Where(x => string.IsNullOrWhiteSpace(sectionFilter) || string.Equals(x.BudgetSectionName, sectionFilter, StringComparison.OrdinalIgnoreCase))
+        .Where(x => string.IsNullOrWhiteSpace(categoryFilter) || string.Equals(x.InternalCategoryName, categoryFilter, StringComparison.OrdinalIgnoreCase))
+        .Where(x => string.IsNullOrWhiteSpace(locationFilter) || string.Equals(x.LocationName, locationFilter, StringComparison.OrdinalIgnoreCase))
+        .Where(x => string.IsNullOrWhiteSpace(vendorFilter) || string.Equals(x.VendorName, vendorFilter, StringComparison.OrdinalIgnoreCase))
+        .Where(x => string.IsNullOrWhiteSpace(needFilter) || string.Equals(x.NeedLevelName, needFilter, StringComparison.OrdinalIgnoreCase))
+        .Where(x => string.IsNullOrWhiteSpace(statusFilter) || string.Equals(x.Status.ToString(), statusFilter, StringComparison.OrdinalIgnoreCase))
+        .Where(x => string.IsNullOrWhiteSpace(searchFilter) ||
+            x.ItemNumber.Contains(searchFilter, StringComparison.OrdinalIgnoreCase) ||
+            x.Description.Contains(searchFilter, StringComparison.OrdinalIgnoreCase) ||
+            (x.ReasonPurpose?.Contains(searchFilter, StringComparison.OrdinalIgnoreCase) ?? false))
+        .ToArray();
 
-@if (!string.IsNullOrWhiteSpace(Model.ErrorMessage))
-{
-    <div class="card lf-alert lf-alert-danger" role="alert">@Model.ErrorMessage</div>
-}
-@if (Model.Saved)
-{
-    <div class="card lf-alert lf-alert-success" role="status">Budget item added.</div>
-}
+    Guid.TryParse(Context.Request.Query["itemId"].ToString(), out var selectedItemId);
+    var selectedItem = selectedItemId == Guid.Empty ? null : snapshot.Items.FirstOrDefault(x => x.Id == selectedItemId);
 
-@if (snapshot.FiscalYears.Count == 0)
-{
-    <section class="card lf-empty-state" aria-labelledby="no-fiscal-year-title">
-        <h2 id="no-fiscal-year-title">No fiscal year is available</h2>
-        <p class="muted">A Budget Administrator or System Administrator must create a fiscal year before planning items can be entered.</p>
-    </section>
-}
-else
-{
-    <form method="get" action="/budget" class="lf-toolbar lf-budget-selector" aria-label="Budget context">
-        <div>
-            <label for="fiscalYearId"><strong>Fiscal year</strong></label>
-            <select id="fiscalYearId" name="fiscalYearId">
-                @foreach (var year in snapshot.FiscalYears)
-                {
-                    <option value="@year.Id" selected="@(year.Id == snapshot.SelectedFiscalYearId)">@year.DisplayName@(year.IsCurrent ? " · Current" : string.Empty)</option>
-                }
-            </select>
-        </div>
-        <div>
-            <label for="versionId"><strong>Budget version</strong></label>
-            <select id="versionId" name="versionId" disabled="@(snapshot.Versions.Count == 0)">
-                @foreach (var version in snapshot.Versions)
-                {
-                    <option value="@version.Id" selected="@(version.Id == snapshot.SelectedVersionId)">v@version.VersionNumber · @version.Name@(version.IsLocked ? " · Locked" : string.Empty)</option>
-                }
-            </select>
-        </div>
-        <div class="lf-toolbar-action"><button type="submit">Apply</button></div>
-    </form>
+    var sections = snapshot.Items.Select(x => x.BudgetSectionName).Where(x => !string.IsNullOrWhiteSpace(x)).Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(x => x).ToArray();
+    var categories = snapshot.Items.Select(x => x.InternalCategoryName).Where(x => !string.IsNullOrWhiteSpace(x)).Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(x => x).ToArray();
+    var locations = snapshot.Items.Select(x => x.LocationName).Where(x => !string.IsNullOrWhiteSpace(x)).Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(x => x).ToArray();
+    var vendors = snapshot.Items.Select(x => x.VendorName).Where(x => !string.IsNullOrWhiteSpace(x)).Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(x => x).ToArray();
+    var needs = snapshot.Items.Select(x => x.NeedLevelName).Where(x => !string.IsNullOrWhiteSpace(x)).Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(x => x).ToArray();
 
-    @if (snapshot.SelectedVersionId is null)
+    var displayedPlanned = filteredItems.Sum(x => x.PlannedTotal);
+    var displayedApproved = filteredItems.Sum(x => x.ApprovedTotal ?? 0m);
+    var displayedProposed = filteredItems.Where(x => x.Status is BudgetItemStatus.Draft or BudgetItemStatus.Proposed or BudgetItemStatus.Submitted or BudgetItemStatus.Deferred).Sum(x => x.PlannedTotal);
+    var mustHave = filteredItems.Count(x => string.Equals(x.NeedLevelName, "Must Have", StringComparison.OrdinalIgnoreCase));
+
+    string FriendlyStatus(BudgetItemStatus status) => status switch
     {
-        <section class="card lf-empty-state">
-            <h2>No budget version exists</h2>
-            <p class="muted">The selected fiscal year does not yet have a budget version.</p>
-        </section>
-    }
-    else
+        BudgetItemStatus.Draft => "Planned",
+        BudgetItemStatus.Proposed => "Proposed",
+        BudgetItemStatus.Submitted => "Submitted",
+        BudgetItemStatus.Approved => "Approved",
+        BudgetItemStatus.Denied => "Denied",
+        BudgetItemStatus.Deferred => "Deferred",
+        BudgetItemStatus.Active => "Active",
+        BudgetItemStatus.Cancelled => "Cancelled",
+        BudgetItemStatus.Archived => "Archived",
+        _ => status.ToString()
+    };
+
+    string ApprovalLabel(BudgetItemStatus status) => status switch
     {
-        <div class="lf-kpi-grid">
-            <article class="lf-card lf-kpi"><div class="lf-kpi-icon blue">P</div><div><div class="lf-card-title">Planned</div><div class="lf-kpi-value">@snapshot.PlannedTotal.ToString("C2")</div><div class="lf-kpi-note">Current version planning total</div></div></article>
-            <article class="lf-card lf-kpi"><div class="lf-kpi-icon green">A</div><div><div class="lf-card-title">Approved</div><div class="lf-kpi-value">@snapshot.ApprovedTotal.ToString("C2")</div><div class="lf-kpi-note">Approved amount recorded</div></div></article>
-            <article class="lf-card lf-kpi"><div class="lf-kpi-icon purple">R</div><div><div class="lf-card-title">Revised</div><div class="lf-kpi-value">@snapshot.RevisedTotal.ToString("C2")</div><div class="lf-kpi-note">Revised/approved/planned fallback</div></div></article>
-            <article class="lf-card lf-kpi"><div class="lf-kpi-icon @(snapshot.SelectedVersionLocked ? "red" : "teal")">@snapshot.Items.Count</div><div><div class="lf-card-title">Items</div><div class="lf-kpi-value">@snapshot.Items.Count</div><div class="lf-kpi-note">@(snapshot.SelectedVersionLocked ? "Version locked" : "Version editable")</div></div></article>
+        BudgetItemStatus.Submitted => "Pending",
+        BudgetItemStatus.Approved => "Approved",
+        BudgetItemStatus.Denied => "Denied",
+        BudgetItemStatus.Deferred => "Deferred",
+        _ => "Not Started"
+    };
+
+    string BadgeClass(string? value) => value switch
+    {
+        "Must Have" => "lf-badge-blue",
+        "High" => "lf-badge-warning",
+        "Moderate" => "lf-badge-gold",
+        "Low" => "lf-badge-success",
+        _ => "lf-badge-muted"
+    };
+
+    var clearUrl = Url.Action("Index", "Budget", new { fiscalYearId = snapshot.SelectedFiscalYearId, versionId = snapshot.SelectedVersionId });
+}
+
+<div class="lf-budget-workspace @(selectedItem is null ? string.Empty : "has-drawer")">
+    <div class="lf-budget-main">
+        <div class="lf-page-header lf-budget-page-header">
+            <div>
+                <h1 class="lf-page-title">Budget</h1>
+                <p class="lf-subtitle">@((snapshot.FiscalYears.FirstOrDefault(x => x.Id == snapshot.SelectedFiscalYearId)?.DisplayName) ?? "Fiscal year") planning and budget management.</p>
+            </div>
         </div>
 
-        @if (Model.CanEdit && !snapshot.SelectedVersionLocked)
+        @if (!string.IsNullOrWhiteSpace(Model.ErrorMessage))
         {
-            <section class="card lf-quick-add" aria-labelledby="quick-add-title">
-                <div class="lf-panel-header">
-                    <div><h2 id="quick-add-title">Quick add</h2><p class="muted">Add a basic planning line now; detailed dimensions and allocations can be edited from the item workflow.</p></div>
-                </div>
-                <form method="post" action="/budget/quick-add" class="lf-quick-add-grid">
-                    @Html.AntiForgeryToken()
-                    <input type="hidden" name="fiscalYearId" value="@snapshot.SelectedFiscalYearId" />
-                    <input type="hidden" name="versionId" value="@snapshot.SelectedVersionId" />
-                    <div><label for="itemNumber"><strong>Item #</strong></label><input id="itemNumber" name="itemNumber" maxlength="64" required /></div>
-                    <div class="lf-quick-add-description"><label for="description"><strong>Description</strong></label><input id="description" name="description" maxlength="500" required /></div>
-                    <div><label for="quantity"><strong>Quantity</strong></label><input id="quantity" name="quantity" type="number" min="0" step="0.0001" value="1" required /></div>
-                    <div><label for="unitCost"><strong>Unit cost</strong></label><input id="unitCost" name="unitCost" type="number" min="0" step="0.0001" value="0" required /></div>
-                    <div class="lf-quick-add-action"><button class="primary" type="submit">Add item</button></div>
-                </form>
+            <div class="card lf-alert lf-alert-danger" role="alert">@Model.ErrorMessage</div>
+        }
+        @if (Model.Saved)
+        {
+            <div class="card lf-alert lf-alert-success" role="status">Budget item added.</div>
+        }
+
+        @if (snapshot.FiscalYears.Count == 0)
+        {
+            <section class="card lf-empty-state" aria-labelledby="no-fiscal-year-title">
+                <h2 id="no-fiscal-year-title">No fiscal year is available</h2>
+                <p class="muted">Create a fiscal year before planning items are entered.</p>
             </section>
         }
-        else if (snapshot.SelectedVersionLocked)
+        else
         {
-            <div class="card lf-alert lf-alert-info" role="status">This budget version is locked. Planning lines are read-only.</div>
-        }
-
-        <section class="card lf-budget-grid-card" aria-labelledby="budget-grid-title">
-            <div class="lf-panel-header">
-                <div><h2 id="budget-grid-title">Planning lines</h2><p class="muted">Amounts are calculated server-side from quantity and unit cost.</p></div>
-                <span class="badge">@snapshot.Items.Count item@(snapshot.Items.Count == 1 ? string.Empty : "s")</span>
+            <div class="lf-budget-actions">
+                <form method="get" action="/budget" class="lf-budget-context" aria-label="Budget context">
+                    <select id="fiscalYearId" name="fiscalYearId" aria-label="Fiscal year">
+                        @foreach (var year in snapshot.FiscalYears)
+                        {
+                            <option value="@year.Id" selected="@(year.Id == snapshot.SelectedFiscalYearId)">@year.DisplayName@(year.IsCurrent ? " · Current" : string.Empty)</option>
+                        }
+                    </select>
+                    <select id="versionId" name="versionId" aria-label="Budget version" disabled="@(snapshot.Versions.Count == 0)">
+                        @foreach (var version in snapshot.Versions)
+                        {
+                            <option value="@version.Id" selected="@(version.Id == snapshot.SelectedVersionId)">v@version.VersionNumber · @version.Name@(version.IsLocked ? " · Locked" : string.Empty)</option>
+                        }
+                    </select>
+                    <button type="submit">Apply</button>
+                </form>
+                <div class="lf-budget-action-buttons">
+                    @if (Model.CanEdit && !snapshot.SelectedVersionLocked && snapshot.SelectedVersionId is not null)
+                    {
+                        <a class="button primary" href="#new-budget-item"><span aria-hidden="true">＋</span> New Item</a>
+                    }
+                    <a class="button" href="/imports"><span aria-hidden="true">⇩</span> Import</a>
+                    @if (snapshot.SelectedFiscalYearId is not null)
+                    {
+                        <a class="button" href="/exports/budget.csv?fiscalYearId=@snapshot.SelectedFiscalYearId"><span aria-hidden="true">⇩</span> Export</a>
+                    }
+                    <a class="button" href="/reports">Reports</a>
+                </div>
             </div>
 
-            @if (snapshot.Items.Count == 0)
+            @if (snapshot.SelectedVersionId is not null)
             {
-                <div class="lf-empty-state"><p>No planning items have been entered for this version.</p></div>
+                <form method="get" action="/budget" class="lf-budget-filters" aria-label="Budget filters">
+                    <input type="hidden" name="fiscalYearId" value="@snapshot.SelectedFiscalYearId" />
+                    <input type="hidden" name="versionId" value="@snapshot.SelectedVersionId" />
+                    <div class="lf-filter-search"><label for="q">Search</label><input id="q" name="q" value="@searchFilter" placeholder="Item # or description" /></div>
+                    <div><label for="section">Section</label><select id="section" name="section"><option value="">All</option>@foreach (var value in sections){<option value="@value" selected="@(value == sectionFilter)">@value</option>}</select></div>
+                    <div><label for="category">Category</label><select id="category" name="category"><option value="">All</option>@foreach (var value in categories){<option value="@value" selected="@(value == categoryFilter)">@value</option>}</select></div>
+                    <div><label for="location">Location</label><select id="location" name="location"><option value="">All</option>@foreach (var value in locations){<option value="@value" selected="@(value == locationFilter)">@value</option>}</select></div>
+                    <div><label for="vendor">Vendor</label><select id="vendor" name="vendor"><option value="">All</option>@foreach (var value in vendors){<option value="@value" selected="@(value == vendorFilter)">@value</option>}</select></div>
+                    <div><label for="need">Need Level</label><select id="need" name="need"><option value="">All</option>@foreach (var value in needs){<option value="@value" selected="@(value == needFilter)">@value</option>}</select></div>
+                    <div><label for="status">Status</label><select id="status" name="status"><option value="">All</option>@foreach (var value in Enum.GetValues<BudgetItemStatus>()){<option value="@value" selected="@(value.ToString() == statusFilter)">@FriendlyStatus(value)</option>}</select></div>
+                    <div class="lf-filter-actions"><button type="submit">Apply filters</button><a href="@clearUrl">Clear All</a></div>
+                </form>
+
+                <section class="lf-budget-kpis" aria-label="Budget summary">
+                    <article class="lf-card lf-budget-kpi"><span class="lf-budget-kpi-icon blue">▥</span><div><strong>@filteredItems.Length</strong><span>Total Items</span></div></article>
+                    <article class="lf-card lf-budget-kpi"><span class="lf-budget-kpi-icon gold">★</span><div><strong>@mustHave</strong><span>Must Have</span></div></article>
+                    <article class="lf-card lf-budget-kpi"><span class="lf-budget-kpi-icon green">▤</span><div><strong>@displayedPlanned.ToString("C2")</strong><span>Planned Total</span></div></article>
+                    <article class="lf-card lf-budget-kpi"><span class="lf-budget-kpi-icon purple">▧</span><div><strong>@displayedProposed.ToString("C2")</strong><span>Open / Proposed</span></div></article>
+                    <article class="lf-card lf-budget-kpi"><span class="lf-budget-kpi-icon teal">✓</span><div><strong>@displayedApproved.ToString("C2")</strong><span>Approved</span></div></article>
+                </section>
+
+                @if (Model.CanEdit && !snapshot.SelectedVersionLocked)
+                {
+                    <details id="new-budget-item" class="lf-card lf-new-item-panel" open="@(snapshot.Items.Count == 0)">
+                        <summary><strong>New budget item</strong><span>Add the basic line, then open it to assign all planning dimensions.</span></summary>
+                        <form method="post" action="/budget/quick-add" class="lf-quick-add-grid">
+                            @Html.AntiForgeryToken()
+                            <input type="hidden" name="fiscalYearId" value="@snapshot.SelectedFiscalYearId" />
+                            <input type="hidden" name="versionId" value="@snapshot.SelectedVersionId" />
+                            <div><label for="itemNumber"><strong>Item #</strong></label><input id="itemNumber" name="itemNumber" maxlength="64" required /></div>
+                            <div class="lf-quick-add-description"><label for="description"><strong>Description</strong></label><input id="description" name="description" maxlength="500" required /></div>
+                            <div><label for="quantity"><strong>Quantity</strong></label><input id="quantity" name="quantity" type="number" min="0" step="0.0001" value="1" required /></div>
+                            <div><label for="unitCost"><strong>Unit cost</strong></label><input id="unitCost" name="unitCost" type="number" min="0" step="0.0001" value="0" required /></div>
+                            <div class="lf-quick-add-action"><button class="primary" type="submit">Add item</button></div>
+                        </form>
+                    </details>
+                }
+
+                <section class="lf-card lf-budget-grid-card" aria-labelledby="budget-grid-title">
+                    <div class="lf-budget-grid-heading">
+                        <div><h2 id="budget-grid-title">Budget items</h2><span>@filteredItems.Length of @snapshot.Items.Count shown</span></div>
+                        <span class="badge">@(snapshot.SelectedVersionLocked ? "Locked" : "Editable")</span>
+                    </div>
+                    @if (filteredItems.Length == 0)
+                    {
+                        <div class="lf-empty-state"><p>No budget items match the current filters.</p></div>
+                    }
+                    else
+                    {
+                        <div class="lf-table-scroll">
+                            <table class="lf-table lf-budget-grid">
+                                <thead>
+                                <tr>
+                                    <th>Item #</th>
+                                    <th>Description</th>
+                                    <th>Section</th>
+                                    <th>Category</th>
+                                    <th>Vendor</th>
+                                    <th>Location</th>
+                                    <th class="lf-number">Qty</th>
+                                    <th class="lf-number">Unit Cost</th>
+                                    <th class="lf-number">Total</th>
+                                    <th>Need Level</th>
+                                    <th>Frequency</th>
+                                    <th>Renewal</th>
+                                    <th>Status</th>
+                                    <th>Approval</th>
+                                </tr>
+                                </thead>
+                                <tbody>
+                                @foreach (var item in filteredItems)
+                                {
+                                    var selected = selectedItem?.Id == item.Id;
+                                    <tr class="@(selected ? "is-selected" : null)">
+                                        <td><a href="@Url.Action("Index", "Budget", new { fiscalYearId = snapshot.SelectedFiscalYearId, versionId = snapshot.SelectedVersionId, section = sectionFilter, category = categoryFilter, location = locationFilter, vendor = vendorFilter, need = needFilter, status = statusFilter, q = searchFilter, itemId = item.Id })"><strong>@item.ItemNumber</strong></a></td>
+                                        <td><a class="lf-budget-description" href="@Url.Action("Index", "Budget", new { fiscalYearId = snapshot.SelectedFiscalYearId, versionId = snapshot.SelectedVersionId, section = sectionFilter, category = categoryFilter, location = locationFilter, vendor = vendorFilter, need = needFilter, status = statusFilter, q = searchFilter, itemId = item.Id })">@item.Description</a></td>
+                                        <td>@(item.BudgetSectionName ?? "—")</td>
+                                        <td>@(item.InternalCategoryName ?? item.FinanceTypeName ?? "—")</td>
+                                        <td>@(item.VendorName ?? "—")</td>
+                                        <td>@(item.LocationName ?? "—")</td>
+                                        <td class="lf-number">@item.Quantity.ToString("0.####")</td>
+                                        <td class="lf-number">@item.UnitCost.ToString("C2")</td>
+                                        <td class="lf-number"><strong>@item.PlannedTotal.ToString("C2")</strong></td>
+                                        <td>@if (!string.IsNullOrWhiteSpace(item.NeedLevelName)){<span class="badge @BadgeClass(item.NeedLevelName)">@item.NeedLevelName</span>}else{<span>—</span>}</td>
+                                        <td>@(item.FrequencyName ?? "—")</td>
+                                        <td>@(item.RenewalDate?.ToString("MM/dd/yyyy") ?? "—")</td>
+                                        <td><span class="lf-status-dot"></span>@FriendlyStatus(item.Status)</td>
+                                        <td><span class="badge @(item.Status == BudgetItemStatus.Approved ? "lf-badge-success" : item.Status == BudgetItemStatus.Submitted ? "lf-badge-warning" : item.Status == BudgetItemStatus.Denied ? "lf-badge-danger" : "lf-badge-muted")">@ApprovalLabel(item.Status)</span></td>
+                                    </tr>
+                                }
+                                </tbody>
+                            </table>
+                        </div>
+                    }
+                </section>
             }
-            else
-            {
-                <div class="lf-table-scroll">
-                    <table class="lf-table lf-budget-grid">
-                        <thead>
-                            <tr>
-                                <th>Item #</th>
-                                <th>Description</th>
-                                <th>Type</th>
-                                <th>Status</th>
-                                <th class="lf-number">Qty</th>
-                                <th class="lf-number">Unit Cost</th>
-                                <th class="lf-number">Planned</th>
-                                <th class="lf-number">Approved</th>
-                                <th class="lf-number">Revised</th>
-                                <th>Purchase Date</th>
-                                <th>Renewal</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                        @foreach (var item in snapshot.Items)
-                        {
-                            <tr>
-                                <td><strong>@item.ItemNumber</strong></td>
-                                <td><a href="/budget/items/@item.Id">@item.Description</a>@if (!string.IsNullOrWhiteSpace(item.ReasonPurpose)) { <div class="muted">@item.ReasonPurpose</div> }</td>
-                                <td>@item.PurchaseType</td>
-                                <td><span class="badge">@item.Status</span></td>
-                                <td class="lf-number">@item.Quantity.ToString("N4")</td>
-                                <td class="lf-number">@item.UnitCost.ToString("C2")</td>
-                                <td class="lf-number"><strong>@item.PlannedTotal.ToString("C2")</strong></td>
-                                <td class="lf-number">@(item.ApprovedTotal?.ToString("C2") ?? "—")</td>
-                                <td class="lf-number">@(item.RevisedTotal?.ToString("C2") ?? "—")</td>
-                                <td>@(item.EstimatedPurchaseDate?.ToString("yyyy-MM-dd") ?? "—")</td>
-                                <td>@(item.RenewalDate?.ToString("yyyy-MM-dd") ?? "—")</td>
-                            </tr>
-                        }
-                        </tbody>
-                    </table>
-                </div>
-            }
-        </section>
+        }
+    </div>
+
+    @if (selectedItem is not null)
+    {
+        <aside class="lf-budget-drawer" aria-label="Selected budget item">
+            <div class="lf-drawer-header">
+                <div><h2>@selectedItem.ItemNumber</h2><p>@selectedItem.Description</p></div>
+                <a class="lf-drawer-close" href="@Url.Action("Index", "Budget", new { fiscalYearId = snapshot.SelectedFiscalYearId, versionId = snapshot.SelectedVersionId, section = sectionFilter, category = categoryFilter, location = locationFilter, vendor = vendorFilter, need = needFilter, status = statusFilter, q = searchFilter })" aria-label="Close item details">×</a>
+            </div>
+            <nav class="lf-drawer-tabs" aria-label="Budget item sections"><a class="active" href="/budget/items/@selectedItem.Id">Details</a><a href="/budget/items/@selectedItem.Id">Financials</a><a href="/budget/items/@selectedItem.Id">Approvals</a><a href="/documents">Documents</a></nav>
+            <div class="lf-drawer-body">
+                <dl class="lf-drawer-details">
+                    <div><dt>Section</dt><dd>@(selectedItem.BudgetSectionName ?? "—")</dd></div>
+                    <div><dt>Category</dt><dd>@(selectedItem.InternalCategoryName ?? selectedItem.FinanceTypeName ?? "—")</dd></div>
+                    <div><dt>Vendor</dt><dd>@(selectedItem.VendorName ?? "—")</dd></div>
+                    <div><dt>Department</dt><dd>@(selectedItem.DepartmentName ?? "—")</dd></div>
+                    <div><dt>Location</dt><dd>@(selectedItem.LocationName ?? "—")</dd></div>
+                    <div><dt>Need Level</dt><dd>@(selectedItem.NeedLevelName ?? "—")</dd></div>
+                    <div><dt>Frequency</dt><dd>@(selectedItem.FrequencyName ?? "—")</dd></div>
+                    <div><dt>Purchase Type</dt><dd>@selectedItem.PurchaseType</dd></div>
+                    <div><dt>Qty</dt><dd>@selectedItem.Quantity.ToString("0.####")</dd></div>
+                    <div><dt>Unit Cost</dt><dd>@selectedItem.UnitCost.ToString("C2")</dd></div>
+                    <div><dt>Total</dt><dd><strong>@selectedItem.PlannedTotal.ToString("C2")</strong></dd></div>
+                </dl>
+
+                <section class="lf-drawer-card">
+                    <h3>Financial Summary</h3>
+                    <div><span>Planned</span><strong>@selectedItem.PlannedTotal.ToString("C2")</strong></div>
+                    <div><span>Approved</span><strong>@(selectedItem.ApprovedTotal?.ToString("C2") ?? "$0.00")</strong></div>
+                    <div><span>Revised</span><strong>@(selectedItem.RevisedTotal?.ToString("C2") ?? selectedItem.ApprovedTotal?.ToString("C2") ?? selectedItem.PlannedTotal.ToString("C2"))</strong></div>
+                    <div><span>Status</span><strong>@FriendlyStatus(selectedItem.Status)</strong></div>
+                </section>
+
+                <section class="lf-drawer-card">
+                    <h3>Quick Actions</h3>
+                    <a class="button primary" href="/budget/items/@selectedItem.Id">Open Full Item</a>
+                    <a class="button" href="/purchase-orders">Purchase Orders</a>
+                    <a class="button" href="/documents">Documents</a>
+                </section>
+            </div>
+        </aside>
     }
-}
+</div>
