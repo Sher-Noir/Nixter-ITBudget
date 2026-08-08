@@ -2,12 +2,18 @@
 @using LedgerForge.Domain.Budgeting
 @using LedgerForge.Domain.Procurement
 @using LedgerForge.Infrastructure.Budgeting
+@inject LedgerForge.Web.Documents.BrandingAssetService BrandingAssets
+@inject Microsoft.AspNetCore.Authorization.IAuthorizationService AuthorizationService
 @{
     var workspace = Model.Workspace;
     var item = workspace.Item;
     ViewData["Title"] = $"Budget Item {item.ItemNumber}";
     var canSubmit = ViewData["CanSubmit"] as bool? == true;
     var submitted = ViewData["Submitted"] as bool? == true;
+    var brandingError = TempData["BudgetItemError"] as string;
+    var canEditBranding = (await AuthorizationService.AuthorizeAsync(User, LedgerForge.Web.Security.AuthorizationPolicies.EditPlanningBudget)).Succeeded;
+    var resolvedLogo = await BrandingAssets.ResolveBudgetItemLogoAsync(item.Id);
+    var hasItemLogo = resolvedLogo?.Source == LedgerForge.Web.Documents.BrandingLogoSource.BudgetItem;
 
     string? OptionName(IReadOnlyList<LookupOption> values, Guid? id)
         => id is not null ? values.FirstOrDefault(x => x.Id == id.Value)?.Name : null;
@@ -35,6 +41,10 @@
 {
     <div class="card lf-alert lf-alert-danger" role="alert">@Model.ErrorMessage</div>
 }
+@if (!string.IsNullOrWhiteSpace(brandingError))
+{
+    <div class="card lf-alert lf-alert-danger" role="alert">@brandingError</div>
+}
 @if (Model.Saved)
 {
     <div class="card lf-alert lf-alert-success" role="status">Budget item saved.</div>
@@ -46,7 +56,14 @@
 
 <section class="lf-card lf-item-hero">
     <div class="lf-item-hero-top">
-        <div class="lf-item-mark" aria-hidden="true">@itemMark</div>
+        @if (resolvedLogo is not null)
+        {
+            <div class="lf-item-mark lf-item-mark-logo"><img src="/branding-assets/budget-items/@item.Id/logo" alt="@item.Description logo" /></div>
+        }
+        else
+        {
+            <div class="lf-item-mark" aria-hidden="true">@itemMark</div>
+        }
         <div class="lf-item-title">
             <h1>@item.Description <span class="badge @(item.Status == BudgetItemStatus.Approved ? "lf-badge-success" : "")">@item.Status</span></h1>
             <p>@item.ItemNumber · <code>@item.StableIdentifier</code></p>
@@ -249,6 +266,53 @@
     </div>
 
     <aside class="lf-item-side">
+        <section id="item-branding" class="lf-card">
+            <h2 class="lf-card-title">Item Branding</h2>
+            <div class="lf-branding-preview">
+                <div class="lf-logo-tile">
+                    @if (resolvedLogo is not null)
+                    {
+                        <img src="/branding-assets/budget-items/@item.Id/logo" alt="@item.Description logo" />
+                    }
+                    else
+                    {
+                        <span aria-hidden="true">@itemMark</span>
+                    }
+                </div>
+                <div>
+                    @if (resolvedLogo?.Source == LedgerForge.Web.Documents.BrandingLogoSource.BudgetItem)
+                    {
+                        <strong>Item-specific logo</strong><p class="muted">This overrides the vendor logo.</p>
+                    }
+                    else if (resolvedLogo?.Source == LedgerForge.Web.Documents.BrandingLogoSource.Vendor)
+                    {
+                        <strong>Vendor logo fallback</strong><p class="muted">Upload an item logo to override the vendor branding.</p>
+                    }
+                    else
+                    {
+                        <strong>Generic item mark</strong><p class="muted">No item or linked-vendor logo is configured.</p>
+                    }
+                </div>
+            </div>
+            @if (canEditBranding)
+            {
+                <form method="post" enctype="multipart/form-data" action="/branding-assets/budget-items/@item.Id/logo" class="lf-branding-upload">
+                    @Html.AntiForgeryToken()
+                    <label for="item-logo"><strong>Display logo</strong></label>
+                    <input id="item-logo" type="file" name="logo" accept="image/png,image/jpeg" required />
+                    <small>PNG or JPEG, maximum 5 MB.</small>
+                    <button type="submit">@(hasItemLogo ? "Replace item logo" : "Upload item logo")</button>
+                </form>
+                @if (hasItemLogo)
+                {
+                    <form method="post" action="/branding-assets/budget-items/@item.Id/logo/remove">
+                        @Html.AntiForgeryToken()
+                        <button type="submit" class="danger">Remove item logo</button>
+                        <small class="muted">If the linked vendor has a logo, it will become the fallback automatically.</small>
+                    </form>
+                }
+            }
+        </section>
         <section class="lf-card">
             <h2 class="lf-card-title">Upcoming Renewal</h2>
             @if (item.RenewalDate is not null)
