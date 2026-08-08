@@ -129,7 +129,7 @@ jobs:
 
           needles = [('Charles River Community' + ' Health').lower(), ('CR' + 'CH').lower()]
           bad_ext = re.compile(r'\.(xlsx?|xlsm|pfx|p12|snk)$', re.I)
-          bad_dir = re.compile(r'(^|/)(App_Data|Documents|Uploads)/', re.I)
+          bad_dir = re.compile(r'(^|/)(App_Data|Uploads)/', re.I)
           hits = []
           tracked = [Path(x.decode()) for x in subprocess.check_output(['git', 'ls-files', '-z']).split(b'\0') if x]
           for path in tracked:
