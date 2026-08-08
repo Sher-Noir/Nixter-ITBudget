@@ -12,13 +12,17 @@ public sealed class BudgetAmendmentsController(
     IAuthorizationService authorizationService) : Controller
 {
     [HttpGet("")]
-    public async Task<IActionResult> Index(CancellationToken cancellationToken)
+    public async Task<IActionResult> Index(Guid? budgetItemId, CancellationToken cancellationToken)
     {
         ViewData["CanEdit"] = (await authorizationService.AuthorizeAsync(User, AuthorizationPolicies.EditPlanningBudget)).Succeeded;
         ViewData["CanApprove"] = (await authorizationService.AuthorizeAsync(User, AuthorizationPolicies.Approve)).Succeeded;
         ViewData["ErrorMessage"] = TempData["AmendmentError"] as string;
         ViewData["Saved"] = Request.Query.ContainsKey("saved");
-        return View(await amendmentService.GetAsync(cancellationToken));
+        var snapshot = await amendmentService.GetAsync(cancellationToken);
+        ViewData["SelectedBudgetItemId"] = budgetItemId is not null && snapshot.EligibleBudgetItems.Any(x => x.Id == budgetItemId.Value)
+            ? budgetItemId
+            : null;
+        return View(snapshot);
     }
 
     [Authorize(Policy = AuthorizationPolicies.EditPlanningBudget)]
@@ -28,73 +32,37 @@ public sealed class BudgetAmendmentsController(
         try
         {
             await amendmentService.CreateAsync(budgetItemId, amountDelta, reason, cancellationToken);
-            return RedirectToAction(nameof(Index), new { saved = true });
+            return RedirectToAction(nameof(Index), new { budgetItemId, saved = true });
         }
         catch (KeyNotFoundException) { return NotFound(); }
         catch (Exception exception) when (exception is ArgumentException or InvalidOperationException)
         {
             TempData["AmendmentError"] = exception.Message;
-            return RedirectToAction(nameof(Index));
+            return RedirectToAction(nameof(Index), new { budgetItemId });
         }
     }
 
     [Authorize(Policy = AuthorizationPolicies.EditPlanningBudget)]
     [HttpPost("{id:guid}/submit")]
     public Task<IActionResult> Submit(Guid id, CancellationToken cancellationToken)
-        => Run(id, () => amendmentService.SubmitAsync(id, RequireActor(), cancellationToken));
+        => Run(() => amendmentService.SubmitAsync(id, RequireActor(), cancellationToken));
 
     [Authorize(Policy = AuthorizationPolicies.Approve)]
     [HttpPost("{id:guid}/approve")]
-    public async Task<IActionResult> Approve(Guid id, string? note, CancellationToken cancellationToken)
-    {
-        try
-        {
-            await amendmentService.ApproveAsync(id, RequireActor(), note, cancellationToken);
-            return RedirectToAction(nameof(Index), new { saved = true });
-        }
-        catch (KeyNotFoundException) { return NotFound(); }
-        catch (Exception exception) when (exception is ArgumentException or InvalidOperationException)
-        {
-            TempData["AmendmentError"] = exception.Message;
-            return RedirectToAction(nameof(Index));
-        }
-    }
+    public Task<IActionResult> Approve(Guid id, string? note, CancellationToken cancellationToken)
+        => Run(() => amendmentService.ApproveAsync(id, RequireActor(), note, cancellationToken));
 
     [Authorize(Policy = AuthorizationPolicies.Approve)]
     [HttpPost("{id:guid}/reject")]
-    public async Task<IActionResult> Reject(Guid id, string note, CancellationToken cancellationToken)
-    {
-        try
-        {
-            await amendmentService.RejectAsync(id, RequireActor(), note, cancellationToken);
-            return RedirectToAction(nameof(Index), new { saved = true });
-        }
-        catch (KeyNotFoundException) { return NotFound(); }
-        catch (Exception exception) when (exception is ArgumentException or InvalidOperationException)
-        {
-            TempData["AmendmentError"] = exception.Message;
-            return RedirectToAction(nameof(Index));
-        }
-    }
+    public Task<IActionResult> Reject(Guid id, string note, CancellationToken cancellationToken)
+        => Run(() => amendmentService.RejectAsync(id, RequireActor(), note, cancellationToken));
 
     [Authorize(Policy = AuthorizationPolicies.EditPlanningBudget)]
     [HttpPost("{id:guid}/cancel")]
-    public async Task<IActionResult> Cancel(Guid id, string reason, CancellationToken cancellationToken)
-    {
-        try
-        {
-            await amendmentService.CancelAsync(id, RequireActor(), reason, cancellationToken);
-            return RedirectToAction(nameof(Index), new { saved = true });
-        }
-        catch (KeyNotFoundException) { return NotFound(); }
-        catch (Exception exception) when (exception is ArgumentException or InvalidOperationException)
-        {
-            TempData["AmendmentError"] = exception.Message;
-            return RedirectToAction(nameof(Index));
-        }
-    }
+    public Task<IActionResult> Cancel(Guid id, string reason, CancellationToken cancellationToken)
+        => Run(() => amendmentService.CancelAsync(id, RequireActor(), reason, cancellationToken));
 
-    private async Task<IActionResult> Run(Guid id, Func<Task> action)
+    private async Task<IActionResult> Run(Func<Task> action)
     {
         try
         {
