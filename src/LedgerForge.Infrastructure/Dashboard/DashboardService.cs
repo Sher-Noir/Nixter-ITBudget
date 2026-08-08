@@ -9,6 +9,8 @@ using Microsoft.EntityFrameworkCore;
 
 namespace LedgerForge.Infrastructure.Dashboard;
 
+public sealed record DashboardFilterOption(Guid Id, string Label);
+
 public sealed record DashboardRecentBudgetItem(
     Guid Id,
     string ItemNumber,
@@ -73,7 +75,12 @@ public sealed record DashboardSnapshot(
     IReadOnlyList<DashboardMonthlySpend> MonthlySpend,
     IReadOnlyList<DashboardCategorySpend> CategorySpend,
     IReadOnlyList<DashboardOpenPurchaseOrder> OpenPurchaseOrders,
-    IReadOnlyList<DashboardActivityItem> RecentActivity);
+    IReadOnlyList<DashboardActivityItem> RecentActivity,
+    Guid? SelectedLocationId,
+    Guid? SelectedCategoryId,
+    IReadOnlyList<DashboardFilterOption> FiscalYears,
+    IReadOnlyList<DashboardFilterOption> Locations,
+    IReadOnlyList<DashboardFilterOption> Categories);
 
 public sealed class DashboardService(
     LedgerForgeDbContext dbContext,
@@ -97,31 +104,56 @@ public sealed class DashboardService(
 
     private sealed record ActualRow(DateOnly TransactionDate, decimal Amount, Guid? BudgetItemId);
 
-    public async Task<DashboardSnapshot> GetAsync(CancellationToken cancellationToken = default)
+    public async Task<DashboardSnapshot> GetAsync(
+        Guid? fiscalYearId = null,
+        Guid? locationId = null,
+        Guid? categoryId = null,
+        CancellationToken cancellationToken = default)
     {
-        var fiscalYear = await dbContext.FiscalYears
-            .AsNoTracking()
+        var fiscalYears = await dbContext.FiscalYears.AsNoTracking()
             .OrderByDescending(x => x.IsCurrent)
             .ThenByDescending(x => x.StartDate)
-            .FirstOrDefaultAsync(cancellationToken);
+            .Select(x => new { x.Id, x.DisplayName, x.IsCurrent, x.StartDate, x.EndDate })
+            .ToListAsync(cancellationToken);
+        var fiscalYear = fiscalYearId is not null
+            ? fiscalYears.FirstOrDefault(x => x.Id == fiscalYearId.Value)
+            : fiscalYears.FirstOrDefault();
+        fiscalYear ??= fiscalYears.FirstOrDefault();
+
+        var locationOptions = await dbContext.Locations.AsNoTracking()
+            .Where(x => x.IsActive)
+            .OrderBy(x => x.SortOrder)
+            .ThenBy(x => x.Name)
+            .Select(x => new DashboardFilterOption(x.Id, x.Name))
+            .ToListAsync(cancellationToken);
+        var categoryOptions = await dbContext.InternalCategories.AsNoTracking()
+            .Where(x => x.IsActive)
+            .OrderBy(x => x.SortOrder)
+            .ThenBy(x => x.Name)
+            .Select(x => new DashboardFilterOption(x.Id, x.Name))
+            .ToListAsync(cancellationToken);
+        var fiscalYearOptions = fiscalYears
+            .Select(x => new DashboardFilterOption(x.Id, x.DisplayName + (x.IsCurrent ? " · Current" : string.Empty)))
+            .ToArray();
+
+        var selectedLocationId = locationId is not null && locationOptions.Any(x => x.Id == locationId.Value) ? locationId : null;
+        var selectedCategoryId = categoryId is not null && categoryOptions.Any(x => x.Id == categoryId.Value) ? categoryId : null;
 
         if (fiscalYear is null)
         {
             var importReviewCount = await CountImportReviewAsync(cancellationToken);
-            return Empty(importReviewCount);
+            return Empty(importReviewCount) with
+            {
+                SelectedLocationId = selectedLocationId,
+                SelectedCategoryId = selectedCategoryId,
+                FiscalYears = fiscalYearOptions,
+                Locations = locationOptions,
+                Categories = categoryOptions
+            };
         }
 
-        var actualRows = await dbContext.ActualTransactions
-            .AsNoTracking()
-            .Where(x => x.FiscalYearId == fiscalYear.Id)
-            .Select(x => new ActualRow(x.TransactionDate, x.Amount, x.BudgetItemId))
-            .ToListAsync(cancellationToken);
-        var actual = actualRows.Sum(x => x.Amount);
-        var committed = await outstandingCommitmentService.GetTotalForFiscalYearAsync(fiscalYear.Id, cancellationToken);
         var pendingApprovals = (await approvalQueueService.GetAsync(fiscalYear.Id, cancellationToken)).TotalCount;
-
-        var version = await dbContext.BudgetVersions
-            .AsNoTracking()
+        var version = await dbContext.BudgetVersions.AsNoTracking()
             .Where(x => x.FiscalYearId == fiscalYear.Id)
             .OrderByDescending(x => x.VersionNumber)
             .FirstOrDefaultAsync(cancellationToken);
@@ -133,18 +165,24 @@ public sealed class DashboardService(
             {
                 FiscalYearId = fiscalYear.Id,
                 FiscalYearName = fiscalYear.DisplayName,
-                Committed = committed,
-                Actual = actual,
-                Available = -committed - actual,
-                Forecast = committed + actual,
                 PendingApprovals = pendingApprovals,
+                SelectedLocationId = selectedLocationId,
+                SelectedCategoryId = selectedCategoryId,
+                FiscalYears = fiscalYearOptions,
+                Locations = locationOptions,
+                Categories = categoryOptions,
                 RecentActivity = await LoadRecentActivityAsync(cancellationToken)
             };
         }
 
-        var itemRows = await dbContext.BudgetItems
-            .AsNoTracking()
-            .Where(x => x.FiscalYearId == fiscalYear.Id && x.BudgetVersionId == version.Id)
+        var itemQuery = dbContext.BudgetItems.AsNoTracking()
+            .Where(x => x.FiscalYearId == fiscalYear.Id && x.BudgetVersionId == version.Id);
+        if (selectedLocationId is not null)
+            itemQuery = itemQuery.Where(x => x.LocationId == selectedLocationId.Value);
+        if (selectedCategoryId is not null)
+            itemQuery = itemQuery.Where(x => x.InternalCategoryId == selectedCategoryId.Value);
+
+        var itemRows = await itemQuery
             .Select(x => new BudgetRow(
                 x.Id,
                 x.ItemNumber,
@@ -158,23 +196,39 @@ public sealed class DashboardService(
                 x.LocationId,
                 x.CreatedAtUtc))
             .ToListAsync(cancellationToken);
+        var itemIds = itemRows.Select(x => x.Id).ToArray();
+        var isDimensionFiltered = selectedLocationId is not null || selectedCategoryId is not null;
 
+        var actualQuery = dbContext.ActualTransactions.AsNoTracking()
+            .Where(x => x.FiscalYearId == fiscalYear.Id);
+        if (isDimensionFiltered)
+            actualQuery = actualQuery.Where(x => x.BudgetItemId != null && itemIds.Contains(x.BudgetItemId.Value));
+        var actualRows = await actualQuery
+            .Select(x => new ActualRow(x.TransactionDate, x.Amount, x.BudgetItemId))
+            .ToListAsync(cancellationToken);
+
+        var actual = actualRows.Sum(x => x.Amount);
+        var committed = isDimensionFiltered
+            ? await GetScopedCommitmentAsync(fiscalYear.Id, itemIds, cancellationToken)
+            : await outstandingCommitmentService.GetTotalForFiscalYearAsync(fiscalYear.Id, cancellationToken);
         var planned = itemRows.Sum(x => x.PlannedTotal);
         var approved = itemRows.Sum(x => x.ApprovedTotal ?? 0m);
         var revised = itemRows.Sum(x => x.RevisedTotal ?? x.ApprovedTotal ?? x.PlannedTotal);
         var available = revised - committed - actual;
-        var publishedForecast = await forecastService.GetLatestPublishedTotalAsync(fiscalYear.Id, version.Id, cancellationToken);
+        var publishedForecast = isDimensionFiltered
+            ? await GetScopedPublishedForecastAsync(fiscalYear.Id, version.Id, itemIds, cancellationToken)
+            : await forecastService.GetLatestPublishedTotalAsync(fiscalYear.Id, version.Id, cancellationToken);
         var forecast = publishedForecast ?? Math.Max(revised, committed + actual);
 
         var today = DateOnly.FromDateTime(DateTime.UtcNow);
         var renewalCutoff = today.AddDays(30);
-        var renewalMatches = (await renewalProjectionService.GetForFiscalYearAsync(fiscalYear.Id, cancellationToken))
-            .Where(x => x.RenewalDate >= today && x.RenewalDate <= renewalCutoff)
-            .OrderBy(x => x.RenewalDate)
-            .ToArray();
+        var renewalQuery = (await renewalProjectionService.GetForFiscalYearAsync(fiscalYear.Id, cancellationToken))
+            .Where(x => x.RenewalDate >= today && x.RenewalDate <= renewalCutoff);
+        if (isDimensionFiltered)
+            renewalQuery = renewalQuery.Where(x => x.BudgetItemId is not null && itemIds.Contains(x.BudgetItemId.Value));
+        var renewalMatches = renewalQuery.OrderBy(x => x.RenewalDate).ToArray();
 
-        var upcomingRenewals = renewalMatches
-            .Take(5)
+        var upcomingRenewals = renewalMatches.Take(5)
             .Select(x => new DashboardRenewalItem(
                 x.Id,
                 x.Source,
@@ -214,6 +268,8 @@ public sealed class DashboardService(
             itemRows.ToDictionary(x => x.Id, x => (x.InternalCategoryId, x.LocationId)),
             categoryNames,
             locationNames,
+            itemIds,
+            isDimensionFiltered,
             cancellationToken);
 
         return new(
@@ -238,7 +294,65 @@ public sealed class DashboardService(
             monthlySpend,
             categorySpend,
             openPurchaseOrders,
-            await LoadRecentActivityAsync(cancellationToken));
+            await LoadRecentActivityAsync(cancellationToken),
+            selectedLocationId,
+            selectedCategoryId,
+            fiscalYearOptions,
+            locationOptions,
+            categoryOptions);
+    }
+
+    private async Task<decimal> GetScopedCommitmentAsync(
+        Guid fiscalYearId,
+        IReadOnlyCollection<Guid> itemIds,
+        CancellationToken cancellationToken)
+    {
+        if (itemIds.Count == 0) return 0m;
+        var ids = itemIds.ToArray();
+        var issuedLineTotal = await (
+            from line in dbContext.PurchaseOrderLines.AsNoTracking()
+            join order in dbContext.PurchaseOrders.AsNoTracking() on line.PurchaseOrderId equals order.Id
+            where order.FiscalYearId == fiscalYearId &&
+                  order.State == PurchaseOrderState.Issued &&
+                  line.BudgetItemId != null &&
+                  ids.Contains(line.BudgetItemId.Value)
+            select (decimal?)line.LineTotal)
+            .SumAsync(cancellationToken) ?? 0m;
+
+        var postedAllocationTotal = await (
+            from allocation in dbContext.InvoiceAllocations.AsNoTracking()
+            join invoice in dbContext.Invoices.AsNoTracking() on allocation.InvoiceId equals invoice.Id
+            where invoice.FiscalYearId == fiscalYearId &&
+                  invoice.State == InvoiceState.Posted &&
+                  allocation.BudgetItemId != null &&
+                  ids.Contains(allocation.BudgetItemId.Value)
+            select (decimal?)allocation.Amount)
+            .SumAsync(cancellationToken) ?? 0m;
+
+        return Math.Max(0m, issuedLineTotal - postedAllocationTotal);
+    }
+
+    private async Task<decimal?> GetScopedPublishedForecastAsync(
+        Guid fiscalYearId,
+        Guid budgetVersionId,
+        IReadOnlyCollection<Guid> itemIds,
+        CancellationToken cancellationToken)
+    {
+        if (itemIds.Count == 0) return null;
+        var scenarioId = await dbContext.ForecastScenarios.AsNoTracking()
+            .Where(x => x.FiscalYearId == fiscalYearId &&
+                        x.BudgetVersionId == budgetVersionId &&
+                        x.State == ForecastScenarioState.Published)
+            .OrderByDescending(x => x.PublishedAtUtc)
+            .ThenByDescending(x => x.AsOfDate)
+            .Select(x => (Guid?)x.Id)
+            .FirstOrDefaultAsync(cancellationToken);
+        if (scenarioId is null) return null;
+
+        var ids = itemIds.ToArray();
+        return await dbContext.ForecastLines.AsNoTracking()
+            .Where(x => x.ForecastScenarioId == scenarioId.Value && ids.Contains(x.BudgetItemId))
+            .SumAsync(x => (decimal?)x.ForecastTotal, cancellationToken);
     }
 
     private static IReadOnlyList<DashboardMonthlySpend> BuildMonthlySpend(
@@ -305,6 +419,8 @@ public sealed class DashboardService(
         IReadOnlyDictionary<Guid, (Guid? CategoryId, Guid? LocationId)> itemDimensions,
         IReadOnlyDictionary<Guid, string> categoryNames,
         IReadOnlyDictionary<Guid, string> locationNames,
+        IReadOnlyCollection<Guid> scopedItemIds,
+        bool isDimensionFiltered,
         CancellationToken cancellationToken)
     {
         var orders = await dbContext.PurchaseOrders.AsNoTracking()
@@ -313,7 +429,7 @@ public sealed class DashboardService(
                         x.State != PurchaseOrderState.Cancelled &&
                         x.State != PurchaseOrderState.Rejected)
             .OrderByDescending(x => x.CreatedAtUtc)
-            .Take(6)
+            .Take(20)
             .ToListAsync(cancellationToken);
         if (orders.Count == 0) return [];
 
@@ -322,6 +438,23 @@ public sealed class DashboardService(
             .Where(x => orderIds.Contains(x.PurchaseOrderId))
             .Select(x => new { x.PurchaseOrderId, x.LineTotal, x.BudgetItemId, x.LocationId })
             .ToListAsync(cancellationToken);
+        if (isDimensionFiltered)
+        {
+            var scopedIds = scopedItemIds.ToHashSet();
+            var scopedOrderIds = lines
+                .Where(x => x.BudgetItemId is not null && scopedIds.Contains(x.BudgetItemId.Value))
+                .Select(x => x.PurchaseOrderId)
+                .ToHashSet();
+            orders = orders.Where(x => scopedOrderIds.Contains(x.Id)).Take(6).ToList();
+        }
+        else
+        {
+            orders = orders.Take(6).ToList();
+        }
+        if (orders.Count == 0) return [];
+
+        var selectedOrderIds = orders.Select(x => x.Id).ToHashSet();
+        lines = lines.Where(x => selectedOrderIds.Contains(x.PurchaseOrderId)).ToList();
         var vendorIds = orders.Select(x => x.VendorId).Distinct().ToArray();
         var vendors = await dbContext.Vendors.AsNoTracking()
             .Where(x => vendorIds.Contains(x.Id))
@@ -397,6 +530,11 @@ public sealed class DashboardService(
             [],
             [],
             [],
+            [],
+            [],
+            [],
+            null,
+            null,
             [],
             [],
             []);
