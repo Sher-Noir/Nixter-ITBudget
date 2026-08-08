@@ -17,12 +17,26 @@ public sealed class OrganizationSettingsStore
 
     public OrganizationSettingsStore(
         IWebHostEnvironment environment,
+        IConfiguration configuration,
         IOptions<BrandingOptions> defaults,
         ILogger<OrganizationSettingsStore> logger)
     {
         _defaults = ValidateAndNormalize(Clone(defaults.Value));
         _logger = logger;
-        _settingsPath = Path.Combine(environment.ContentRootPath, "App_Data", "organization-settings.json");
+
+        // Production deployments grant the app-pool Modify access to the configured
+        // non-web-root document storage. Keep mutable host-local settings underneath
+        // that writable root instead of the read-only application installation tree.
+        var documentStorage = configuration["Documents:StoragePath"];
+        var settingsRoot = string.IsNullOrWhiteSpace(documentStorage)
+            ? Path.Combine(environment.ContentRootPath, "App_Data")
+            : Path.Combine(Path.GetFullPath(Environment.ExpandEnvironmentVariables(documentStorage.Trim())), ".ledgerforge");
+
+        var webRoot = environment.WebRootPath;
+        if (!string.IsNullOrWhiteSpace(webRoot) && IsSameOrChildPath(settingsRoot, webRoot))
+            throw new InvalidOperationException("Organization settings storage cannot be inside the public web root.");
+
+        _settingsPath = Path.Combine(settingsRoot, "organization-settings.json");
     }
 
     public async Task<BrandingOptions> GetAsync(CancellationToken cancellationToken = default)
@@ -155,5 +169,12 @@ public sealed class OrganizationSettingsStore
         if (!normalized.StartsWith("/", StringComparison.Ordinal) || normalized.StartsWith("//", StringComparison.Ordinal))
             throw new ArgumentException($"{fieldName} must be an application-local path beginning with '/'.");
         return normalized;
+    }
+
+    private static bool IsSameOrChildPath(string candidate, string parent)
+    {
+        var candidateFull = Path.GetFullPath(candidate).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar) + Path.DirectorySeparatorChar;
+        var parentFull = Path.GetFullPath(parent).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar) + Path.DirectorySeparatorChar;
+        return candidateFull.StartsWith(parentFull, StringComparison.OrdinalIgnoreCase);
     }
 }
