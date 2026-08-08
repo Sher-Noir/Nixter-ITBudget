@@ -1,3 +1,4 @@
+using LedgerForge.Infrastructure.MasterData;
 using LedgerForge.Infrastructure.Procurement;
 using LedgerForge.Web.Security;
 using Microsoft.AspNetCore.Authorization;
@@ -9,6 +10,7 @@ namespace LedgerForge.Web.Controllers;
 [Route("vendors")]
 public sealed class VendorsController(
     ProcurementService procurementService,
+    ConfigurationDeletionService deletionService,
     IAuthorizationService authorizationService) : Controller
 {
     [HttpGet("")]
@@ -16,6 +18,7 @@ public sealed class VendorsController(
     {
         ViewData["CanManageProcurement"] = (await authorizationService.AuthorizeAsync(User, AuthorizationPolicies.ManageProcurement)).Succeeded;
         ViewData["ErrorMessage"] = TempData["VendorError"] as string;
+        ViewData["Notice"] = TempData["VendorNotice"] as string;
         ViewData["Saved"] = Request.Query.ContainsKey("saved");
         return View(await procurementService.ListVendorsAsync(cancellationToken));
     }
@@ -57,6 +60,27 @@ public sealed class VendorsController(
         {
             await procurementService.UpdateVendorAsync(id, name, contactName, email, phone, isActive, cancellationToken);
             return RedirectToAction(nameof(Index), new { saved = true });
+        }
+        catch (KeyNotFoundException)
+        {
+            return NotFound();
+        }
+        catch (Exception exception) when (exception is ArgumentException or InvalidOperationException)
+        {
+            TempData["VendorError"] = exception.Message;
+            return RedirectToAction(nameof(Index));
+        }
+    }
+
+    [Authorize(Policy = AuthorizationPolicies.ManageProcurement)]
+    [HttpPost("{id:guid}/delete")]
+    public async Task<IActionResult> Delete(Guid id, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var result = await deletionService.DeleteVendorAsync(id, cancellationToken);
+            TempData["VendorNotice"] = result.Message;
+            return RedirectToAction(nameof(Index));
         }
         catch (KeyNotFoundException)
         {
