@@ -7,12 +7,15 @@ namespace LedgerForge.Web.Controllers;
 
 [Authorize(Policy = AuthorizationPolicies.Administration)]
 [Route("admin/finance")]
-public sealed class AdministrationFinanceController(FinanceAdministrationService service) : Controller
+public sealed class AdministrationFinanceController(
+    FinanceAdministrationService service,
+    ConfigurationDeletionService deletionService) : Controller
 {
     [HttpGet("")]
     public async Task<IActionResult> Index(CancellationToken cancellationToken)
     {
         ViewData["ErrorMessage"] = TempData["FinanceError"] as string;
+        ViewData["Notice"] = TempData["FinanceNotice"] as string;
         ViewData["Saved"] = Request.Query.ContainsKey("saved");
         return View(await service.GetAsync(cancellationToken));
     }
@@ -52,6 +55,26 @@ public sealed class AdministrationFinanceController(FinanceAdministrationService
         {
             await service.UpdateAccountAsync(id, name, description, financeCategoryId, sortOrder, isActive, cancellationToken);
             return RedirectToAction(nameof(Index), new { saved = true });
+        }
+        catch (KeyNotFoundException)
+        {
+            return NotFound();
+        }
+        catch (Exception exception) when (exception is ArgumentException or InvalidOperationException)
+        {
+            TempData["FinanceError"] = exception.Message;
+            return RedirectToAction(nameof(Index));
+        }
+    }
+
+    [HttpPost("accounts/{id:guid}/delete")]
+    public async Task<IActionResult> DeleteAccount(Guid id, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var result = await deletionService.DeleteFinanceAccountAsync(id, cancellationToken);
+            TempData["FinanceNotice"] = result.Message;
+            return RedirectToAction(nameof(Index));
         }
         catch (KeyNotFoundException)
         {
