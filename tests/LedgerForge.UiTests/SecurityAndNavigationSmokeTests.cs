@@ -71,10 +71,10 @@ public sealed class SecurityAndNavigationSmokeTests
 
         Assert.Contains("action=\"/search\"", layout, StringComparison.Ordinal);
         Assert.Contains("name=\"q\"", layout, StringComparison.Ordinal);
-        Assert.Contains("Budget Items", search, StringComparison.Ordinal);
-        Assert.Contains("Purchase Orders", search, StringComparison.Ordinal);
-        Assert.Contains("Invoices", search, StringComparison.Ordinal);
-        Assert.Contains("Contracts", search, StringComparison.Ordinal);
+        Assert.Contains("\"Budget item\"", search, StringComparison.Ordinal);
+        Assert.Contains("\"Purchase order\"", search, StringComparison.Ordinal);
+        Assert.Contains("\"Invoice\"", search, StringComparison.Ordinal);
+        Assert.Contains("\"Contract\"", search, StringComparison.Ordinal);
     }
 
     [Fact]
