@@ -3,7 +3,10 @@ using LedgerForge.Infrastructure.Budgeting;
 namespace LedgerForge.Web.Models.Budgeting;
 
 public sealed record BudgetItemEditViewModel(
-    BudgetItemEditSnapshot Item,
+    BudgetItemWorkspaceSnapshot Workspace,
     bool CanEdit,
     string? ErrorMessage = null,
-    bool Saved = false);
+    bool Saved = false)
+{
+    public BudgetItemEditSnapshot Item => Workspace.Item;
+}
