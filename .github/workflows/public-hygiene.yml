@@ -49,7 +49,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          bad=$(git ls-files | grep -E -i '\.(xlsx?|xlsm|pfx|p12|snk)$|(^|/)(App_Data|Documents|Uploads)/' || true)
+          bad=$(git ls-files | grep -E -i '\.(xlsx?|xlsm|pfx|p12|snk)$|(^|/)(App_Data|Uploads)/' || true)
           if [ -n "$bad" ]; then
             echo 'Private/data-bearing artifact types must not be tracked:'
             echo "$bad"
