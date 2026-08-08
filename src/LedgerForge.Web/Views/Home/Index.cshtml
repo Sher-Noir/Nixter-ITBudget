@@ -103,7 +103,7 @@
                         var labelX = x + barWidth;
                         <rect class="lf-svg-planned" x="@SvgNumber(x)" y="@SvgNumber(plannedY)" width="@SvgNumber(barWidth)" height="@SvgNumber(plannedHeight)" rx="2" />
                         <rect class="lf-svg-actual" x="@SvgNumber(actualX)" y="@SvgNumber(actualY)" width="@SvgNumber(barWidth)" height="@SvgNumber(actualHeight)" rx="2" />
-                        <text class="lf-svg-label" x="@SvgNumber(labelX)" y="169" text-anchor="middle">@month.Label</text>
+                        @Html.Raw("<text class=\"lf-svg-label\" x=\"" + SvgNumber(labelX) + "\" y=\"169\" text-anchor=\"middle\">" + month.Label + "</text>")
                     }
                 </svg>
             </div>
@@ -134,8 +134,8 @@
                         <circle class="lf-donut-segment @colors[index]" cx="55" cy="55" r="42" transform="rotate(-90 55 55)" stroke-dasharray="@dashArray" stroke-dashoffset="@dashOffset" />
                         offset += dash;
                     }
-                    <text class="lf-donut-value" x="55" y="53" text-anchor="middle">@categoryTotal.ToString("C0")</text>
-                    <text class="lf-donut-caption" x="55" y="66" text-anchor="middle">@(categoryUsesActual ? "Total Actual" : "Total Budget")</text>
+                    @Html.Raw("<text class=\"lf-donut-value\" x=\"55\" y=\"53\" text-anchor=\"middle\">" + categoryTotal.ToString("C0") + "</text>")
+                    @Html.Raw("<text class=\"lf-donut-caption\" x=\"55\" y=\"66\" text-anchor=\"middle\">" + (categoryUsesActual ? "Total Actual" : "Total Budget") + "</text>")
                 </svg>
                 <div class="lf-category-legend">
                     @for (var index = 0; index < categoryRows.Length; index++)
