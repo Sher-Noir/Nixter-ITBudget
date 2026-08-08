@@ -9,6 +9,8 @@
 .lf-item-kpis .lf-kpi-value { font-size: 1.02rem; }
 .lf-item-kpis .lf-kpi-note { font-size: .66rem; }
 .lf-item-meta-secondary { margin-top: .55rem; padding-top: .55rem; }
+.lf-form-grid-3 { grid-template-columns: repeat(3,minmax(0,1fr)); }
+.lf-form-grid-3 .lf-span-all { grid-column: 1 / -1; }
 .lf-financial-bars { display: grid; gap: .42rem; }
 .lf-financial-bars > div {
   display: flex;
@@ -78,10 +80,17 @@
 @media (max-width: 1450px) {
   .lf-item-kpis { grid-template-columns: repeat(3,minmax(0,1fr)); }
 }
+@media (max-width: 1080px) {
+  .lf-form-grid-3 { grid-template-columns: repeat(2,minmax(0,1fr)); }
+}
 @media (max-width: 880px) {
   .lf-related-grid { grid-template-columns: 1fr; }
   .lf-related-grid > section:last-child { grid-column: auto; }
   .lf-item-kpis { grid-template-columns: repeat(2,minmax(0,1fr)); }
+}
+@media (max-width: 620px) {
+  .lf-form-grid-3 { grid-template-columns: 1fr; }
+  .lf-form-grid-3 .lf-span-all { grid-column: auto; }
 }
 @media (max-width: 560px) {
   .lf-item-kpis { grid-template-columns: 1fr; }
