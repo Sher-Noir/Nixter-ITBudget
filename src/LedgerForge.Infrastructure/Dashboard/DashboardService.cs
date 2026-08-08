@@ -27,10 +27,7 @@ public sealed record DashboardRenewalItem(
     DateOnly RenewalDate,
     decimal EstimatedAmount);
 
-public sealed record DashboardMonthlySpend(
-    string Label,
-    decimal Planned,
-    decimal Actual);
+public sealed record DashboardMonthlySpend(string Label, decimal Planned, decimal Actual);
 
 public sealed record DashboardCategorySpend(
     string Category,
@@ -85,6 +82,21 @@ public sealed class DashboardService(
     ApprovalQueueService approvalQueueService,
     RenewalProjectionService renewalProjectionService)
 {
+    private sealed record BudgetRow(
+        Guid Id,
+        string ItemNumber,
+        string Description,
+        BudgetItemStatus Status,
+        decimal PlannedTotal,
+        decimal? ApprovedTotal,
+        decimal? RevisedTotal,
+        DateOnly? EstimatedPurchaseDate,
+        Guid? InternalCategoryId,
+        Guid? LocationId,
+        DateTimeOffset CreatedAtUtc);
+
+    private sealed record ActualRow(DateOnly TransactionDate, decimal Amount, Guid? BudgetItemId);
+
     public async Task<DashboardSnapshot> GetAsync(CancellationToken cancellationToken = default)
     {
         var fiscalYear = await dbContext.FiscalYears
@@ -102,7 +114,7 @@ public sealed class DashboardService(
         var actualRows = await dbContext.ActualTransactions
             .AsNoTracking()
             .Where(x => x.FiscalYearId == fiscalYear.Id)
-            .Select(x => new { x.TransactionDate, x.Amount, x.BudgetItemId })
+            .Select(x => new ActualRow(x.TransactionDate, x.Amount, x.BudgetItemId))
             .ToListAsync(cancellationToken);
         var actual = actualRows.Sum(x => x.Amount);
         var committed = await outstandingCommitmentService.GetTotalForFiscalYearAsync(fiscalYear.Id, cancellationToken);
@@ -133,8 +145,7 @@ public sealed class DashboardService(
         var itemRows = await dbContext.BudgetItems
             .AsNoTracking()
             .Where(x => x.FiscalYearId == fiscalYear.Id && x.BudgetVersionId == version.Id)
-            .Select(x => new
-            {
+            .Select(x => new BudgetRow(
                 x.Id,
                 x.ItemNumber,
                 x.Description,
@@ -145,8 +156,7 @@ public sealed class DashboardService(
                 x.EstimatedPurchaseDate,
                 x.InternalCategoryId,
                 x.LocationId,
-                x.CreatedAtUtc
-            })
+                x.CreatedAtUtc))
             .ToListAsync(cancellationToken);
 
         var planned = itemRows.Sum(x => x.PlannedTotal);
@@ -231,61 +241,49 @@ public sealed class DashboardService(
             await LoadRecentActivityAsync(cancellationToken));
     }
 
-    private static IReadOnlyList<DashboardMonthlySpend> BuildMonthlySpend<TItem, TActual>(
+    private static IReadOnlyList<DashboardMonthlySpend> BuildMonthlySpend(
         DateOnly startDate,
         DateOnly endDate,
-        IReadOnlyList<TItem> rawItems,
-        IReadOnlyList<TActual> rawActuals)
+        IReadOnlyList<BudgetRow> items,
+        IReadOnlyList<ActualRow> actuals)
     {
-        dynamic items = rawItems;
-        dynamic actuals = rawActuals;
         var result = new List<DashboardMonthlySpend>();
         var cursor = new DateOnly(startDate.Year, startDate.Month, 1);
         var last = new DateOnly(endDate.Year, endDate.Month, 1);
         while (cursor <= last)
         {
-            var year = cursor.Year;
-            var month = cursor.Month;
-            decimal planned = 0m;
-            decimal actual = 0m;
-            foreach (var item in items)
-            {
-                DateOnly? date = item.EstimatedPurchaseDate;
-                if (date is not null && date.Value.Year == year && date.Value.Month == month)
-                    planned += item.RevisedTotal ?? item.ApprovedTotal ?? item.PlannedTotal;
-            }
-            foreach (var row in actuals)
-            {
-                DateOnly date = row.TransactionDate;
-                if (date.Year == year && date.Month == month)
-                    actual += row.Amount;
-            }
+            var planned = items
+                .Where(x => x.EstimatedPurchaseDate is not null &&
+                            x.EstimatedPurchaseDate.Value.Year == cursor.Year &&
+                            x.EstimatedPurchaseDate.Value.Month == cursor.Month)
+                .Sum(x => x.RevisedTotal ?? x.ApprovedTotal ?? x.PlannedTotal);
+            var actual = actuals
+                .Where(x => x.TransactionDate.Year == cursor.Year && x.TransactionDate.Month == cursor.Month)
+                .Sum(x => x.Amount);
             result.Add(new DashboardMonthlySpend(cursor.ToString("MMM"), planned, actual));
             cursor = cursor.AddMonths(1);
         }
         return result;
     }
 
-    private static IReadOnlyList<DashboardCategorySpend> BuildCategorySpend<TItem, TActual>(
-        IReadOnlyList<TItem> rawItems,
-        IReadOnlyList<TActual> rawActuals,
+    private static IReadOnlyList<DashboardCategorySpend> BuildCategorySpend(
+        IReadOnlyList<BudgetRow> items,
+        IReadOnlyList<ActualRow> actuals,
         IReadOnlyDictionary<Guid, string> itemCategory)
     {
-        dynamic items = rawItems;
-        dynamic actuals = rawActuals;
         var budget = new Dictionary<string, decimal>(StringComparer.OrdinalIgnoreCase);
         var spend = new Dictionary<string, decimal>(StringComparer.OrdinalIgnoreCase);
 
         foreach (var item in items)
         {
-            Guid id = item.Id;
-            var category = itemCategory.GetValueOrDefault(id, "Unassigned");
+            var category = itemCategory.GetValueOrDefault(item.Id, "Unassigned");
             budget[category] = budget.GetValueOrDefault(category) + (item.RevisedTotal ?? item.ApprovedTotal ?? item.PlannedTotal);
         }
         foreach (var row in actuals)
         {
-            Guid? budgetItemId = row.BudgetItemId;
-            var category = budgetItemId is not null ? itemCategory.GetValueOrDefault(budgetItemId.Value, "Unassigned") : "Unassigned";
+            var category = row.BudgetItemId is not null
+                ? itemCategory.GetValueOrDefault(row.BudgetItemId.Value, "Unassigned")
+                : "Unassigned";
             spend[category] = spend.GetValueOrDefault(category) + row.Amount;
         }
 
@@ -341,7 +339,7 @@ public sealed class DashboardService(
                 .Distinct(StringComparer.OrdinalIgnoreCase)
                 .ToArray();
             var locations = orderLines
-                .Select(x => x.LocationId ?? (x.BudgetItemId is not null && itemDimensions.TryGetValue(x.BudgetItemId.Value, out var dims) ? dims.LocationId : null))
+                .Select(x => x.LocationId ?? (x.BudgetItemId is not null && itemDimensions.TryGetValue(x.BudgetItemId.Value, out var dimensions) ? dimensions.LocationId : null))
                 .Where(x => x is not null && locationNames.ContainsKey(x.Value))
                 .Select(x => locationNames[x!.Value])
                 .Distinct(StringComparer.OrdinalIgnoreCase)
