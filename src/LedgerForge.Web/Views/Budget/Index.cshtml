@@ -3,6 +3,7 @@
 @{
     ViewData["Title"] = "Budget";
     var snapshot = Model.Snapshot;
+    var canManageImports = ViewData["CanManageImports"] as bool? == true;
     var sectionFilter = Context.Request.Query["section"].ToString();
     var categoryFilter = Context.Request.Query["category"].ToString();
     var locationFilter = Context.Request.Query["location"].ToString();
@@ -27,11 +28,11 @@
     Guid.TryParse(Context.Request.Query["itemId"].ToString(), out var selectedItemId);
     var selectedItem = selectedItemId == Guid.Empty ? null : snapshot.Items.FirstOrDefault(x => x.Id == selectedItemId);
 
-    var sections = snapshot.Items.Select(x => x.BudgetSectionName).Where(x => !string.IsNullOrWhiteSpace(x)).Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(x => x).ToArray();
-    var categories = snapshot.Items.Select(x => x.InternalCategoryName).Where(x => !string.IsNullOrWhiteSpace(x)).Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(x => x).ToArray();
-    var locations = snapshot.Items.Select(x => x.LocationName).Where(x => !string.IsNullOrWhiteSpace(x)).Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(x => x).ToArray();
-    var vendors = snapshot.Items.Select(x => x.VendorName).Where(x => !string.IsNullOrWhiteSpace(x)).Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(x => x).ToArray();
-    var needs = snapshot.Items.Select(x => x.NeedLevelName).Where(x => !string.IsNullOrWhiteSpace(x)).Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(x => x).ToArray();
+    var sections = snapshot.Items.Select(x => x.BudgetSectionName).OfType<string>().Where(x => !string.IsNullOrWhiteSpace(x)).Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(x => x).ToArray();
+    var categories = snapshot.Items.Select(x => x.InternalCategoryName).OfType<string>().Where(x => !string.IsNullOrWhiteSpace(x)).Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(x => x).ToArray();
+    var locations = snapshot.Items.Select(x => x.LocationName).OfType<string>().Where(x => !string.IsNullOrWhiteSpace(x)).Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(x => x).ToArray();
+    var vendors = snapshot.Items.Select(x => x.VendorName).OfType<string>().Where(x => !string.IsNullOrWhiteSpace(x)).Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(x => x).ToArray();
+    var needs = snapshot.Items.Select(x => x.NeedLevelName).OfType<string>().Where(x => !string.IsNullOrWhiteSpace(x)).Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(x => x).ToArray();
 
     var displayedPlanned = filteredItems.Sum(x => x.PlannedTotal);
     var displayedApproved = filteredItems.Sum(x => x.ApprovedTotal ?? 0m);
@@ -121,7 +122,10 @@
                     {
                         <a class="button primary" href="#new-budget-item"><span aria-hidden="true">＋</span> New Item</a>
                     }
-                    <a class="button" href="/imports"><span aria-hidden="true">⇩</span> Import</a>
+                    @if (canManageImports)
+                    {
+                        <a class="button" href="/imports"><span aria-hidden="true">⇩</span> Import</a>
+                    }
                     @if (snapshot.SelectedFiscalYearId is not null)
                     {
                         <a class="button" href="/exports/budget.csv?fiscalYearId=@snapshot.SelectedFiscalYearId"><span aria-hidden="true">⇩</span> Export</a>
