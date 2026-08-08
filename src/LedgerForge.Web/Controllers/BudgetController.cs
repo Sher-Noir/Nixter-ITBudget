@@ -1,6 +1,7 @@
 using LedgerForge.Domain.Budgeting;
 using LedgerForge.Infrastructure.Approvals;
 using LedgerForge.Infrastructure.Budgeting;
+using LedgerForge.Web.Documents;
 using LedgerForge.Web.Models.Budgeting;
 using LedgerForge.Web.Security;
 using Microsoft.AspNetCore.Authorization;
@@ -14,7 +15,9 @@ public sealed class BudgetController(
     BudgetPlanningService planningService,
     BudgetItemWorkspaceService workspaceService,
     ApprovalQueueService approvalQueueService,
-    IAuthorizationService authorizationService) : Controller
+    IAuthorizationService authorizationService,
+    IWebHostEnvironment environment,
+    IConfiguration configuration) : Controller
 {
     [HttpGet("")]
     public async Task<IActionResult> Index(
@@ -81,8 +84,20 @@ public sealed class BudgetController(
         ViewData["CanSubmit"] = canEditRole && !snapshot.VersionLocked && workflowEditable;
         ViewData["Submitted"] = Request.Query.ContainsKey("submitted");
 
+        var configuredLimit = configuration.GetValue<long?>("Documents:MaxFileSizeBytes");
+        var configuredStoragePath = configuration.GetValue<string>("Documents:StoragePath");
+        var documentStore = new PhysicalDocumentStore(
+            environment.ContentRootPath,
+            configuredStoragePath,
+            configuredLimit is > 0 ? configuredLimit.Value : 25L * 1024 * 1024);
+        var documents = (await documentStore.ListAsync(cancellationToken))
+            .Where(x => string.Equals(x.LinkedEntityType, nameof(BudgetItem), StringComparison.OrdinalIgnoreCase) && x.LinkedEntityId == id)
+            .OrderByDescending(x => x.CreatedAtUtc)
+            .ToArray();
+
         return View("Item", new BudgetItemEditViewModel(
             workspace,
+            documents,
             canEditRole && !snapshot.VersionLocked && workflowEditable,
             TempData["BudgetItemError"] as string,
             Request.Query.ContainsKey("saved")));
