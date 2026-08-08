@@ -21,6 +21,7 @@
     var vendor = workspace.PurchaseOrders.FirstOrDefault()?.Vendor;
     var variance = workspace.CurrentBudget - workspace.Actual;
     var itemMark = item.ItemNumber.Length >= 2 ? item.ItemNumber[..2].ToUpperInvariant() : "BI";
+    var documentUploadUrl = $"/documents?linkedEntityType=BudgetItem&linkedEntityId={item.Id}";
 }
 
 <div class="lf-page-header">
@@ -86,7 +87,7 @@
     <a class="active" href="#overview">Overview</a>
     <a href="#purchase-orders">Purchase Orders (@workspace.PurchaseOrders.Count)</a>
     <a href="#actuals-invoices">Actuals &amp; Invoices (@(workspace.Actuals.Count + workspace.Invoices.Count))</a>
-    <a href="/documents">Documents</a>
+    <a href="#documents">Documents (@Model.Documents.Count)</a>
     <a href="#approval-history">Approval / Activity (@workspace.Activity.Count)</a>
     <a href="#edit-item">Edit</a>
 </nav>
@@ -157,6 +158,28 @@
                         <tr><td><strong>@(actualRow.SourceReference ?? "Actual")</strong><div class="muted">@actualRow.Description</div></td><td>@actualRow.TransactionDate.ToString("MMM d, yyyy")</td><td><span class="badge lf-badge-success">Actual</span></td><td class="lf-number">@actualRow.Amount.ToString("C2")</td></tr>
                     }
                     </tbody></table></div>
+                }
+            </section>
+
+            <section id="documents" class="lf-card">
+                <div class="lf-panel-header"><h2>Documents (@Model.Documents.Count)</h2><a href="@documentUploadUrl">Upload / View all</a></div>
+                @if (Model.Documents.Count == 0)
+                {
+                    <div class="lf-empty-state lf-compact-empty"><p>No documents are linked to this budget item.</p></div>
+                }
+                else
+                {
+                    <div class="lf-document-list">
+                    @foreach (var document in Model.Documents.Take(6))
+                    {
+                        var latestVersion = document.Versions.OrderByDescending(x => x.VersionNumber).FirstOrDefault();
+                        <a href="/documents/@document.Id" class="lf-document-row">
+                            <span class="lf-document-icon">□</span>
+                            <span><strong>@document.Title</strong><small>@(latestVersion?.OriginalFileName ?? "Stored document")</small></span>
+                            <time>@document.CreatedAtUtc.ToLocalTime().ToString("MMM d, yyyy")</time>
+                        </a>
+                    }
+                    </div>
                 }
             </section>
 
@@ -243,7 +266,8 @@
             <div class="lf-item-quick-actions">
                 <a class="button" href="/purchase-orders">Create / View Purchase Order</a>
                 <a class="button" href="/invoices">Record / View Invoice</a>
-                <a class="button" href="/documents">Upload Document</a>
+                <a class="button" href="@documentUploadUrl">Upload Document</a>
+                <a class="button" href="/budget/amendments?budgetItemId=@item.Id">Create Amendment</a>
                 <a class="button" href="/renewals">Open Renewal Center</a>
             </div>
         </section>
