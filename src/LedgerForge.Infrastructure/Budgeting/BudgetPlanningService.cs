@@ -19,7 +19,22 @@ public sealed record BudgetItemSummary(
     decimal? RevisedTotal,
     DateOnly? EstimatedPurchaseDate,
     DateOnly? RenewalDate,
-    BudgetItemStatus Status);
+    BudgetItemStatus Status,
+    Guid? BudgetSectionId,
+    string? BudgetSectionName,
+    Guid? FinanceTypeId,
+    string? FinanceTypeName,
+    Guid? DepartmentId,
+    string? DepartmentName,
+    Guid? LocationId,
+    string? LocationName,
+    Guid? NeedLevelId,
+    string? NeedLevelName,
+    Guid? InternalCategoryId,
+    string? InternalCategoryName,
+    Guid? FrequencyId,
+    string? FrequencyName,
+    string? VendorName);
 
 public sealed record BudgetPlanningSnapshot(
     IReadOnlyList<FiscalYearSummary> FiscalYears,
@@ -88,12 +103,13 @@ public sealed class BudgetPlanningService(
         if (selectedVersion is null)
             return new(fiscalYears, selectedFiscalYearId, versions, null, false, [], 0m, 0m, 0m);
 
-        var items = await dbContext.BudgetItems
+        var itemRows = await dbContext.BudgetItems
             .AsNoTracking()
             .Where(x => x.FiscalYearId == selectedFiscalYearId && x.BudgetVersionId == selectedVersion.Id)
             .OrderBy(x => x.ItemNumber)
             .ThenBy(x => x.Description)
-            .Select(x => new BudgetItemSummary(
+            .Select(x => new
+            {
                 x.Id,
                 x.StableIdentifier,
                 x.ItemNumber,
@@ -107,8 +123,74 @@ public sealed class BudgetPlanningService(
                 x.RevisedTotal,
                 x.EstimatedPurchaseDate,
                 x.RenewalDate,
-                x.Status))
+                x.Status,
+                x.BudgetSectionId,
+                x.FinanceTypeId,
+                x.DepartmentId,
+                x.LocationId,
+                x.NeedLevelId,
+                x.InternalCategoryId,
+                x.FrequencyId
+            })
             .ToListAsync(cancellationToken);
+
+        if (itemRows.Count == 0)
+            return new(fiscalYears, selectedFiscalYearId, versions, selectedVersion.Id, selectedVersion.IsLocked, [], 0m, 0m, 0m);
+
+        var budgetSections = await dbContext.BudgetSections.AsNoTracking().ToDictionaryAsync(x => x.Id, x => x.Name, cancellationToken);
+        var financeTypes = await dbContext.FinanceTypes.AsNoTracking().ToDictionaryAsync(x => x.Id, x => x.Name, cancellationToken);
+        var departments = await dbContext.Departments.AsNoTracking().ToDictionaryAsync(x => x.Id, x => x.Code + " · " + x.Name, cancellationToken);
+        var locations = await dbContext.Locations.AsNoTracking().ToDictionaryAsync(x => x.Id, x => x.Name, cancellationToken);
+        var needLevels = await dbContext.NeedLevels.AsNoTracking().ToDictionaryAsync(x => x.Id, x => x.Name, cancellationToken);
+        var categories = await dbContext.InternalCategories.AsNoTracking().ToDictionaryAsync(x => x.Id, x => x.Name, cancellationToken);
+        var frequencies = await dbContext.Frequencies.AsNoTracking().ToDictionaryAsync(x => x.Id, x => x.Name, cancellationToken);
+
+        var itemIds = itemRows.Select(x => x.Id).ToArray();
+        var vendorLinks = await (
+            from line in dbContext.PurchaseOrderLines.AsNoTracking()
+            join order in dbContext.PurchaseOrders.AsNoTracking() on line.PurchaseOrderId equals order.Id
+            join vendor in dbContext.Vendors.AsNoTracking() on order.VendorId equals vendor.Id
+            where line.BudgetItemId != null && itemIds.Contains(line.BudgetItemId.Value)
+            select new { BudgetItemId = line.BudgetItemId!.Value, VendorName = vendor.Name, order.CreatedAtUtc })
+            .ToListAsync(cancellationToken);
+
+        var vendorsByItem = vendorLinks
+            .GroupBy(x => x.BudgetItemId)
+            .ToDictionary(
+                group => group.Key,
+                group => group.OrderByDescending(x => x.CreatedAtUtc).Select(x => x.VendorName).First());
+
+        var items = itemRows.Select(x => new BudgetItemSummary(
+            x.Id,
+            x.StableIdentifier,
+            x.ItemNumber,
+            x.Description,
+            x.ReasonPurpose,
+            x.PurchaseType,
+            x.Quantity,
+            x.UnitCost,
+            x.PlannedTotal,
+            x.ApprovedTotal,
+            x.RevisedTotal,
+            x.EstimatedPurchaseDate,
+            x.RenewalDate,
+            x.Status,
+            x.BudgetSectionId,
+            NameFor(x.BudgetSectionId, budgetSections),
+            x.FinanceTypeId,
+            NameFor(x.FinanceTypeId, financeTypes),
+            x.DepartmentId,
+            NameFor(x.DepartmentId, departments),
+            x.LocationId,
+            NameFor(x.LocationId, locations),
+            x.NeedLevelId,
+            NameFor(x.NeedLevelId, needLevels),
+            x.InternalCategoryId,
+            NameFor(x.InternalCategoryId, categories),
+            x.FrequencyId,
+            NameFor(x.FrequencyId, frequencies),
+            vendorsByItem.GetValueOrDefault(x.Id)))
+            .ToArray();
 
         return new(
             fiscalYears,
@@ -320,6 +402,9 @@ public sealed class BudgetPlanningService(
         if (id == Guid.Empty || !await set.AnyAsync(x => x.Id == id && x.IsActive, cancellationToken))
             throw new InvalidOperationException($"{label} is not an active lookup value.");
     }
+
+    private static string? NameFor(Guid? id, IReadOnlyDictionary<Guid, string> values)
+        => id is not null && values.TryGetValue(id.Value, out var value) ? value : null;
 
     private static Guid? ResolveFiscalYear(IReadOnlyList<FiscalYearSummary> years, Guid? requested)
     {
