@@ -49,18 +49,74 @@ public sealed class SecurityAndNavigationSmokeTests
     }
 
     [Fact]
-    public void PrimaryNavigation_ExposesCoreLedgerForgeModules()
+    public void PrimaryNavigation_MatchesFinancialWorkspaceModules()
     {
         var layout = Read("src", "LedgerForge.Web", "Views", "Shared", "_Layout.cshtml");
         var routes = new[]
         {
-            "/work", "/budget", "/actuals", "/purchase-orders", "/invoices", "/vendors",
-            "/contracts", "/renewals", "/documents", "/approvals", "/reports", "/fiscal-years",
-            "/imports", "/admin/finance", "/admin/lookups", "/admin/organization",
-            "/admin/security", "/admin/diagnostics"
+            "/budget", "/actuals", "/purchase-orders", "/invoices", "/vendors",
+            "/contracts", "/renewals", "/documents", "/approvals", "/reports",
+            "/fiscal-years", "/admin/organization"
         };
 
         Assert.All(routes, route => Assert.Contains($"href=\"{route}\"", layout, StringComparison.Ordinal));
+        Assert.Contains(">Administration</span>", layout, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void AdministrationContext_ExposesOperationalAndAdminDestinations()
+    {
+        var layout = Read("src", "LedgerForge.Web", "Views", "Shared", "_Layout.cshtml");
+        var routes = new[]
+        {
+            "/admin/finance", "/admin/lookups", "/admin/organization",
+            "/admin/security", "/admin/diagnostics", "/imports", "/work"
+        };
+
+        Assert.Contains("lf-admin-subnav", layout, StringComparison.Ordinal);
+        Assert.All(routes, route => Assert.Contains($"href=\"{route}\"", layout, StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void BudgetWorkspace_ExposesReferenceStyleFiltersDrawerAndDimensions()
+    {
+        var budget = Read("src", "LedgerForge.Web", "Views", "Budget", "Index.cshtml");
+
+        Assert.Contains("lf-budget-filters", budget, StringComparison.Ordinal);
+        Assert.Contains("name=\"section\"", budget, StringComparison.Ordinal);
+        Assert.Contains("name=\"category\"", budget, StringComparison.Ordinal);
+        Assert.Contains("name=\"location\"", budget, StringComparison.Ordinal);
+        Assert.Contains("name=\"vendor\"", budget, StringComparison.Ordinal);
+        Assert.Contains("name=\"need\"", budget, StringComparison.Ordinal);
+        Assert.Contains("lf-budget-drawer", budget, StringComparison.Ordinal);
+        Assert.Contains("Planned Total", budget, StringComparison.Ordinal);
+        Assert.Contains("Must Have", budget, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void BudgetItemWorkspace_UsesRealFinancialAndRelatedRecordSurfaces()
+    {
+        var item = Read("src", "LedgerForge.Web", "Views", "Budget", "Item.cshtml");
+        var service = Read("src", "LedgerForge.Infrastructure", "Budgeting", "BudgetItemWorkspaceService.cs");
+
+        Assert.Contains("Purchase Orders", item, StringComparison.Ordinal);
+        Assert.Contains("Actuals &amp; Invoices", item, StringComparison.Ordinal);
+        Assert.Contains("Financial Breakdown", item, StringComparison.Ordinal);
+        Assert.Contains("Recent Activity", item, StringComparison.Ordinal);
+        Assert.Contains("PurchaseOrderLines", service, StringComparison.Ordinal);
+        Assert.Contains("InvoiceAllocations", service, StringComparison.Ordinal);
+        Assert.Contains("ActualTransactions", service, StringComparison.Ordinal);
+        Assert.Contains("ForecastLines", service, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ReferenceWorkspaceStyles_AreExternalForStrictCsp()
+    {
+        var layout = Read("src", "LedgerForge.Web", "Views", "Shared", "_Layout.cshtml");
+
+        Assert.Contains("ledgerforge-workspace.css", layout, StringComparison.Ordinal);
+        Assert.Contains("ledgerforge-item.css", layout, StringComparison.Ordinal);
+        Assert.Contains("ledgerforge-adminnav.css", layout, StringComparison.Ordinal);
     }
 
     [Fact]
