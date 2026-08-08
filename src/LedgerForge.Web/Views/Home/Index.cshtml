@@ -4,7 +4,7 @@
     ViewData["Title"] = "Dashboard";
     var primaryBudget = Model.ApprovedBudget > 0m ? Model.ApprovedBudget : Model.PlannedBudget;
     var primaryBudgetLabel = Model.ApprovedBudget > 0m ? "Approved Budget" : "Planned Budget";
-    var primaryBudgetNote = Model.ApprovedBudget > 0m ? "Approved budget for the current fiscal year" : "Current planning total";
+    var primaryBudgetNote = Model.ApprovedBudget > 0m ? "Approved budget for the selected view" : "Current planning total";
     var monthlyMax = Model.MonthlySpend.SelectMany(x => new[] { x.Planned, x.Actual }).DefaultIfEmpty(0m).Max();
     if (monthlyMax <= 0m) monthlyMax = 1m;
     const double chartHeight = 132d;
@@ -30,12 +30,39 @@
     </div>
 </div>
 
-<div class="lf-dashboard-filter-row" aria-label="Dashboard context">
-    <span class="lf-dashboard-filter"><span aria-hidden="true">⌖</span> All Locations <span aria-hidden="true">⌄</span></span>
-    <span class="lf-dashboard-filter"><span aria-hidden="true">◇</span> All Categories <span aria-hidden="true">⌄</span></span>
-    <span class="lf-dashboard-filter"><span aria-hidden="true">▣</span> @Model.FiscalYearName <span aria-hidden="true">⌄</span></span>
+<form method="get" action="/" class="lf-dashboard-filter-row" aria-label="Dashboard filters">
+    <label class="lf-dashboard-filter">
+        <span aria-hidden="true">⌖</span>
+        <select name="locationId" aria-label="Location">
+            <option value="">All Locations</option>
+            @foreach (var option in Model.Locations)
+            {
+                <option value="@option.Id" selected="@(option.Id == Model.SelectedLocationId)">@option.Label</option>
+            }
+        </select>
+    </label>
+    <label class="lf-dashboard-filter">
+        <span aria-hidden="true">◇</span>
+        <select name="categoryId" aria-label="Category">
+            <option value="">All Categories</option>
+            @foreach (var option in Model.Categories)
+            {
+                <option value="@option.Id" selected="@(option.Id == Model.SelectedCategoryId)">@option.Label</option>
+            }
+        </select>
+    </label>
+    <label class="lf-dashboard-filter">
+        <span aria-hidden="true">▣</span>
+        <select name="fiscalYearId" aria-label="Fiscal year">
+            @foreach (var option in Model.FiscalYears)
+            {
+                <option value="@option.Id" selected="@(option.Id == Model.FiscalYearId)">@option.Label</option>
+            }
+        </select>
+    </label>
+    <button type="submit" class="lf-dashboard-filter-apply">Apply</button>
     <span class="lf-dashboard-version">@Model.BudgetVersionName</span>
-</div>
+</form>
 
 <section class="lf-dashboard-kpis" aria-label="Budget key performance indicators">
     <article class="lf-card lf-kpi"><div class="lf-kpi-icon blue">✓</div><div><h2 class="lf-card-title">@primaryBudgetLabel</h2><div class="lf-kpi-value">@primaryBudget.ToString("C2")</div><div class="lf-kpi-note">@primaryBudgetNote</div></div></article>
@@ -44,8 +71,8 @@
     <article class="lf-card lf-kpi"><div class="lf-kpi-icon green">▥</div><div><h2 class="lf-card-title">Actual</h2><div class="lf-kpi-value lf-value-green">@Model.Actual.ToString("C2")</div><div class="lf-kpi-note">Posted actuals to date</div></div></article>
     <article class="lf-card lf-kpi"><div class="lf-kpi-icon teal">□</div><div><h2 class="lf-card-title">Available</h2><div class="lf-kpi-value lf-value-teal">@Model.Available.ToString("C2")</div><div class="lf-kpi-note">Revised minus committed and actual</div></div></article>
     <article class="lf-card lf-kpi"><div class="lf-kpi-icon blue">⌁</div><div><h2 class="lf-card-title">Forecast</h2><div class="lf-kpi-value">@Model.Forecast.ToString("C2")</div><div class="lf-kpi-note">@(Model.ForecastIsPublished ? "Latest published forecast" : "Calculated forecast fallback")</div></div></article>
-    <article class="lf-card lf-kpi"><div class="lf-kpi-icon gold">●</div><div><h2 class="lf-card-title">Pending Approvals</h2><div class="lf-kpi-value lf-value-gold">@Model.PendingApprovals</div><div class="lf-kpi-note"><a href="/approvals">Items awaiting approval</a></div></div></article>
-    <article class="lf-card lf-kpi"><div class="lf-kpi-icon red">▣</div><div><h2 class="lf-card-title">Renewals Due in 30 Days</h2><div class="lf-kpi-value lf-value-red">@Model.RenewalsDueIn30Days</div><div class="lf-kpi-note"><a href="/renewals">Contracts and budget renewals</a></div></div></article>
+    <article class="lf-card lf-kpi"><div class="lf-kpi-icon gold">●</div><div><h2 class="lf-card-title">Pending Approvals</h2><div class="lf-kpi-value lf-value-gold">@Model.PendingApprovals</div><div class="lf-kpi-note"><a href="/approvals">Fiscal-year approval queue</a></div></div></article>
+    <article class="lf-card lf-kpi"><div class="lf-kpi-icon red">▣</div><div><h2 class="lf-card-title">Renewals Due in 30 Days</h2><div class="lf-kpi-value lf-value-red">@Model.RenewalsDueIn30Days</div><div class="lf-kpi-note"><a href="/renewals">Renewals in the selected view</a></div></div></article>
 </section>
 
 <section class="lf-dashboard-grid lf-dashboard-grid-top">
@@ -84,7 +111,7 @@
     </article>
 
     <article class="lf-card lf-dashboard-chart-card">
-        <div class="lf-panel-header"><div><h2>@categoryTitle</h2><p class="muted">Top categories in the current budget version.</p></div><a href="/reports">View full report</a></div>
+        <div class="lf-panel-header"><div><h2>@categoryTitle</h2><p class="muted">Top categories in the selected budget view.</p></div><a href="/reports">View full report</a></div>
         @if (categoryRows.Length == 0 || categoryTotal <= 0m)
         {
             <div class="lf-empty-state lf-compact-empty"><p>Assign categories to budget items to populate this chart.</p></div>
@@ -127,7 +154,7 @@
         <div class="lf-panel-header"><h2>Open Purchase Orders</h2><a href="/purchase-orders">View all POs</a></div>
         @if (Model.OpenPurchaseOrders.Count == 0)
         {
-            <div class="lf-empty-state lf-compact-empty"><p>No open purchase orders.</p></div>
+            <div class="lf-empty-state lf-compact-empty"><p>No open purchase orders match this view.</p></div>
         }
         else
         {
@@ -164,7 +191,7 @@
         <div class="lf-panel-header"><h2>Renewals Due Soon</h2><a href="/renewals">View all renewals</a></div>
         @if (Model.UpcomingRenewals.Count == 0)
         {
-            <div class="lf-empty-state lf-compact-empty"><p>No renewal dates fall within the next 30 days.</p></div>
+            <div class="lf-empty-state lf-compact-empty"><p>No renewal dates fall within the next 30 days for this view.</p></div>
         }
         else
         {
