@@ -1,9 +1,9 @@
 using LedgerForge.Domain.Budgeting;
 using LedgerForge.Domain.Importing;
+using LedgerForge.Domain.Procurement;
 using LedgerForge.Infrastructure.Approvals;
 using LedgerForge.Infrastructure.Budgeting;
 using LedgerForge.Infrastructure.Persistence;
-using LedgerForge.Infrastructure.Procurement;
 using LedgerForge.Infrastructure.Reporting;
 using Microsoft.EntityFrameworkCore;
 
@@ -27,6 +27,33 @@ public sealed record DashboardRenewalItem(
     DateOnly RenewalDate,
     decimal EstimatedAmount);
 
+public sealed record DashboardMonthlySpend(
+    string Label,
+    decimal Planned,
+    decimal Actual);
+
+public sealed record DashboardCategorySpend(
+    string Category,
+    decimal Budget,
+    decimal Actual,
+    decimal Variance);
+
+public sealed record DashboardOpenPurchaseOrder(
+    Guid Id,
+    string Number,
+    string Vendor,
+    string Category,
+    string Location,
+    PurchaseOrderState State,
+    decimal Amount);
+
+public sealed record DashboardActivityItem(
+    Guid Id,
+    string EntityType,
+    string Action,
+    string Actor,
+    DateTimeOffset OccurredAtUtc);
+
 public sealed record DashboardSnapshot(
     Guid? FiscalYearId,
     string FiscalYearName,
@@ -45,7 +72,11 @@ public sealed record DashboardSnapshot(
     int BudgetItemCount,
     int ImportBatchesNeedingReview,
     IReadOnlyList<DashboardRenewalItem> UpcomingRenewals,
-    IReadOnlyList<DashboardRecentBudgetItem> RecentBudgetItems);
+    IReadOnlyList<DashboardRecentBudgetItem> RecentBudgetItems,
+    IReadOnlyList<DashboardMonthlySpend> MonthlySpend,
+    IReadOnlyList<DashboardCategorySpend> CategorySpend,
+    IReadOnlyList<DashboardOpenPurchaseOrder> OpenPurchaseOrders,
+    IReadOnlyList<DashboardActivityItem> RecentActivity);
 
 public sealed class DashboardService(
     LedgerForgeDbContext dbContext,
@@ -68,10 +99,12 @@ public sealed class DashboardService(
             return Empty(importReviewCount);
         }
 
-        var actual = await dbContext.ActualTransactions
+        var actualRows = await dbContext.ActualTransactions
             .AsNoTracking()
             .Where(x => x.FiscalYearId == fiscalYear.Id)
-            .SumAsync(x => (decimal?)x.Amount, cancellationToken) ?? 0m;
+            .Select(x => new { x.TransactionDate, x.Amount, x.BudgetItemId })
+            .ToListAsync(cancellationToken);
+        var actual = actualRows.Sum(x => x.Amount);
         var committed = await outstandingCommitmentService.GetTotalForFiscalYearAsync(fiscalYear.Id, cancellationToken);
         var pendingApprovals = (await approvalQueueService.GetAsync(fiscalYear.Id, cancellationToken)).TotalCount;
 
@@ -92,11 +125,12 @@ public sealed class DashboardService(
                 Actual = actual,
                 Available = -committed - actual,
                 Forecast = committed + actual,
-                PendingApprovals = pendingApprovals
+                PendingApprovals = pendingApprovals,
+                RecentActivity = await LoadRecentActivityAsync(cancellationToken)
             };
         }
 
-        var items = await dbContext.BudgetItems
+        var itemRows = await dbContext.BudgetItems
             .AsNoTracking()
             .Where(x => x.FiscalYearId == fiscalYear.Id && x.BudgetVersionId == version.Id)
             .Select(x => new
@@ -108,13 +142,16 @@ public sealed class DashboardService(
                 x.PlannedTotal,
                 x.ApprovedTotal,
                 x.RevisedTotal,
+                x.EstimatedPurchaseDate,
+                x.InternalCategoryId,
+                x.LocationId,
                 x.CreatedAtUtc
             })
             .ToListAsync(cancellationToken);
 
-        var planned = items.Sum(x => x.PlannedTotal);
-        var approved = items.Sum(x => x.ApprovedTotal ?? 0m);
-        var revised = items.Sum(x => x.RevisedTotal ?? x.ApprovedTotal ?? x.PlannedTotal);
+        var planned = itemRows.Sum(x => x.PlannedTotal);
+        var approved = itemRows.Sum(x => x.ApprovedTotal ?? 0m);
+        var revised = itemRows.Sum(x => x.RevisedTotal ?? x.ApprovedTotal ?? x.PlannedTotal);
         var available = revised - committed - actual;
         var publishedForecast = await forecastService.GetLatestPublishedTotalAsync(fiscalYear.Id, version.Id, cancellationToken);
         var forecast = publishedForecast ?? Math.Max(revised, committed + actual);
@@ -139,7 +176,7 @@ public sealed class DashboardService(
                 x.EstimatedAmount))
             .ToArray();
 
-        var recentItems = items
+        var recentItems = itemRows
             .OrderByDescending(x => x.CreatedAtUtc)
             .ThenByDescending(x => x.ItemNumber)
             .Take(5)
@@ -151,6 +188,23 @@ public sealed class DashboardService(
                 x.PlannedTotal,
                 x.CreatedAtUtc))
             .ToArray();
+
+        var categoryNames = await dbContext.InternalCategories.AsNoTracking()
+            .ToDictionaryAsync(x => x.Id, x => x.Name, cancellationToken);
+        var locationNames = await dbContext.Locations.AsNoTracking()
+            .ToDictionaryAsync(x => x.Id, x => x.Name, cancellationToken);
+        var itemCategory = itemRows.ToDictionary(
+            x => x.Id,
+            x => x.InternalCategoryId is not null && categoryNames.TryGetValue(x.InternalCategoryId.Value, out var name) ? name : "Unassigned");
+
+        var monthlySpend = BuildMonthlySpend(fiscalYear.StartDate, fiscalYear.EndDate, itemRows, actualRows);
+        var categorySpend = BuildCategorySpend(itemRows, actualRows, itemCategory);
+        var openPurchaseOrders = await LoadOpenPurchaseOrdersAsync(
+            fiscalYear.Id,
+            itemRows.ToDictionary(x => x.Id, x => (x.InternalCategoryId, x.LocationId)),
+            categoryNames,
+            locationNames,
+            cancellationToken);
 
         return new(
             fiscalYear.Id,
@@ -167,11 +221,153 @@ public sealed class DashboardService(
             publishedForecast is not null,
             pendingApprovals,
             renewalMatches.Length,
-            items.Count,
+            itemRows.Count,
             await CountImportReviewAsync(cancellationToken),
             upcomingRenewals,
-            recentItems);
+            recentItems,
+            monthlySpend,
+            categorySpend,
+            openPurchaseOrders,
+            await LoadRecentActivityAsync(cancellationToken));
     }
+
+    private static IReadOnlyList<DashboardMonthlySpend> BuildMonthlySpend<TItem, TActual>(
+        DateOnly startDate,
+        DateOnly endDate,
+        IReadOnlyList<TItem> rawItems,
+        IReadOnlyList<TActual> rawActuals)
+    {
+        dynamic items = rawItems;
+        dynamic actuals = rawActuals;
+        var result = new List<DashboardMonthlySpend>();
+        var cursor = new DateOnly(startDate.Year, startDate.Month, 1);
+        var last = new DateOnly(endDate.Year, endDate.Month, 1);
+        while (cursor <= last)
+        {
+            var year = cursor.Year;
+            var month = cursor.Month;
+            decimal planned = 0m;
+            decimal actual = 0m;
+            foreach (var item in items)
+            {
+                DateOnly? date = item.EstimatedPurchaseDate;
+                if (date is not null && date.Value.Year == year && date.Value.Month == month)
+                    planned += item.RevisedTotal ?? item.ApprovedTotal ?? item.PlannedTotal;
+            }
+            foreach (var row in actuals)
+            {
+                DateOnly date = row.TransactionDate;
+                if (date.Year == year && date.Month == month)
+                    actual += row.Amount;
+            }
+            result.Add(new DashboardMonthlySpend(cursor.ToString("MMM"), planned, actual));
+            cursor = cursor.AddMonths(1);
+        }
+        return result;
+    }
+
+    private static IReadOnlyList<DashboardCategorySpend> BuildCategorySpend<TItem, TActual>(
+        IReadOnlyList<TItem> rawItems,
+        IReadOnlyList<TActual> rawActuals,
+        IReadOnlyDictionary<Guid, string> itemCategory)
+    {
+        dynamic items = rawItems;
+        dynamic actuals = rawActuals;
+        var budget = new Dictionary<string, decimal>(StringComparer.OrdinalIgnoreCase);
+        var spend = new Dictionary<string, decimal>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var item in items)
+        {
+            Guid id = item.Id;
+            var category = itemCategory.GetValueOrDefault(id, "Unassigned");
+            budget[category] = budget.GetValueOrDefault(category) + (item.RevisedTotal ?? item.ApprovedTotal ?? item.PlannedTotal);
+        }
+        foreach (var row in actuals)
+        {
+            Guid? budgetItemId = row.BudgetItemId;
+            var category = budgetItemId is not null ? itemCategory.GetValueOrDefault(budgetItemId.Value, "Unassigned") : "Unassigned";
+            spend[category] = spend.GetValueOrDefault(category) + row.Amount;
+        }
+
+        return budget.Keys.Union(spend.Keys, StringComparer.OrdinalIgnoreCase)
+            .Select(category => new DashboardCategorySpend(
+                category,
+                budget.GetValueOrDefault(category),
+                spend.GetValueOrDefault(category),
+                budget.GetValueOrDefault(category) - spend.GetValueOrDefault(category)))
+            .OrderByDescending(x => x.Actual)
+            .ThenByDescending(x => x.Budget)
+            .ThenBy(x => x.Category)
+            .Take(8)
+            .ToArray();
+    }
+
+    private async Task<IReadOnlyList<DashboardOpenPurchaseOrder>> LoadOpenPurchaseOrdersAsync(
+        Guid fiscalYearId,
+        IReadOnlyDictionary<Guid, (Guid? CategoryId, Guid? LocationId)> itemDimensions,
+        IReadOnlyDictionary<Guid, string> categoryNames,
+        IReadOnlyDictionary<Guid, string> locationNames,
+        CancellationToken cancellationToken)
+    {
+        var orders = await dbContext.PurchaseOrders.AsNoTracking()
+            .Where(x => x.FiscalYearId == fiscalYearId &&
+                        x.State != PurchaseOrderState.Closed &&
+                        x.State != PurchaseOrderState.Cancelled &&
+                        x.State != PurchaseOrderState.Rejected)
+            .OrderByDescending(x => x.CreatedAtUtc)
+            .Take(6)
+            .ToListAsync(cancellationToken);
+        if (orders.Count == 0) return [];
+
+        var orderIds = orders.Select(x => x.Id).ToArray();
+        var lines = await dbContext.PurchaseOrderLines.AsNoTracking()
+            .Where(x => orderIds.Contains(x.PurchaseOrderId))
+            .Select(x => new { x.PurchaseOrderId, x.LineTotal, x.BudgetItemId, x.LocationId })
+            .ToListAsync(cancellationToken);
+        var vendorIds = orders.Select(x => x.VendorId).Distinct().ToArray();
+        var vendors = await dbContext.Vendors.AsNoTracking()
+            .Where(x => vendorIds.Contains(x.Id))
+            .ToDictionaryAsync(x => x.Id, x => x.Name, cancellationToken);
+
+        return orders.Select(order =>
+        {
+            var orderLines = lines.Where(x => x.PurchaseOrderId == order.Id).ToArray();
+            var amount = orderLines.Sum(x => x.LineTotal);
+            var categories = orderLines
+                .Where(x => x.BudgetItemId is not null && itemDimensions.ContainsKey(x.BudgetItemId.Value))
+                .Select(x => itemDimensions[x.BudgetItemId!.Value].CategoryId)
+                .Where(x => x is not null && categoryNames.ContainsKey(x.Value))
+                .Select(x => categoryNames[x!.Value])
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+            var locations = orderLines
+                .Select(x => x.LocationId ?? (x.BudgetItemId is not null && itemDimensions.TryGetValue(x.BudgetItemId.Value, out var dims) ? dims.LocationId : null))
+                .Where(x => x is not null && locationNames.ContainsKey(x.Value))
+                .Select(x => locationNames[x!.Value])
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+            return new DashboardOpenPurchaseOrder(
+                order.Id,
+                order.Number,
+                vendors.GetValueOrDefault(order.VendorId, "Unknown vendor"),
+                categories.Length switch { 0 => "—", 1 => categories[0], _ => "Multiple" },
+                locations.Length switch { 0 => "—", 1 => locations[0], _ => "Multiple" },
+                order.State,
+                amount);
+        }).ToArray();
+    }
+
+    private async Task<IReadOnlyList<DashboardActivityItem>> LoadRecentActivityAsync(CancellationToken cancellationToken)
+        => await dbContext.AuditEvents.AsNoTracking()
+            .OrderByDescending(x => x.OccurredAtUtc)
+            .Take(6)
+            .Select(x => new DashboardActivityItem(
+                x.Id,
+                x.EntityType,
+                x.Action.ToString(),
+                x.Actor,
+                x.OccurredAtUtc))
+            .ToListAsync(cancellationToken);
 
     private async Task<int> CountImportReviewAsync(CancellationToken cancellationToken)
         => await dbContext.ImportBatches.CountAsync(
@@ -196,6 +392,10 @@ public sealed class DashboardService(
             0,
             0,
             importReviewCount,
+            [],
+            [],
+            [],
+            [],
             [],
             []);
 }
