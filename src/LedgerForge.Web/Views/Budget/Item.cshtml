@@ -1,18 +1,33 @@
 @model LedgerForge.Web.Models.Budgeting.BudgetItemEditViewModel
 @using LedgerForge.Domain.Budgeting
+@using LedgerForge.Domain.Procurement
+@using LedgerForge.Infrastructure.Budgeting
 @{
-    ViewData["Title"] = $"Budget Item {Model.Item.ItemNumber}";
-    var item = Model.Item;
+    var workspace = Model.Workspace;
+    var item = workspace.Item;
+    ViewData["Title"] = $"Budget Item {item.ItemNumber}";
     var canSubmit = ViewData["CanSubmit"] as bool? == true;
     var submitted = ViewData["Submitted"] as bool? == true;
+
+    string? OptionName(IReadOnlyList<LookupOption> values, Guid? id)
+        => id is not null ? values.FirstOrDefault(x => x.Id == id.Value)?.Name : null;
+    var section = OptionName(item.BudgetSections, item.BudgetSectionId);
+    var financeType = OptionName(item.FinanceTypes, item.FinanceTypeId);
+    var department = OptionName(item.Departments, item.DepartmentId);
+    var location = OptionName(item.Locations, item.LocationId);
+    var needLevel = OptionName(item.NeedLevels, item.NeedLevelId);
+    var category = OptionName(item.InternalCategories, item.InternalCategoryId);
+    var frequency = OptionName(item.Frequencies, item.FrequencyId);
+    var vendor = workspace.PurchaseOrders.FirstOrDefault()?.Vendor;
+    var variance = workspace.CurrentBudget - workspace.Actual;
+    var itemMark = item.ItemNumber.Length >= 2 ? item.ItemNumber[..2].ToUpperInvariant() : "BI";
 }
 
 <div class="lf-page-header">
     <div>
-        <h1 class="lf-page-title">@item.ItemNumber · @item.Description</h1>
-        <p class="lf-subtitle">@item.FiscalYearName · @item.BudgetVersionName · <code>@item.StableIdentifier</code></p>
+        <h1 class="lf-page-title">Budget Item Detail</h1>
+        <p class="lf-subtitle"><a href="/budget">Budget</a> / @item.FiscalYearName / @(category ?? financeType ?? "Uncategorized") / @item.Description</p>
     </div>
-    <a class="button" href="/budget?fiscalYearId=@item.FiscalYearId&versionId=@item.BudgetVersionId">Back to budget</a>
 </div>
 
 @if (!string.IsNullOrWhiteSpace(Model.ErrorMessage))
@@ -25,174 +40,223 @@
 }
 @if (submitted)
 {
-    <div class="card lf-alert lf-alert-success" role="status">Budget item submitted for approval. Planning fields are now read-only until an approval decision is made.</div>
-}
-@if (item.VersionLocked)
-{
-    <div class="card lf-alert lf-alert-info" role="status">This budget version is locked. Item details are read-only.</div>
-}
-else if (item.Status == BudgetItemStatus.Submitted)
-{
-    <div class="card lf-alert lf-alert-info" role="status">This item is awaiting approval and cannot be edited.</div>
-}
-else if (item.Status == BudgetItemStatus.Approved)
-{
-    <div class="card lf-alert lf-alert-info" role="status">This item has been approved. Use a future amendment workflow for post-approval changes.</div>
+    <div class="card lf-alert lf-alert-success" role="status">Budget item submitted for approval. Planning fields are read-only while the approval is pending.</div>
 }
 
-<div class="lf-settings-grid">
-    <section class="card" aria-labelledby="planning-details-title">
-        <div class="lf-panel-header">
-            <div>
-                <h2 id="planning-details-title">Planning details</h2>
-                <p class="muted">Dimension values come from active managed lookups.</p>
+<section class="lf-card lf-item-hero">
+    <div class="lf-item-hero-top">
+        <div class="lf-item-mark" aria-hidden="true">@itemMark</div>
+        <div class="lf-item-title">
+            <h1>@item.Description <span class="badge @(item.Status == BudgetItemStatus.Approved ? "lf-badge-success" : "")">@item.Status</span></h1>
+            <p>@item.ItemNumber · <code>@item.StableIdentifier</code></p>
+        </div>
+        @if (Model.CanEdit)
+        {
+            <a class="button" href="#edit-item">✎ Edit Item</a>
+        }
+    </div>
+    <div class="lf-item-meta">
+        <div><span>Item Number</span><strong>@item.ItemNumber</strong></div>
+        <div><span>Fiscal Year</span><strong>@item.FiscalYearName</strong></div>
+        <div><span>Category</span><strong>@(category ?? financeType ?? "—")</strong></div>
+        <div><span>Vendor</span><strong>@(vendor ?? "—")</strong></div>
+        <div><span>Location</span><strong>@(location ?? "—")</strong></div>
+        <div><span>Status</span><strong>@item.Status</strong></div>
+    </div>
+    <div class="lf-item-meta lf-item-meta-secondary">
+        <div><span>Need Level</span><strong>@(needLevel ?? "—")</strong></div>
+        <div><span>Department</span><strong>@(department ?? "—")</strong></div>
+        <div><span>Budget Section</span><strong>@(section ?? "—")</strong></div>
+        <div><span>Purchase Type</span><strong>@item.PurchaseType</strong></div>
+        <div><span>Quantity</span><strong>@item.Quantity.ToString("0.####")</strong></div>
+        <div><span>Unit Cost</span><strong>@item.UnitCost.ToString("C2")</strong></div>
+    </div>
+</section>
+
+<section class="lf-item-kpis" aria-label="Budget item financial summary">
+    <article class="lf-card lf-kpi"><div class="lf-kpi-icon blue">✓</div><div><div class="lf-card-title">Planned Budget</div><div class="lf-kpi-value">@item.PlannedTotal.ToString("C2")</div><div class="lf-kpi-note">Original planning amount</div></div></article>
+    <article class="lf-card lf-kpi"><div class="lf-kpi-icon purple">✎</div><div><div class="lf-card-title">Current Budget</div><div class="lf-kpi-value">@workspace.CurrentBudget.ToString("C2")</div><div class="lf-kpi-note">Revised / approved / planned</div></div></article>
+    <article class="lf-card lf-kpi"><div class="lf-kpi-icon orange">↔</div><div><div class="lf-card-title">Committed</div><div class="lf-kpi-value">@workspace.Committed.ToString("C2")</div><div class="lf-kpi-note">Issued PO value not yet posted</div></div></article>
+    <article class="lf-card lf-kpi"><div class="lf-kpi-icon green">▥</div><div><div class="lf-card-title">Actual</div><div class="lf-kpi-value">@workspace.Actual.ToString("C2")</div><div class="lf-kpi-note">Posted actual transactions</div></div></article>
+    <article class="lf-card lf-kpi"><div class="lf-kpi-icon teal">□</div><div><div class="lf-card-title">Available</div><div class="lf-kpi-value">@workspace.Available.ToString("C2")</div><div class="lf-kpi-note">Current less commitments and actuals</div></div></article>
+    <article class="lf-card lf-kpi"><div class="lf-kpi-icon blue">⌁</div><div><div class="lf-card-title">Forecast</div><div class="lf-kpi-value">@workspace.Forecast.ToString("C2")</div><div class="lf-kpi-note">Published line or calculated fallback</div></div></article>
+</section>
+
+<nav class="lf-item-tabs" aria-label="Budget item sections">
+    <a class="active" href="#overview">Overview</a>
+    <a href="#purchase-orders">Purchase Orders (@workspace.PurchaseOrders.Count)</a>
+    <a href="#actuals-invoices">Actuals &amp; Invoices (@(workspace.Actuals.Count + workspace.Invoices.Count))</a>
+    <a href="/documents">Documents</a>
+    <a href="#approval-history">Approval / Activity (@workspace.Activity.Count)</a>
+    <a href="#edit-item">Edit</a>
+</nav>
+
+<div class="lf-item-layout">
+    <div class="lf-item-main">
+        <section id="overview" class="lf-card lf-item-section-grid">
+            <div class="lf-item-overview-copy">
+                <h3>Description</h3>
+                <p>@item.Description</p>
+                <h3>Business Justification / Reason &amp; Purpose</h3>
+                <p>@(string.IsNullOrWhiteSpace(item.ReasonPurpose) ? "No business justification has been entered yet." : item.ReasonPurpose)</p>
+                <div class="lf-item-facts">
+                    <div><span>Purchase Date</span><strong>@(item.EstimatedPurchaseDate?.ToString("MMM d, yyyy") ?? "—")</strong></div>
+                    <div><span>Renewal Date</span><strong>@(item.RenewalDate?.ToString("MMM d, yyyy") ?? "—")</strong></div>
+                    <div><span>Frequency</span><strong>@(frequency ?? "—")</strong></div>
+                    <div><span>Finance Type</span><strong>@(financeType ?? "—")</strong></div>
+                    <div><span>Internal Category</span><strong>@(category ?? "—")</strong></div>
+                    <div><span>Budget Version</span><strong>@item.BudgetVersionName</strong></div>
+                </div>
             </div>
-            <span class="badge">@item.Status</span>
+            <div>
+                <div class="lf-panel-header"><h2>Financial Breakdown</h2><span class="badge">@workspace.CurrentBudget.ToString("C2") current</span></div>
+                <div class="lf-financial-bars" aria-label="Budget item financial breakdown">
+                    <div><span>Current Budget</span><strong>@workspace.CurrentBudget.ToString("C2")</strong></div>
+                    <div><span>Committed</span><strong>@workspace.Committed.ToString("C2")</strong></div>
+                    <div><span>Actual</span><strong>@workspace.Actual.ToString("C2")</strong></div>
+                    <div><span>Available</span><strong>@workspace.Available.ToString("C2")</strong></div>
+                    <div><span>Forecast</span><strong>@workspace.Forecast.ToString("C2")</strong></div>
+                    <div><span>Variance (Budget vs Actual)</span><strong>@variance.ToString("C2")</strong></div>
+                </div>
+            </div>
+        </section>
+
+        <div class="lf-related-grid">
+            <section id="purchase-orders" class="lf-card">
+                <div class="lf-panel-header"><h2>Purchase Orders (@workspace.PurchaseOrders.Count)</h2><a href="/purchase-orders">View all POs</a></div>
+                @if (workspace.PurchaseOrders.Count == 0)
+                {
+                    <div class="lf-empty-state lf-compact-empty"><p>No purchase-order lines are linked to this budget item.</p></div>
+                }
+                else
+                {
+                    <div class="lf-table-wrap"><table class="lf-table"><thead><tr><th>PO Number</th><th>Vendor</th><th class="lf-number">Amount</th><th>Status</th></tr></thead><tbody>
+                    @foreach (var po in workspace.PurchaseOrders)
+                    {
+                        <tr><td><a href="/purchase-orders/@po.Id"><strong>@po.Number</strong></a></td><td>@po.Vendor</td><td class="lf-number">@po.Amount.ToString("C2")</td><td><span class="badge">@po.State</span></td></tr>
+                    }
+                    </tbody></table></div>
+                }
+            </section>
+
+            <section id="actuals-invoices" class="lf-card">
+                <div class="lf-panel-header"><h2>Actuals &amp; Invoices</h2><a href="/invoices">View invoices</a></div>
+                @if (workspace.Invoices.Count == 0 && workspace.Actuals.Count == 0)
+                {
+                    <div class="lf-empty-state lf-compact-empty"><p>No invoices or actual transactions are linked to this item.</p></div>
+                }
+                else
+                {
+                    <div class="lf-table-wrap"><table class="lf-table"><thead><tr><th>Reference</th><th>Date</th><th>Type / State</th><th class="lf-number">Amount</th></tr></thead><tbody>
+                    @foreach (var invoice in workspace.Invoices.Take(6))
+                    {
+                        <tr><td><a href="/invoices/@invoice.Id"><strong>@invoice.InvoiceNumber</strong></a><div class="muted">@invoice.Vendor</div></td><td>@invoice.InvoiceDate.ToString("MMM d, yyyy")</td><td><span class="badge">Invoice · @invoice.State</span></td><td class="lf-number">@invoice.Amount.ToString("C2")</td></tr>
+                    }
+                    @foreach (var actualRow in workspace.Actuals.Take(6))
+                    {
+                        <tr><td><strong>@(actualRow.SourceReference ?? "Actual")</strong><div class="muted">@actualRow.Description</div></td><td>@actualRow.TransactionDate.ToString("MMM d, yyyy")</td><td><span class="badge lf-badge-success">Actual</span></td><td class="lf-number">@actualRow.Amount.ToString("C2")</td></tr>
+                    }
+                    </tbody></table></div>
+                }
+            </section>
+
+            <section id="approval-history" class="lf-card">
+                <div class="lf-panel-header"><h2>Recent Activity</h2><span class="badge">@workspace.Activity.Count event@(workspace.Activity.Count == 1 ? string.Empty : "s")</span></div>
+                @if (workspace.Activity.Count == 0)
+                {
+                    <div class="lf-empty-state lf-compact-empty"><p>No audit activity is recorded for this item yet.</p></div>
+                }
+                else
+                {
+                    <div class="lf-activity-list">
+                    @foreach (var activity in workspace.Activity)
+                    {
+                        <div><span class="lf-activity-bullet">✓</span><div><strong>@activity.Action</strong><p>@activity.Actor · @activity.OccurredAtUtc.ToLocalTime().ToString("MMM d, yyyy h:mm tt")</p></div></div>
+                    }
+                    </div>
+                }
+            </section>
         </div>
 
-        <form method="post" action="/budget/items/@item.Id">
-            @Html.AntiForgeryToken()
-            <fieldset disabled="@(!Model.CanEdit)" class="lf-fieldset">
-                <div class="lf-form-grid">
-                    <div>
-                        <label for="itemNumber"><strong>Item number</strong></label>
-                        <input id="itemNumber" name="itemNumber" value="@item.ItemNumber" maxlength="64" required />
-                    </div>
-                    <div>
-                        <label for="purchaseType"><strong>Purchase type</strong></label>
-                        <select id="purchaseType" name="purchaseType">
-                            @foreach (var purchaseType in Enum.GetValues<PurchaseType>())
-                            {
-                                <option value="@purchaseType" selected="@(purchaseType == item.PurchaseType)">@purchaseType</option>
-                            }
-                        </select>
-                    </div>
-                    <div class="full">
-                        <label for="description"><strong>Description</strong></label>
-                        <input id="description" name="description" value="@item.Description" maxlength="500" required />
-                    </div>
-                    <div class="full">
-                        <label for="reasonPurpose"><strong>Reason / purpose</strong></label>
-                        <textarea id="reasonPurpose" name="reasonPurpose" rows="4" maxlength="2000">@item.ReasonPurpose</textarea>
-                    </div>
+        <details id="edit-item" class="lf-card lf-item-edit-panel" open="@(Model.CanEdit && (Model.Saved || !string.IsNullOrWhiteSpace(Model.ErrorMessage)))">
+            <summary><strong>Edit planning details</strong><span>Item dimensions, dates, quantity, unit cost, and business justification.</span></summary>
+            <div class="lf-item-edit-body">
+                @if (item.VersionLocked)
+                {
+                    <div class="lf-alert lf-alert-info" role="status">This budget version is locked. Item details are read-only.</div>
+                }
+                else if (item.Status == BudgetItemStatus.Submitted)
+                {
+                    <div class="lf-alert lf-alert-info" role="status">This item is awaiting approval and cannot be edited.</div>
+                }
+                else if (item.Status == BudgetItemStatus.Approved)
+                {
+                    <div class="lf-alert lf-alert-info" role="status">This item has been approved. Use an amendment for post-approval budget changes.</div>
+                }
 
-                    <div>
-                        <label for="budgetSectionId"><strong>Budget section</strong></label>
-                        <select id="budgetSectionId" name="budgetSectionId">
-                            <option value="">Unassigned</option>
-                            @foreach (var option in item.BudgetSections)
-                            {
-                                <option value="@option.Id" selected="@(option.Id == item.BudgetSectionId)">@option.Code · @option.Name</option>
-                            }
-                        </select>
-                    </div>
-                    <div>
-                        <label for="financeTypeId"><strong>Finance type</strong></label>
-                        <select id="financeTypeId" name="financeTypeId">
-                            <option value="">Unassigned</option>
-                            @foreach (var option in item.FinanceTypes)
-                            {
-                                <option value="@option.Id" selected="@(option.Id == item.FinanceTypeId)">@option.Name</option>
-                            }
-                        </select>
-                    </div>
-                    <div>
-                        <label for="departmentId"><strong>Department</strong></label>
-                        <select id="departmentId" name="departmentId">
-                            <option value="">Unassigned</option>
-                            @foreach (var option in item.Departments)
-                            {
-                                <option value="@option.Id" selected="@(option.Id == item.DepartmentId)">@option.Code · @option.Name</option>
-                            }
-                        </select>
-                    </div>
-                    <div>
-                        <label for="locationId"><strong>Location</strong></label>
-                        <select id="locationId" name="locationId">
-                            <option value="">Unassigned</option>
-                            @foreach (var option in item.Locations)
-                            {
-                                <option value="@option.Id" selected="@(option.Id == item.LocationId)">@option.Code · @option.Name</option>
-                            }
-                        </select>
-                    </div>
-                    <div>
-                        <label for="needLevelId"><strong>Need level</strong></label>
-                        <select id="needLevelId" name="needLevelId">
-                            <option value="">Unassigned</option>
-                            @foreach (var option in item.NeedLevels)
-                            {
-                                <option value="@option.Id" selected="@(option.Id == item.NeedLevelId)">@option.Name</option>
-                            }
-                        </select>
-                    </div>
-                    <div>
-                        <label for="internalCategoryId"><strong>Internal category</strong></label>
-                        <select id="internalCategoryId" name="internalCategoryId">
-                            <option value="">Unassigned</option>
-                            @foreach (var option in item.InternalCategories)
-                            {
-                                <option value="@option.Id" selected="@(option.Id == item.InternalCategoryId)">@option.Name</option>
-                            }
-                        </select>
-                    </div>
-                    <div>
-                        <label for="frequencyId"><strong>Frequency</strong></label>
-                        <select id="frequencyId" name="frequencyId">
-                            <option value="">Unassigned</option>
-                            @foreach (var option in item.Frequencies)
-                            {
-                                <option value="@option.Id" selected="@(option.Id == item.FrequencyId)">@option.Name</option>
-                            }
-                        </select>
-                    </div>
-                    <div>
-                        <label for="estimatedPurchaseDate"><strong>Estimated purchase date</strong></label>
-                        <input id="estimatedPurchaseDate" name="estimatedPurchaseDate" type="date" value="@(item.EstimatedPurchaseDate?.ToString("yyyy-MM-dd"))" />
-                    </div>
-                    <div>
-                        <label for="renewalDate"><strong>Renewal date</strong></label>
-                        <input id="renewalDate" name="renewalDate" type="date" value="@(item.RenewalDate?.ToString("yyyy-MM-dd"))" />
-                    </div>
-                    <div>
-                        <label for="quantity"><strong>Quantity</strong></label>
-                        <input id="quantity" name="quantity" type="number" min="0" step="0.0001" value="@item.Quantity.ToString("0.####", System.Globalization.CultureInfo.InvariantCulture)" required />
-                    </div>
-                    <div>
-                        <label for="unitCost"><strong>Unit cost</strong></label>
-                        <input id="unitCost" name="unitCost" type="number" min="0" step="0.0001" value="@item.UnitCost.ToString("0.####", System.Globalization.CultureInfo.InvariantCulture)" required />
-                    </div>
-                </div>
-            </fieldset>
+                <form method="post" action="/budget/items/@item.Id">
+                    @Html.AntiForgeryToken()
+                    <fieldset disabled="@(!Model.CanEdit)" class="lf-fieldset">
+                        <div class="lf-form-grid lf-form-grid-3">
+                            <div><label for="itemNumber"><strong>Item number</strong></label><input id="itemNumber" name="itemNumber" value="@item.ItemNumber" maxlength="64" required /></div>
+                            <div><label for="purchaseType"><strong>Purchase type</strong></label><select id="purchaseType" name="purchaseType">@foreach (var purchaseType in Enum.GetValues<PurchaseType>()){<option value="@purchaseType" selected="@(purchaseType == item.PurchaseType)">@purchaseType</option>}</select></div>
+                            <div><label for="budgetSectionId"><strong>Budget section</strong></label><select id="budgetSectionId" name="budgetSectionId"><option value="">Unassigned</option>@foreach (var option in item.BudgetSections){<option value="@option.Id" selected="@(option.Id == item.BudgetSectionId)">@option.Code · @option.Name</option>}</select></div>
+                            <div class="lf-span-all"><label for="description"><strong>Description</strong></label><input id="description" name="description" value="@item.Description" maxlength="500" required /></div>
+                            <div class="lf-span-all"><label for="reasonPurpose"><strong>Reason / purpose</strong></label><textarea id="reasonPurpose" name="reasonPurpose" rows="4" maxlength="2000">@item.ReasonPurpose</textarea></div>
+                            <div><label for="financeTypeId"><strong>Finance type</strong></label><select id="financeTypeId" name="financeTypeId"><option value="">Unassigned</option>@foreach (var option in item.FinanceTypes){<option value="@option.Id" selected="@(option.Id == item.FinanceTypeId)">@option.Name</option>}</select></div>
+                            <div><label for="departmentId"><strong>Department</strong></label><select id="departmentId" name="departmentId"><option value="">Unassigned</option>@foreach (var option in item.Departments){<option value="@option.Id" selected="@(option.Id == item.DepartmentId)">@option.Code · @option.Name</option>}</select></div>
+                            <div><label for="locationId"><strong>Location</strong></label><select id="locationId" name="locationId"><option value="">Unassigned</option>@foreach (var option in item.Locations){<option value="@option.Id" selected="@(option.Id == item.LocationId)">@option.Code · @option.Name</option>}</select></div>
+                            <div><label for="needLevelId"><strong>Need level</strong></label><select id="needLevelId" name="needLevelId"><option value="">Unassigned</option>@foreach (var option in item.NeedLevels){<option value="@option.Id" selected="@(option.Id == item.NeedLevelId)">@option.Name</option>}</select></div>
+                            <div><label for="internalCategoryId"><strong>Internal category</strong></label><select id="internalCategoryId" name="internalCategoryId"><option value="">Unassigned</option>@foreach (var option in item.InternalCategories){<option value="@option.Id" selected="@(option.Id == item.InternalCategoryId)">@option.Name</option>}</select></div>
+                            <div><label for="frequencyId"><strong>Frequency</strong></label><select id="frequencyId" name="frequencyId"><option value="">Unassigned</option>@foreach (var option in item.Frequencies){<option value="@option.Id" selected="@(option.Id == item.FrequencyId)">@option.Name</option>}</select></div>
+                            <div><label for="estimatedPurchaseDate"><strong>Estimated purchase date</strong></label><input id="estimatedPurchaseDate" name="estimatedPurchaseDate" type="date" value="@(item.EstimatedPurchaseDate?.ToString("yyyy-MM-dd"))" /></div>
+                            <div><label for="renewalDate"><strong>Renewal date</strong></label><input id="renewalDate" name="renewalDate" type="date" value="@(item.RenewalDate?.ToString("yyyy-MM-dd"))" /></div>
+                            <div><label for="quantity"><strong>Quantity</strong></label><input id="quantity" name="quantity" type="number" min="0" step="0.0001" value="@item.Quantity.ToString("0.####", System.Globalization.CultureInfo.InvariantCulture)" required /></div>
+                            <div><label for="unitCost"><strong>Unit cost</strong></label><input id="unitCost" name="unitCost" type="number" min="0" step="0.0001" value="@item.UnitCost.ToString("0.####", System.Globalization.CultureInfo.InvariantCulture)" required /></div>
+                        </div>
+                    </fieldset>
+                    @if (Model.CanEdit){<p><button class="primary" type="submit">Save planning item</button></p>}
+                </form>
+                @if (canSubmit)
+                {
+                    <form method="post" action="/budget/items/@item.Id/submit" class="lf-secondary-form">@Html.AntiForgeryToken()<button class="primary" type="submit">Submit for approval</button></form>
+                }
+            </div>
+        </details>
+    </div>
 
-            @if (Model.CanEdit)
+    <aside class="lf-item-side">
+        <section class="lf-card">
+            <h2 class="lf-card-title">Upcoming Renewal</h2>
+            @if (item.RenewalDate is not null)
             {
-                <p><button class="primary" type="submit">Save planning item</button></p>
+                <div class="lf-renewal-callout"><span class="lf-renewal-icon">▣</span><div><span>Renews on</span><strong>@item.RenewalDate.Value.ToString("MMM d, yyyy")</strong></div></div>
+                <a href="/renewals">View renewal details</a>
             }
-        </form>
-
-        @if (canSubmit)
-        {
-            <form method="post" action="/budget/items/@item.Id/submit">
-                @Html.AntiForgeryToken()
-                <p class="muted">Submitting freezes normal planning edits until an approver approves, denies, or defers the item.</p>
-                <button class="primary" type="submit">Submit for approval</button>
-            </form>
-        }
-    </section>
-
-    <aside class="card lf-setting-preview" aria-labelledby="amount-summary-title">
-        <h2 id="amount-summary-title">Amount summary</h2>
-        <dl>
-            <dt>Planned</dt><dd><strong>@item.PlannedTotal.ToString("C2")</strong></dd>
-            <dt>Approved</dt><dd>@(item.ApprovedTotal?.ToString("C2") ?? "Not set")</dd>
-            <dt>Revised</dt><dd>@(item.RevisedTotal?.ToString("C2") ?? "Not set")</dd>
-            <dt>Status</dt><dd>@item.Status</dd>
-            <dt>Version</dt><dd>@item.BudgetVersionName @(item.VersionLocked ? "· Locked" : "· Editable")</dd>
-        </dl>
-        @if (item.BudgetSections.Count == 0 || item.Departments.Count == 0 || item.Locations.Count == 0)
-        {
-            <p class="muted">Some organization-specific lookup lists are empty. Configure master data before assigning those dimensions.</p>
-        }
+            else
+            {
+                <p class="muted">No renewal date is configured.</p>
+            }
+        </section>
+        <section class="lf-card">
+            <h2 class="lf-card-title">Quick Actions</h2>
+            <div class="lf-item-quick-actions">
+                <a class="button" href="/purchase-orders">Create / View Purchase Order</a>
+                <a class="button" href="/invoices">Record / View Invoice</a>
+                <a class="button" href="/documents">Upload Document</a>
+                <a class="button" href="/renewals">Open Renewal Center</a>
+            </div>
+        </section>
+        <section class="lf-card">
+            <h2 class="lf-card-title">Item Summary</h2>
+            <div class="lf-item-summary-list">
+                <div><span>Current Budget</span><strong>@workspace.CurrentBudget.ToString("C2")</strong></div>
+                <div><span>Actuals</span><strong>@workspace.Actual.ToString("C2")</strong></div>
+                <div><span>Committed</span><strong>@workspace.Committed.ToString("C2")</strong></div>
+                <div><span>Available</span><strong>@workspace.Available.ToString("C2")</strong></div>
+                <div><span>Forecast</span><strong>@workspace.Forecast.ToString("C2")</strong></div>
+            </div>
+            <a class="button" href="/reports">View item analytics</a>
+        </section>
     </aside>
 </div>
