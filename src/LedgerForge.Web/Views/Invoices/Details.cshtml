@@ -1,0 +1,142 @@
+@model LedgerForge.Infrastructure.Procurement.InvoiceDetailSnapshot
+@using LedgerForge.Domain.Procurement
+@{
+    ViewData["Title"] = $"Invoice {Model.Invoice.InvoiceNumber}";
+    var canManage = ViewData["CanManageProcurement"] as bool? == true;
+    var canApprove = ViewData["CanApprove"] as bool? == true;
+    var canPost = ViewData["CanPostActuals"] as bool? == true;
+    var errorMessage = ViewData["ErrorMessage"] as string;
+    var saved = ViewData["Saved"] as bool? == true;
+    var posted = ViewData["Posted"] as bool? == true;
+    var remaining = Model.Invoice.TotalAmount - Model.Invoice.AllocatedAmount;
+}
+
+<div class="lf-page-header">
+    <div>
+        <h1 class="lf-page-title">Invoice @Model.Invoice.InvoiceNumber</h1>
+        <p class="lf-subtitle">@Model.Invoice.Vendor · @Model.Invoice.FiscalYear · @Model.Invoice.InvoiceDate.ToString("yyyy-MM-dd")</p>
+    </div>
+    <a class="button" href="/invoices">Back to invoices</a>
+</div>
+
+@if (!string.IsNullOrWhiteSpace(errorMessage))
+{
+    <div class="lf-card lf-alert lf-alert-danger" role="alert">@errorMessage</div>
+}
+@if (saved)
+{
+    <div class="lf-card lf-alert lf-alert-success" role="status">Invoice workflow saved.</div>
+}
+@if (posted)
+{
+    <div class="lf-card lf-alert lf-alert-success" role="status">Invoice posted to the immutable actual ledger.</div>
+}
+
+<div class="lf-kpi-grid">
+    <article class="lf-card lf-kpi"><div class="lf-kpi-icon blue">$</div><div><div class="lf-card-title">Invoice Total</div><div class="lf-kpi-value">@Model.Invoice.TotalAmount.ToString("C2")</div><div class="lf-kpi-note">Authoritative invoice amount</div></div></article>
+    <article class="lf-card lf-kpi"><div class="lf-kpi-icon teal">A</div><div><div class="lf-card-title">Allocated</div><div class="lf-kpi-value">@Model.Invoice.AllocatedAmount.ToString("C2")</div><div class="lf-kpi-note">Coded allocation total</div></div></article>
+    <article class="lf-card lf-kpi"><div class="lf-kpi-icon gold">R</div><div><div class="lf-card-title">Remaining</div><div class="lf-kpi-value">@remaining.ToString("C2")</div><div class="lf-kpi-note">Must be zero before submission</div></div></article>
+    <article class="lf-card lf-kpi"><div class="lf-kpi-icon purple">I</div><div><div class="lf-card-title">State</div><div class="lf-kpi-value">@Model.Invoice.State</div><div class="lf-kpi-note">@(Model.HasPostedActuals ? "Actual ledger rows exist" : "No posted actual rows")</div></div></article>
+</div>
+
+<section class="lf-card" aria-labelledby="invoice-summary-title">
+    <h2 id="invoice-summary-title">Invoice summary</h2>
+    <dl class="lf-detail-grid">
+        <div><dt>Description</dt><dd>@Model.Invoice.Description</dd></div>
+        <div><dt>Purchase order</dt><dd>@(Model.Invoice.PurchaseOrderNumber ?? "Not linked")</dd></div>
+        <div><dt>Status</dt><dd><span class="badge">@Model.Invoice.State</span></dd></div>
+        <div><dt>Allocation lines</dt><dd>@Model.Allocations.Count</dd></div>
+    </dl>
+</section>
+
+@if (canManage && Model.Invoice.State == InvoiceState.Draft)
+{
+    <section class="lf-card" aria-labelledby="allocation-title">
+        <h2 id="allocation-title">Add allocation</h2>
+        <form method="post" action="/invoices/@Model.Invoice.Id/allocations">
+            @Html.AntiForgeryToken()
+            <div class="lf-form-grid">
+                <div class="lf-span-all">
+                    <label for="description"><strong>Description</strong></label>
+                    <input id="description" name="description" maxlength="500" required />
+                </div>
+                <div>
+                    <label for="amount"><strong>Amount</strong></label>
+                    <input id="amount" name="amount" type="number" min="0.0001" step="0.0001" max="@remaining.ToString("0.####", System.Globalization.CultureInfo.InvariantCulture)" required />
+                </div>
+                <div>
+                    <label for="budgetItemId">Budget item</label>
+                    <select id="budgetItemId" name="budgetItemId"><option value="">Unallocated</option>@foreach (var option in Model.BudgetItems) { <option value="@option.Id">@option.Label</option> }</select>
+                </div>
+                <div>
+                    <label for="financeAccountId">Finance account</label>
+                    <select id="financeAccountId" name="financeAccountId"><option value="">Unallocated</option>@foreach (var option in Model.FinanceAccounts) { <option value="@option.Id">@option.Label</option> }</select>
+                </div>
+                <div>
+                    <label for="departmentId">Department</label>
+                    <select id="departmentId" name="departmentId"><option value="">Unallocated</option>@foreach (var option in Model.Departments) { <option value="@option.Id">@option.Label</option> }</select>
+                </div>
+                <div>
+                    <label for="locationId">Location</label>
+                    <select id="locationId" name="locationId"><option value="">Unallocated</option>@foreach (var option in Model.Locations) { <option value="@option.Id">@option.Label</option> }</select>
+                </div>
+                <div>
+                    <label for="fiscalPeriodId">Fiscal period</label>
+                    <select id="fiscalPeriodId" name="fiscalPeriodId"><option value="">Auto-resolve on posting</option>@foreach (var option in Model.FiscalPeriods) { <option value="@option.Id">@option.Label</option> }</select>
+                </div>
+            </div>
+            <p><button class="primary" type="submit">Add allocation</button></p>
+        </form>
+    </section>
+}
+
+<section class="lf-card" aria-labelledby="workflow-title">
+    <h2 id="workflow-title">Workflow</h2>
+    <div class="lf-toolbar">
+        @if (canManage && Model.Invoice.State == InvoiceState.Draft && remaining == 0m && Model.Allocations.Count > 0)
+        {
+            <form method="post" action="/invoices/@Model.Invoice.Id/submit">@Html.AntiForgeryToken()<button class="primary" type="submit">Submit for approval</button></form>
+        }
+        @if (canApprove && Model.Invoice.State == InvoiceState.PendingApproval)
+        {
+            <form method="post" action="/invoices/@Model.Invoice.Id/approve">@Html.AntiForgeryToken()<button class="primary" type="submit">Approve invoice</button></form>
+            <details>
+                <summary>Reject invoice</summary>
+                <form method="post" action="/invoices/@Model.Invoice.Id/reject">@Html.AntiForgeryToken()<p><label for="rejectReason">Reason</label><input id="rejectReason" name="reason" maxlength="1000" required /></p><button type="submit">Reject</button></form>
+            </details>
+        }
+        @if (canPost && Model.Invoice.State == InvoiceState.Approved && !Model.HasPostedActuals)
+        {
+            <form method="post" action="/invoices/@Model.Invoice.Id/post">@Html.AntiForgeryToken()<button class="primary" type="submit">Post to actual ledger</button></form>
+        }
+    </div>
+    @if (canManage && Model.Invoice.State is InvoiceState.Draft or InvoiceState.PendingApproval or InvoiceState.Approved)
+    {
+        <details>
+            <summary>Cancel invoice</summary>
+            <form method="post" action="/invoices/@Model.Invoice.Id/cancel">@Html.AntiForgeryToken()<p><label for="cancelReason">Reason</label><input id="cancelReason" name="reason" maxlength="1000" required /></p><button type="submit">Cancel invoice</button></form>
+        </details>
+    }
+</section>
+
+<section class="lf-card" aria-labelledby="allocation-list-title">
+    <div class="lf-panel-header"><div><h2 id="allocation-list-title">Allocations</h2><p class="lf-muted">Posted allocations become actual-ledger transactions with the same dimensions.</p></div><span class="badge">@Model.Allocations.Count line@(Model.Allocations.Count == 1 ? string.Empty : "s")</span></div>
+    @if (Model.Allocations.Count == 0)
+    {
+        <div class="lf-empty-state"><p>No allocations have been added.</p></div>
+    }
+    else
+    {
+        <div class="lf-table-wrap">
+            <table class="lf-table">
+                <thead><tr><th>Line</th><th>Description</th><th>Budget item</th><th>Account</th><th>Department</th><th>Location</th><th>Period</th><th class="lf-number">Amount</th></tr></thead>
+                <tbody>
+                @foreach (var allocation in Model.Allocations)
+                {
+                    <tr><td>@allocation.LineNumber</td><td>@allocation.Description</td><td>@(allocation.BudgetItem ?? "—")</td><td>@(allocation.FinanceAccount ?? "—")</td><td>@(allocation.Department ?? "—")</td><td>@(allocation.Location ?? "—")</td><td>@(allocation.FiscalPeriod ?? "Auto")</td><td class="lf-number">@allocation.Amount.ToString("C2")</td></tr>
+                }
+                </tbody>
+            </table>
+        </div>
+    }
+</section>

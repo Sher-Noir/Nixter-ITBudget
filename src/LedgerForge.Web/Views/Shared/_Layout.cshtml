@@ -1,0 +1,102 @@
+@using LedgerForge.Web.Configuration
+@using LedgerForge.Web.Security
+@using Microsoft.AspNetCore.Authorization
+@inject OrganizationSettingsStore OrganizationSettings
+@inject IAuthorizationService AuthorizationService
+@{
+    var branding = await OrganizationSettings.GetAsync(Context.RequestAborted);
+    var pageTitle = ViewData["Title"] as string;
+    var title = string.IsNullOrWhiteSpace(pageTitle) ? branding.ProductName : $"{pageTitle} - {branding.ProductName}";
+    var userName = User.Identity?.Name ?? "Signed-in user";
+    var userInitial = userName.Split('\\', StringSplitOptions.RemoveEmptyEntries).LastOrDefault()?.FirstOrDefault().ToString().ToUpperInvariant() ?? "U";
+    var canManageBudget = (await AuthorizationService.AuthorizeAsync(User, AuthorizationPolicies.ManageBudget)).Succeeded;
+    var canApprove = (await AuthorizationService.AuthorizeAsync(User, AuthorizationPolicies.Approve)).Succeeded;
+    var canManageImports = (await AuthorizationService.AuthorizeAsync(User, AuthorizationPolicies.ManageImports)).Succeeded;
+    var canAdminister = (await AuthorizationService.AuthorizeAsync(User, AuthorizationPolicies.Administration)).Succeeded;
+    bool IsActive(string prefix) => Context.Request.Path.StartsWithSegments(prefix, StringComparison.OrdinalIgnoreCase);
+}
+<!doctype html>
+<html lang="en" data-default-theme="@branding.DefaultTheme">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light dark" />
+    <title>@title</title>
+    @if (!string.IsNullOrWhiteSpace(branding.IconPath))
+    {
+        <link rel="icon" href="@branding.IconPath" />
+    }
+    <link rel="stylesheet" href="~/css/ledgerforge.css" asp-append-version="true" />
+    <link rel="stylesheet" href="~/css/ledgerforge-budget.css" asp-append-version="true" />
+    <link rel="stylesheet" href="~/css/ledgerforge-dashboard.css" asp-append-version="true" />
+</head>
+<body>
+<div class="lf-shell">
+    <aside class="lf-sidebar" aria-label="Primary navigation">
+        <a class="lf-brand" href="/" aria-label="@branding.ProductName home">
+            @if (!string.IsNullOrWhiteSpace(branding.LogoPath))
+            {
+                <img src="@branding.LogoPath" alt="" class="lf-brand-logo" />
+            }
+            else
+            {
+                <span class="lf-brand-mark" aria-hidden="true">LF</span>
+            }
+            <span>@branding.ProductName</span>
+        </a>
+        <nav class="lf-nav">
+            <a href="/" class="@(Context.Request.Path == "/" ? "active" : null)"><span class="lf-nav-icon">⌂</span><span>Dashboard</span></a>
+            <a href="/work" class="@(IsActive("/work") ? "active" : null)"><span class="lf-nav-icon">◎</span><span>Work Center</span></a>
+            <a href="/budget" class="@(IsActive("/budget") ? "active" : null)"><span class="lf-nav-icon">◔</span><span>Budget</span></a>
+            <a href="/actuals" class="@(IsActive("/actuals") ? "active" : null)"><span class="lf-nav-icon">▥</span><span>Actuals</span></a>
+            <a href="/purchase-orders" class="@(IsActive("/purchase-orders") ? "active" : null)"><span class="lf-nav-icon">◫</span><span>Purchase Orders</span></a>
+            <a href="/invoices" class="@(IsActive("/invoices") ? "active" : null)"><span class="lf-nav-icon">▤</span><span>Invoices</span></a>
+            <a href="/vendors" class="@(IsActive("/vendors") ? "active" : null)"><span class="lf-nav-icon">♧</span><span>Vendors</span></a>
+            <a href="/contracts" class="@(IsActive("/contracts") ? "active" : null)"><span class="lf-nav-icon">▧</span><span>Contracts</span></a>
+            <a href="/renewals" class="@(IsActive("/renewals") ? "active" : null)"><span class="lf-nav-icon">↻</span><span>Renewals</span></a>
+            <a href="/documents" class="@(IsActive("/documents") ? "active" : null)"><span class="lf-nav-icon">□</span><span>Documents</span></a>
+            @if (canApprove)
+            {
+                <a href="/approvals" class="@(IsActive("/approvals") ? "active" : null)"><span class="lf-nav-icon">✓</span><span>Approvals</span></a>
+            }
+            <a href="/reports" class="@(IsActive("/reports") ? "active" : null)"><span class="lf-nav-icon">▥</span><span>Reports</span></a>
+            @if (canManageBudget)
+            {
+                <a href="/fiscal-years" class="@(IsActive("/fiscal-years") ? "active" : null)"><span class="lf-nav-icon">▣</span><span>Fiscal Years</span></a>
+            }
+            @if (canManageImports)
+            {
+                <a href="/imports" class="@(IsActive("/imports") ? "active" : null)"><span class="lf-nav-icon">⇅</span><span>Imports</span></a>
+            }
+            @if (canAdminister)
+            {
+                <a href="/admin/finance" class="@(IsActive("/admin/finance") ? "active" : null)"><span class="lf-nav-icon">$</span><span>Finance</span></a>
+                <a href="/admin/lookups" class="@(IsActive("/admin/lookups") ? "active" : null)"><span class="lf-nav-icon">≡</span><span>Managed Lookups</span></a>
+                <a href="/admin/organization" class="@(IsActive("/admin/organization") ? "active" : null)"><span class="lf-nav-icon">✦</span><span>Organization</span></a>
+                <a href="/admin/security" class="@(IsActive("/admin/security") ? "active" : null)"><span class="lf-nav-icon">⚙</span><span>Security</span></a>
+                <a href="/admin/diagnostics" class="@(IsActive("/admin/diagnostics") ? "active" : null)"><span class="lf-nav-icon">◎</span><span>Diagnostics</span></a>
+            }
+        </nav>
+        <div class="lf-sidebar-footer"><strong>@branding.OrganizationName</strong><br />@branding.ApplicationTitle</div>
+    </aside>
+    <div class="lf-main">
+        <header class="lf-topbar">
+            <button class="lf-mobile-menu" type="button" data-mobile-menu aria-label="Open navigation">☰</button>
+            <div class="lf-fy"><select aria-label="Fiscal year"><option>@branding.DefaultFiscalYearLabel</option></select></div>
+            <div class="lf-search"><span aria-hidden="true">⌕</span><input type="search" placeholder="Search budgets, vendors, POs, invoices, contracts..." aria-label="Search LedgerForge" /></div>
+            <div class="lf-top-actions">
+                <a class="button" href="/exports">⇩ Export</a>
+                <button class="lf-theme-toggle" type="button" data-theme-toggle aria-label="Toggle color theme" title="Toggle color theme"><span data-theme-icon aria-hidden="true">☾</span><span class="visually-hidden" data-theme-label>Dark mode</span></button>
+                <div class="lf-user"><span class="lf-avatar" aria-hidden="true">@userInitial</span><span class="lf-user-name">@userName</span></div>
+            </div>
+        </header>
+        <main class="lf-content" role="main">
+            @RenderBody()
+            <footer class="lf-footer">@branding.FooterText</footer>
+        </main>
+    </div>
+</div>
+<script src="~/js/ledgerforge-theme.js" asp-append-version="true"></script>
+@await RenderSectionAsync("Scripts", required: false)
+</body>
+</html>

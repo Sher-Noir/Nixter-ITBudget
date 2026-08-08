@@ -1,0 +1,58 @@
+name: public-hygiene
+
+on:
+  push:
+    branches: [ main, 'agent/**' ]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Reject organization-specific legacy identifiers
+        shell: python
+        run: |
+          from pathlib import Path
+          import subprocess
+
+          needles = [
+              ('legacy organization name', ('Charles River Community' + ' Health').lower()),
+              ('legacy organization acronym', ('CR' + 'CH').lower()),
+          ]
+          hits = []
+          for raw in subprocess.check_output(['git', 'ls-files', '-z']).split(b'\0'):
+              if not raw:
+                  continue
+              path = Path(raw.decode())
+              try:
+                  data = path.read_bytes()
+              except OSError:
+                  continue
+              if b'\x00' in data[:4096]:
+                  continue
+              text = data.decode('utf-8', errors='ignore').lower()
+              for label, needle in needles:
+                  if needle in text:
+                      hits.append(f'{path}: {label}')
+          if hits:
+              raise SystemExit('Organization-specific legacy material was found in tracked public source:\n' + '\n'.join(hits))
+          print('Legacy-identifier scan: PASS')
+
+      - name: Reject tracked migration workbooks and private deployment data
+        shell: bash
+        run: |
+          set -euo pipefail
+          bad=$(git ls-files | grep -E -i '\.(xlsx?|xlsm|pfx|p12|snk)$|(^|/)(App_Data|Uploads)/' || true)
+          if [ -n "$bad" ]; then
+            echo 'Private/data-bearing artifact types must not be tracked:'
+            echo "$bad"
+            exit 1
+          fi
+          echo 'Tracked data-artifact scan: PASS'

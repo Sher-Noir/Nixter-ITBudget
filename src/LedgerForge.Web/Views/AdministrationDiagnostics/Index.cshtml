@@ -1,0 +1,38 @@
+@model LedgerForge.Web.Diagnostics.DeploymentDiagnosticsSnapshot
+@{
+    ViewData["Title"] = "Diagnostics";
+}
+
+<div class="lf-page-header">
+    <div>
+        <h1 class="lf-page-title">Deployment Diagnostics</h1>
+        <p class="lf-subtitle">Read-only checks for database, migrations, document storage, and deployment configuration.</p>
+    </div>
+    <span class="badge">@(Model.IsHealthy ? "Healthy" : "Attention required")</span>
+</div>
+
+<div class="lf-kpi-grid">
+    <article class="lf-card lf-kpi"><div class="lf-kpi-icon blue">ENV</div><div><div class="lf-card-title">Environment</div><div class="lf-kpi-value">@Model.EnvironmentName</div></div></article>
+    <article class="lf-card lf-kpi"><div class="lf-kpi-icon teal">.NET</div><div><div class="lf-card-title">Runtime</div><div class="lf-kpi-note">@Model.Framework</div></div></article>
+    <article class="lf-card lf-kpi"><div class="lf-kpi-icon purple">OS</div><div><div class="lf-card-title">Operating System</div><div class="lf-kpi-note">@Model.OperatingSystem</div></div></article>
+    <article class="lf-card lf-kpi"><div class="lf-kpi-icon green">VER</div><div><div class="lf-card-title">Application Version</div><div class="lf-kpi-note">@Model.ApplicationVersion</div></div></article>
+</div>
+
+<section class="lf-card" aria-labelledby="diagnostics-title">
+    <div class="lf-panel-header"><h2 id="diagnostics-title">Checks</h2><a class="button" href="/admin/diagnostics">Run again</a></div>
+    <div class="lf-table-wrap">
+        <table class="lf-table">
+            <thead><tr><th>Check</th><th>Status</th><th>Detail</th></tr></thead>
+            <tbody>
+            @foreach (var check in Model.Checks)
+            {
+                <tr>
+                    <td><strong>@check.Name</strong></td>
+                    <td><span class="badge">@(check.Success ? "PASS" : "FAIL")</span></td>
+                    <td>@check.Detail</td>
+                </tr>
+            }
+            </tbody>
+        </table>
+    </div>
+</section>

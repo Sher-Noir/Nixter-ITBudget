@@ -1,0 +1,84 @@
+@model IReadOnlyList<LedgerForge.Web.Documents.StoredDocument>
+@{
+    ViewData["Title"] = "Documents";
+    var canManage = ViewData["CanManageDocuments"] as bool? == true;
+    var errorMessage = ViewData["ErrorMessage"] as string;
+    var saved = ViewData["Saved"] as bool? == true;
+}
+
+<div class="lf-page-header">
+    <div>
+        <h1 class="lf-page-title">Document Library</h1>
+        <p class="lf-subtitle">Versioned supporting documents stored outside the web root with generated storage keys and SHA-256 hashes.</p>
+    </div>
+</div>
+
+@if (!string.IsNullOrWhiteSpace(errorMessage))
+{
+    <div class="lf-card lf-alert lf-alert-danger" role="alert">@errorMessage</div>
+}
+@if (saved)
+{
+    <div class="lf-card lf-alert lf-alert-success" role="status">Document saved.</div>
+}
+
+@if (canManage)
+{
+    <section class="lf-card" aria-labelledby="upload-title">
+        <h2 id="upload-title">Upload document</h2>
+        <form method="post" action="/documents" enctype="multipart/form-data">
+            @Html.AntiForgeryToken()
+            <div class="lf-form-grid">
+                <div><label for="title"><strong>Title</strong></label><input id="title" name="title" maxlength="250" required /></div>
+                <div><label for="file"><strong>File</strong></label><input id="file" name="file" type="file" accept=".pdf,.xlsx,.docx,.csv,.txt,.png,.jpg,.jpeg" required /></div>
+                <div class="lf-span-all"><label for="description">Description</label><textarea id="description" name="description" rows="3" maxlength="2000"></textarea></div>
+                <div>
+                    <label for="linkedEntityType">Linked entity type</label>
+                    <select id="linkedEntityType" name="linkedEntityType">
+                        <option value="">No entity link</option>
+                        <option value="BudgetItem">Budget item</option>
+                        <option value="PurchaseOrder">Purchase order</option>
+                        <option value="Invoice">Invoice</option>
+                        <option value="Vendor">Vendor</option>
+                        <option value="FiscalYear">Fiscal year</option>
+                    </select>
+                </div>
+                <div><label for="linkedEntityId">Linked entity ID</label><input id="linkedEntityId" name="linkedEntityId" placeholder="Optional GUID" /></div>
+            </div>
+            <p class="lf-muted">Allowed: PDF, XLSX, DOCX, CSV, TXT, PNG, JPG/JPEG. File signatures are validated; browser-provided MIME types are not trusted.</p>
+            <button class="primary" type="submit">Upload document</button>
+        </form>
+    </section>
+}
+
+<section class="lf-card" aria-labelledby="document-list-title">
+    <div class="lf-panel-header">
+        <div><h2 id="document-list-title">Stored documents</h2><p class="lf-muted">Latest versions are shown first within each document.</p></div>
+        <span class="badge">@Model.Count document@(Model.Count == 1 ? string.Empty : "s")</span>
+    </div>
+    @if (Model.Count == 0)
+    {
+        <div class="lf-empty-state"><p>No documents have been stored yet.</p></div>
+    }
+    else
+    {
+        <div class="lf-table-wrap">
+            <table class="lf-table">
+                <thead><tr><th>Document</th><th>Linked entity</th><th>Latest version</th><th>Created</th><th>Owner</th></tr></thead>
+                <tbody>
+                @foreach (var document in Model)
+                {
+                    var latest = document.Versions.OrderByDescending(x => x.VersionNumber).FirstOrDefault();
+                    <tr>
+                        <td><a href="/documents/@document.Id"><strong>@document.Title</strong></a><br /><span class="lf-muted">@document.Description</span></td>
+                        <td>@(string.IsNullOrWhiteSpace(document.LinkedEntityType) ? "—" : document.LinkedEntityType + " · " + document.LinkedEntityId)</td>
+                        <td>@(latest is null ? "—" : $"v{latest.VersionNumber} · {latest.OriginalFileName}")</td>
+                        <td>@document.CreatedAtUtc.ToString("u")</td>
+                        <td>@document.CreatedBy</td>
+                    </tr>
+                }
+                </tbody>
+            </table>
+        </div>
+    }
+</section>

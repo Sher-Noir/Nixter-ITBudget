@@ -1,0 +1,88 @@
+@model LedgerForge.Web.Documents.StoredDocument
+@{
+    ViewData["Title"] = Model.Title;
+    var canManage = ViewData["CanManageDocuments"] as bool? == true;
+    var errorMessage = ViewData["ErrorMessage"] as string;
+    var saved = ViewData["Saved"] as bool? == true;
+}
+
+<div class="lf-page-header">
+    <div>
+        <h1 class="lf-page-title">@Model.Title</h1>
+        <p class="lf-subtitle">Created @Model.CreatedAtUtc.ToString("u") by @Model.CreatedBy</p>
+    </div>
+    <a class="button" href="/documents">Back to documents</a>
+</div>
+
+@if (!string.IsNullOrWhiteSpace(errorMessage))
+{
+    <div class="lf-card lf-alert lf-alert-danger" role="alert">@errorMessage</div>
+}
+@if (saved)
+{
+    <div class="lf-card lf-alert lf-alert-success" role="status">Document version saved.</div>
+}
+
+<div class="lf-settings-grid">
+    <section class="lf-card" aria-labelledby="document-summary-title">
+        <h2 id="document-summary-title">Document summary</h2>
+        <dl class="lf-detail-grid">
+            <div><dt>Description</dt><dd>@(Model.Description ?? "—")</dd></div>
+            <div><dt>Versions</dt><dd>@Model.Versions.Count</dd></div>
+            <div><dt>Linked entity</dt><dd>@(string.IsNullOrWhiteSpace(Model.LinkedEntityType) ? "Not linked" : Model.LinkedEntityType + " · " + Model.LinkedEntityId)</dd></div>
+            <div><dt>Document ID</dt><dd><code>@Model.Id</code></dd></div>
+        </dl>
+    </section>
+
+    @if (canManage)
+    {
+        <aside class="lf-card" aria-labelledby="new-version-title">
+            <h2 id="new-version-title">Add version</h2>
+            <form method="post" action="/documents/@Model.Id/versions" enctype="multipart/form-data">
+                @Html.AntiForgeryToken()
+                <p><label for="file"><strong>Replacement / updated file</strong></label><input id="file" name="file" type="file" accept=".pdf,.xlsx,.docx,.csv,.txt,.png,.jpg,.jpeg" required /></p>
+                <p class="lf-muted">Existing versions remain immutable and downloadable after a new version is added.</p>
+                <button class="primary" type="submit">Add document version</button>
+            </form>
+        </aside>
+    }
+</div>
+
+<section class="lf-card" aria-labelledby="version-history-title">
+    <div class="lf-panel-header">
+        <div><h2 id="version-history-title">Version history</h2><p class="lf-muted">Each version has its own immutable hash and generated non-web-root storage key.</p></div>
+        <span class="badge">@Model.Versions.Count version@(Model.Versions.Count == 1 ? string.Empty : "s")</span>
+    </div>
+
+    @if (Model.Versions.Count == 0)
+    {
+        <div class="lf-empty-state"><p>No document versions are available.</p></div>
+    }
+    else
+    {
+        <div class="lf-table-wrap">
+            <table class="lf-table">
+                <thead><tr><th>Version</th><th>File</th><th>Uploaded</th><th>Type</th><th>Size</th><th>SHA-256</th><th>Action</th></tr></thead>
+                <tbody>
+                @foreach (var version in Model.Versions.OrderByDescending(x => x.VersionNumber))
+                {
+                    <tr>
+                        <td><strong>v@version.VersionNumber</strong></td>
+                        <td>@version.OriginalFileName</td>
+                        <td>@version.UploadedAtUtc.ToString("u")<br /><span class="lf-muted">@version.UploadedBy</span></td>
+                        <td>@version.ContentType</td>
+                        <td>@((version.SizeBytes / 1024d).ToString("N1")) KB</td>
+                        <td class="lf-break"><code>@version.Sha256</code></td>
+                        <td><a class="button" href="/documents/@Model.Id/versions/@version.Id/download">Download</a></td>
+                    </tr>
+                }
+                </tbody>
+            </table>
+        </div>
+    }
+</section>
+
+<section class="lf-card" aria-labelledby="storage-security-title">
+    <h2 id="storage-security-title">Storage &amp; access</h2>
+    <p class="lf-muted">Binary content is stored below <code>App_Data/Documents</code>, not <code>wwwroot</code>. Downloads pass through LedgerForge authorization and append a local access event containing actor, time, correlation ID, and remote address.</p>
+</section>

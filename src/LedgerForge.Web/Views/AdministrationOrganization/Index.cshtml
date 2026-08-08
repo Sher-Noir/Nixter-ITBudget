@@ -1,0 +1,112 @@
+@model LedgerForge.Web.Configuration.BrandingOptions
+@{
+    ViewData["Title"] = "Organization & Appearance";
+    var saved = ViewData["Saved"] as bool? == true;
+    var reset = ViewData["Reset"] as bool? == true;
+}
+
+<div class="lf-page-header">
+    <div>
+        <h1 class="lf-page-title">Organization &amp; Appearance</h1>
+        <p class="lf-subtitle">Customize this LedgerForge installation without changing source code.</p>
+    </div>
+</div>
+
+@if (saved)
+{
+    <div class="card lf-alert lf-alert-success" role="status">Organization settings saved.</div>
+}
+@if (reset)
+{
+    <div class="card lf-alert lf-alert-info" role="status">Local overrides were removed. Deployment defaults are active again.</div>
+}
+@if (!ViewData.ModelState.IsValid)
+{
+    <div class="card lf-alert lf-alert-danger" role="alert">
+        @foreach (var error in ViewData.ModelState.Values.SelectMany(value => value.Errors))
+        {
+            <div>@error.ErrorMessage</div>
+        }
+    </div>
+}
+
+<div class="lf-settings-grid">
+    <section class="card" aria-labelledby="organization-settings-title">
+        <h2 id="organization-settings-title">Identity and defaults</h2>
+        <form method="post" action="/admin/organization">
+            @Html.AntiForgeryToken()
+            <div class="lf-form-grid">
+                <div>
+                    <label for="ProductName"><strong>Product name</strong></label>
+                    <input id="ProductName" name="ProductName" value="@Model.ProductName" maxlength="100" required />
+                    <small class="muted">Keep “LedgerForge” for the standard open-source branding, or use a deployment-specific name.</small>
+                </div>
+                <div>
+                    <label for="OrganizationName"><strong>Organization name</strong></label>
+                    <input id="OrganizationName" name="OrganizationName" value="@Model.OrganizationName" maxlength="200" required />
+                </div>
+                <div>
+                    <label for="ApplicationTitle"><strong>Application title</strong></label>
+                    <input id="ApplicationTitle" name="ApplicationTitle" value="@Model.ApplicationTitle" maxlength="150" required />
+                </div>
+                <div>
+                    <label for="DefaultFiscalYearLabel"><strong>Default fiscal-year label</strong></label>
+                    <input id="DefaultFiscalYearLabel" name="DefaultFiscalYearLabel" value="@Model.DefaultFiscalYearLabel" maxlength="50" required />
+                </div>
+                <div>
+                    <label for="TimeZone"><strong>Display time zone</strong></label>
+                    <input id="TimeZone" name="TimeZone" value="@Model.TimeZone" maxlength="100" required />
+                    <small class="muted">Use an IANA time-zone identifier such as America/New_York or Europe/London.</small>
+                </div>
+                <div>
+                    <label for="DefaultTheme"><strong>Default theme</strong></label>
+                    <select id="DefaultTheme" name="DefaultTheme">
+                        <option value="system" selected="@(Model.DefaultTheme == "system" ? "selected" : null)">System</option>
+                        <option value="light" selected="@(Model.DefaultTheme == "light" ? "selected" : null)">Light</option>
+                        <option value="dark" selected="@(Model.DefaultTheme == "dark" ? "selected" : null)">Dark</option>
+                    </select>
+                    <small class="muted">Individual users can still toggle their own theme in the header.</small>
+                </div>
+                <div>
+                    <label for="LogoPath"><strong>Logo path</strong></label>
+                    <input id="LogoPath" name="LogoPath" value="@Model.LogoPath" maxlength="260" placeholder="/images/ledgerforge-logo.png" />
+                </div>
+                <div>
+                    <label for="IconPath"><strong>Browser icon path</strong></label>
+                    <input id="IconPath" name="IconPath" value="@Model.IconPath" maxlength="260" placeholder="/images/ledgerforge-icon.png" />
+                </div>
+                <div class="full">
+                    <label for="SupportText"><strong>Support text</strong></label>
+                    <input id="SupportText" name="SupportText" value="@Model.SupportText" maxlength="500" />
+                </div>
+                <div class="full">
+                    <label for="FooterText"><strong>Footer text</strong></label>
+                    <input id="FooterText" name="FooterText" value="@Model.FooterText" maxlength="500" />
+                </div>
+            </div>
+            <p><button class="primary" type="submit">Save organization settings</button></p>
+        </form>
+
+        <form method="post" action="/admin/organization/reset">
+            @Html.AntiForgeryToken()
+            <p class="muted">Reset removes only the host-local override file and restores deployment defaults.</p>
+            <button type="submit">Reset to deployment defaults</button>
+        </form>
+    </section>
+
+    <aside class="card lf-setting-preview" aria-labelledby="preview-title">
+        <h2 id="preview-title">Preview</h2>
+        <div class="lf-preview-brand">
+            <strong>@Model.ProductName</strong>
+            <div class="lf-preview-org">@Model.OrganizationName</div>
+            <div class="lf-preview-title">@Model.ApplicationTitle</div>
+        </div>
+        <dl>
+            <dt>Fiscal year selector</dt><dd>@Model.DefaultFiscalYearLabel</dd>
+            <dt>Time zone</dt><dd>@Model.TimeZone</dd>
+            <dt>Default theme</dt><dd>@Model.DefaultTheme</dd>
+            <dt>Logo</dt><dd>@(string.IsNullOrWhiteSpace(Model.LogoPath) ? "Built-in LedgerForge mark" : Model.LogoPath)</dd>
+        </dl>
+        <p class="muted">These values are stored in <code>App_Data/organization-settings.json</code> on the host and are not intended for source control.</p>
+    </aside>
+</div>

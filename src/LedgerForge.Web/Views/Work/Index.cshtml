@@ -1,0 +1,60 @@
+@model LedgerForge.Infrastructure.Operations.WorkQueueSnapshot
+@using LedgerForge.Infrastructure.Operations
+@{
+    ViewData["Title"] = "Work Center";
+    var canApprove = ViewData["CanApprove"] as bool? == true;
+    var canManageImports = ViewData["CanManageImports"] as bool? == true;
+    var canManageBudget = ViewData["CanManageBudget"] as bool? == true;
+    bool CanSee(WorkQueueItem item) => item.Category switch
+    {
+        WorkItemCategory.Approval => canApprove,
+        WorkItemCategory.ImportReview => canManageImports,
+        WorkItemCategory.FiscalClose => canManageBudget,
+        _ => true
+    };
+    var visibleItems = Model.Items.Where(CanSee).ToArray();
+}
+
+<div class="lf-page-header">
+    <div>
+        <h1 class="lf-page-title">Work Center</h1>
+        <p class="lf-subtitle">One queue for approvals, renewals, import review, and fiscal close work that needs attention.</p>
+    </div>
+    <a class="button" href="/work">Refresh</a>
+</div>
+
+<div class="lf-kpi-grid">
+    @if (canApprove) { <article class="lf-card lf-kpi"><div class="lf-kpi-icon gold">✓</div><div><div class="lf-card-title">Approvals</div><div class="lf-kpi-value">@Model.ApprovalCount</div></div></article> }
+    <article class="lf-card lf-kpi"><div class="lf-kpi-icon red">↻</div><div><div class="lf-card-title">Renewals ≤ 90 Days</div><div class="lf-kpi-value">@Model.RenewalCount</div></div></article>
+    @if (canManageImports) { <article class="lf-card lf-kpi"><div class="lf-kpi-icon blue">⇅</div><div><div class="lf-card-title">Import Reviews</div><div class="lf-kpi-value">@Model.ImportReviewCount</div></div></article> }
+    @if (canManageBudget) { <article class="lf-card lf-kpi"><div class="lf-kpi-icon purple">FY</div><div><div class="lf-card-title">Fiscal Close</div><div class="lf-kpi-value">@Model.FiscalCloseCount</div></div></article> }
+</div>
+
+<section class="lf-card" aria-labelledby="work-items-title">
+    <div class="lf-panel-header"><div><h2 id="work-items-title">Items requiring attention</h2><p class="lf-muted">Urgent and nearest-due work appears first.</p></div><span class="badge">@visibleItems.Length item@(visibleItems.Length == 1 ? string.Empty : "s")</span></div>
+    @if (visibleItems.Length == 0)
+    {
+        <div class="lf-empty-state"><h2>Nothing needs your attention</h2><p>The work center will surface financial workflow and renewal tasks when they become actionable.</p></div>
+    }
+    else
+    {
+        <div class="lf-table-wrap">
+            <table class="lf-table">
+                <thead><tr><th>Priority</th><th>Category</th><th>Work item</th><th>Due / age date</th><th class="lf-number">Amount</th><th></th></tr></thead>
+                <tbody>
+                @foreach (var item in visibleItems)
+                {
+                    <tr>
+                        <td><span class="badge">@(item.IsUrgent ? "Urgent" : "Normal")</span></td>
+                        <td>@item.Category</td>
+                        <td><strong>@item.Title</strong><br /><span class="lf-muted">@item.Detail</span></td>
+                        <td>@(item.DueDate?.ToString("yyyy-MM-dd") ?? "—")</td>
+                        <td class="lf-number">@(item.Amount?.ToString("C2") ?? "—")</td>
+                        <td><a class="button" href="@item.Url">Open</a></td>
+                    </tr>
+                }
+                </tbody>
+            </table>
+        </div>
+    }
+</section>

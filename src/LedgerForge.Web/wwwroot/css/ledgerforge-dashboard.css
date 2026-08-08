@@ -1,0 +1,31 @@
+.lf-dashboard-context { display: flex; align-items: center; gap: .6rem; flex-wrap: wrap; }
+.lf-dashboard-panels { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: .85rem; }
+.lf-dashboard-wide { grid-column: span 2; }
+.lf-dashboard-empty-chart { position: relative; min-height: 235px; display: grid; place-items: center; text-align: center; color: var(--lf-muted); overflow: hidden; padding: 1rem; }
+.lf-dashboard-empty-chart p { position: relative; z-index: 2; max-width: 520px; padding: .7rem 1rem; border-radius: 9px; background: color-mix(in srgb, var(--lf-surface) 90%, transparent); }
+.lf-chart-guide { position: absolute; left: 1rem; right: 1rem; border-top: 1px dashed var(--lf-border); }
+.lf-chart-guide:nth-child(1) { top: 25%; }
+.lf-chart-guide:nth-child(2) { top: 50%; }
+.lf-chart-guide:nth-child(3) { top: 75%; }
+.lf-dashboard-activity { display: grid; }
+.lf-activity-row { display: grid; grid-template-columns: 12px minmax(0,1fr); gap: .65rem; align-items: start; padding: .65rem 0; border-bottom: 1px solid var(--lf-border); color: var(--lf-text); text-decoration: none; }
+.lf-activity-row:last-child { border-bottom: 0; }
+.lf-activity-row:hover strong { color: var(--lf-primary); }
+.lf-activity-row small { display: block; margin-top: .2rem; color: var(--lf-muted); }
+.lf-activity-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--lf-primary); margin-top: .35rem; box-shadow: 0 0 0 4px color-mix(in srgb, var(--lf-primary) 12%, transparent); }
+
+.lf-report-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: .8rem; }
+.lf-report-card { border: 1px solid var(--lf-border); border-radius: 10px; padding: 1rem; background: var(--lf-surface-2); display: flex; flex-direction: column; align-items: flex-start; }
+.lf-report-card h3 { margin: 0; font-size: 1rem; }
+.lf-report-card p { color: var(--lf-muted); flex: 1; }
+
+@media (max-width: 1200px) {
+  .lf-dashboard-panels { grid-template-columns: repeat(2,minmax(0,1fr)); }
+  .lf-dashboard-wide { grid-column: span 2; }
+}
+
+@media (max-width: 760px) {
+  .lf-dashboard-panels, .lf-report-grid { grid-template-columns: 1fr; }
+  .lf-dashboard-wide { grid-column: auto; }
+  .lf-dashboard-context { justify-content: flex-start; }
+}

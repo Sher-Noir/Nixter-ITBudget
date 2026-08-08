@@ -1,0 +1,112 @@
+@model LedgerForge.Infrastructure.Procurement.InvoiceIndexSnapshot
+@{
+    ViewData["Title"] = "Invoices";
+    var canManage = ViewData["CanManageProcurement"] as bool? == true;
+    var errorMessage = ViewData["ErrorMessage"] as string;
+    var saved = ViewData["Saved"] as bool? == true;
+}
+
+<div class="lf-page-header">
+    <div>
+        <h1 class="lf-page-title">Invoices</h1>
+        <p class="lf-subtitle">Capture vendor invoices, code allocations, approve them, and post approved amounts into the immutable actual ledger.</p>
+    </div>
+</div>
+
+@if (!string.IsNullOrWhiteSpace(errorMessage))
+{
+    <div class="lf-card lf-alert lf-alert-danger" role="alert">@errorMessage</div>
+}
+@if (saved)
+{
+    <div class="lf-card lf-alert lf-alert-success" role="status">Invoice saved.</div>
+}
+
+@if (canManage)
+{
+    <section class="lf-card" aria-labelledby="create-invoice-title">
+        <h2 id="create-invoice-title">Create invoice</h2>
+        @if (Model.FiscalYears.Count == 0 || Model.Vendors.Count == 0)
+        {
+            <p class="lf-muted">Create a fiscal year and at least one active vendor before entering invoices.</p>
+        }
+        else
+        {
+            <form method="post" action="/invoices">
+                @Html.AntiForgeryToken()
+                <div class="lf-form-grid">
+                    <div>
+                        <label for="fiscalYearId"><strong>Fiscal year</strong></label>
+                        <select id="fiscalYearId" name="fiscalYearId" required>
+                            @foreach (var option in Model.FiscalYears) { <option value="@option.Id">@option.Label</option> }
+                        </select>
+                    </div>
+                    <div>
+                        <label for="vendorId"><strong>Vendor</strong></label>
+                        <select id="vendorId" name="vendorId" required>
+                            @foreach (var option in Model.Vendors) { <option value="@option.Id">@option.Label</option> }
+                        </select>
+                    </div>
+                    <div>
+                        <label for="invoiceNumber"><strong>Invoice number</strong></label>
+                        <input id="invoiceNumber" name="invoiceNumber" maxlength="100" required autocomplete="off" />
+                    </div>
+                    <div>
+                        <label for="invoiceDate"><strong>Invoice date</strong></label>
+                        <input id="invoiceDate" name="invoiceDate" type="date" required />
+                    </div>
+                    <div>
+                        <label for="totalAmount"><strong>Total amount</strong></label>
+                        <input id="totalAmount" name="totalAmount" type="number" min="0.0001" step="0.0001" required />
+                    </div>
+                    <div>
+                        <label for="purchaseOrderId">Purchase order</label>
+                        <select id="purchaseOrderId" name="purchaseOrderId">
+                            <option value="">No linked purchase order</option>
+                            @foreach (var option in Model.PurchaseOrders) { <option value="@option.Id">@option.Label</option> }
+                        </select>
+                    </div>
+                    <div class="lf-span-all">
+                        <label for="description"><strong>Description</strong></label>
+                        <input id="description" name="description" maxlength="500" required />
+                    </div>
+                </div>
+                <p><button class="primary" type="submit">Create draft invoice</button></p>
+            </form>
+        }
+    </section>
+}
+
+<section class="lf-card" aria-labelledby="invoice-list-title">
+    <div class="lf-panel-header">
+        <div><h2 id="invoice-list-title">Invoice register</h2><p class="lf-muted">Posted invoices are immutable; corrections occur through actual-ledger reversals.</p></div>
+        <span class="badge">@Model.Invoices.Count invoice@(Model.Invoices.Count == 1 ? string.Empty : "s")</span>
+    </div>
+    @if (Model.Invoices.Count == 0)
+    {
+        <div class="lf-empty-state"><p>No invoices have been entered.</p></div>
+    }
+    else
+    {
+        <div class="lf-table-wrap">
+            <table class="lf-table">
+                <thead><tr><th>Invoice</th><th>Date</th><th>Vendor</th><th>PO</th><th>Description</th><th>Status</th><th class="lf-number">Allocated</th><th class="lf-number">Total</th></tr></thead>
+                <tbody>
+                @foreach (var invoice in Model.Invoices)
+                {
+                    <tr>
+                        <td><a href="/invoices/@invoice.Id"><strong>@invoice.InvoiceNumber</strong></a><br /><span class="lf-muted">@invoice.FiscalYear</span></td>
+                        <td>@invoice.InvoiceDate.ToString("yyyy-MM-dd")</td>
+                        <td>@invoice.Vendor</td>
+                        <td>@(invoice.PurchaseOrderNumber ?? "—")</td>
+                        <td>@invoice.Description</td>
+                        <td><span class="badge">@invoice.State</span></td>
+                        <td class="lf-number">@invoice.AllocatedAmount.ToString("C2")</td>
+                        <td class="lf-number">@invoice.TotalAmount.ToString("C2")</td>
+                    </tr>
+                }
+                </tbody>
+            </table>
+        </div>
+    }
+</section>

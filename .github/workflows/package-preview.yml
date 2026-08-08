@@ -1,0 +1,97 @@
+name: package-preview
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ 'agent/**' ]
+    paths:
+      - '.github/workflows/package-preview.yml'
+      - 'global.json'
+      - 'Directory.Build.props'
+      - 'LedgerForge.slnx'
+      - 'src/LedgerForge.*/**'
+      - 'tests/**'
+  pull_request:
+    paths:
+      - '.github/workflows/package-preview.yml'
+      - 'global.json'
+      - 'Directory.Build.props'
+      - 'LedgerForge.slnx'
+      - 'src/LedgerForge.*/**'
+      - 'tests/**'
+
+permissions:
+  contents: read
+
+jobs:
+  windows-setup-preview:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      - name: Restore, build, and test LedgerForge
+        shell: pwsh
+        run: |
+          dotnet restore LedgerForge.slnx
+          dotnet build LedgerForge.slnx --configuration Release --no-restore
+          dotnet test LedgerForge.slnx --configuration Release --no-build --logger "trx;LogFileName=ledgerforge-tests.trx"
+
+      - name: Publish Windows deployment payload
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path artifacts\payload\web | Out-Null
+          New-Item -ItemType Directory -Force -Path artifacts\payload\bootstrap | Out-Null
+
+          dotnet publish src\LedgerForge.Web\LedgerForge.Web.csproj `
+            --configuration Release `
+            --runtime win-x64 `
+            --self-contained false `
+            --output artifacts\payload\web
+
+          dotnet publish src\LedgerForge.Bootstrap\LedgerForge.Bootstrap.csproj `
+            --configuration Release `
+            --runtime win-x64 `
+            --self-contained false `
+            --output artifacts\payload\bootstrap
+
+          if (Test-Path artifacts\payload\web\appsettings.Production.json) {
+            throw 'Production settings must be created by Setup, not embedded in the public payload.'
+          }
+
+          Compress-Archive -Path artifacts\payload\* -DestinationPath artifacts\LedgerForge.Payload.zip -Force
+
+      - name: Publish self-contained Setup executable
+        shell: pwsh
+        run: |
+          $payloadZip = (Resolve-Path 'artifacts\LedgerForge.Payload.zip').Path
+          dotnet publish src\LedgerForge.Setup\LedgerForge.Setup.csproj `
+            --configuration Release `
+            --runtime win-x64 `
+            --self-contained true `
+            --output artifacts\setup `
+            /p:PayloadZipPath="$payloadZip"
+
+          $setupExe = 'artifacts\setup\LedgerForge.Setup.exe'
+          if (-not (Test-Path $setupExe)) { throw 'LedgerForge.Setup.exe was not produced.' }
+          $hash = (Get-FileHash $setupExe -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash  LedgerForge.Setup.exe" | Set-Content -Encoding ascii artifacts\setup\LedgerForge.Setup.exe.sha256
+
+      - name: Upload Setup Preview
+        uses: actions/upload-artifact@v4
+        with:
+          name: LedgerForge-Setup-Preview-win-x64
+          if-no-files-found: error
+          path: |
+            artifacts/setup/LedgerForge.Setup.exe
+            artifacts/setup/LedgerForge.Setup.exe.sha256
+
+      - name: Upload server payload for manual troubleshooting
+        uses: actions/upload-artifact@v4
+        with:
+          name: LedgerForge-Server-Payload-win-x64
+          if-no-files-found: error
+          path: artifacts/LedgerForge.Payload.zip

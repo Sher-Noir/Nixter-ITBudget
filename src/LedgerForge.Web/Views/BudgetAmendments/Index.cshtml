@@ -1,0 +1,123 @@
+@model LedgerForge.Infrastructure.Budgeting.BudgetAmendmentSnapshot
+@using LedgerForge.Domain.Budgeting
+@{
+    ViewData["Title"] = "Budget Amendments";
+    var canEdit = ViewData["CanEdit"] as bool? == true;
+    var canApprove = ViewData["CanApprove"] as bool? == true;
+    var errorMessage = ViewData["ErrorMessage"] as string;
+    var saved = ViewData["Saved"] as bool? == true;
+}
+
+<div class="lf-page-header">
+    <div>
+        <h1 class="lf-page-title">Budget Amendments</h1>
+        <p class="lf-subtitle">Controlled changes to the revised budget baseline with submission and approval lineage.</p>
+    </div>
+    <a class="button" href="/budget">Back to budget</a>
+</div>
+
+@if (!string.IsNullOrWhiteSpace(errorMessage))
+{
+    <div class="lf-card lf-alert lf-alert-danger" role="alert">@errorMessage</div>
+}
+@if (saved)
+{
+    <div class="lf-card lf-alert lf-alert-success" role="status">Budget amendment workflow saved.</div>
+}
+
+@if (canEdit)
+{
+    <section class="lf-card" aria-labelledby="create-amendment-title">
+        <h2 id="create-amendment-title">Create amendment</h2>
+        @if (Model.EligibleBudgetItems.Count == 0)
+        {
+            <p class="lf-muted">No eligible budget items are available in an unlocked fiscal year/latest version.</p>
+        }
+        else
+        {
+            <form method="post" action="/budget/amendments">
+                @Html.AntiForgeryToken()
+                <div class="lf-form-grid">
+                    <div class="lf-span-all">
+                        <label for="budgetItemId"><strong>Budget item</strong></label>
+                        <select id="budgetItemId" name="budgetItemId" required>
+                            @foreach (var option in Model.EligibleBudgetItems) { <option value="@option.Id">@option.Label</option> }
+                        </select>
+                    </div>
+                    <div>
+                        <label for="amountDelta"><strong>Amount delta</strong></label>
+                        <input id="amountDelta" name="amountDelta" type="number" step="0.0001" required />
+                        <small class="lf-muted">Use a positive value to increase or a negative value to decrease the revised baseline.</small>
+                    </div>
+                    <div class="lf-span-all">
+                        <label for="reason"><strong>Business reason</strong></label>
+                        <textarea id="reason" name="reason" rows="3" maxlength="2000" required></textarea>
+                    </div>
+                </div>
+                <button class="primary" type="submit">Create draft amendment</button>
+            </form>
+        }
+    </section>
+}
+
+<section class="lf-card" aria-labelledby="amendment-register-title">
+    <div class="lf-panel-header">
+        <div><h2 id="amendment-register-title">Amendment register</h2><p class="lf-muted">Newest amendments first. Approved rows retain the exact resulting revised total applied to the budget item.</p></div>
+        <span class="badge">@Model.Amendments.Count amendment@(Model.Amendments.Count == 1 ? string.Empty : "s")</span>
+    </div>
+
+    @if (Model.Amendments.Count == 0)
+    {
+        <div class="lf-empty-state"><p>No budget amendments have been created.</p></div>
+    }
+    else
+    {
+        <div class="lf-admin-stack">
+            @foreach (var amendment in Model.Amendments)
+            {
+                <article class="lf-card">
+                    <div class="lf-panel-header">
+                        <div>
+                            <span class="badge">@amendment.State</span>
+                            <h2><a href="/budget/items/@amendment.BudgetItemId">@amendment.BudgetItem</a></h2>
+                            <p class="lf-muted">@amendment.FiscalYear · @amendment.BudgetVersion</p>
+                        </div>
+                        <div class="lf-number">
+                            <strong>@(amendment.AmountDelta >= 0 ? "+" : string.Empty)@amendment.AmountDelta.ToString("C2")</strong><br />
+                            <span class="lf-muted">Baseline @amendment.BaselineAtRead.ToString("C2") → Proposed @amendment.ProposedResult.ToString("C2")</span>
+                        </div>
+                    </div>
+                    <p>@amendment.Reason</p>
+                    @if (amendment.State == BudgetAmendmentState.Approved)
+                    {
+                        <p><strong>Applied revised total:</strong> @amendment.ResultingRevisedTotal?.ToString("C2")</p>
+                    }
+                    @if (!string.IsNullOrWhiteSpace(amendment.SubmittedBy))
+                    {
+                        <p class="lf-muted">Submitted by @amendment.SubmittedBy@if (amendment.SubmittedAtUtc is not null) { <span> · @amendment.SubmittedAtUtc.Value.ToString("u")</span> }</p>
+                    }
+                    @if (!string.IsNullOrWhiteSpace(amendment.DecisionBy))
+                    {
+                        <p class="lf-muted">Decision by @amendment.DecisionBy@if (amendment.DecisionAtUtc is not null) { <span> · @amendment.DecisionAtUtc.Value.ToString("u")</span> } · @amendment.DecisionNote</p>
+                    }
+
+                    <div class="lf-toolbar">
+                        @if (canEdit && amendment.State == BudgetAmendmentState.Draft)
+                        {
+                            <form method="post" action="/budget/amendments/@amendment.Id/submit">@Html.AntiForgeryToken()<button class="primary" type="submit">Submit for approval</button></form>
+                        }
+                        @if (canApprove && amendment.State == BudgetAmendmentState.PendingApproval)
+                        {
+                            <form method="post" action="/budget/amendments/@amendment.Id/approve">@Html.AntiForgeryToken()<input name="note" maxlength="2000" placeholder="Optional approval note" /><button class="primary" type="submit">Approve amendment</button></form>
+                            <details><summary>Reject</summary><form method="post" action="/budget/amendments/@amendment.Id/reject">@Html.AntiForgeryToken()<p><label for="reject-@amendment.Id">Reason</label><input id="reject-@amendment.Id" name="note" maxlength="2000" required /></p><button type="submit">Reject</button></form></details>
+                        }
+                        @if (canEdit && amendment.State is BudgetAmendmentState.Draft or BudgetAmendmentState.PendingApproval)
+                        {
+                            <details><summary>Cancel</summary><form method="post" action="/budget/amendments/@amendment.Id/cancel">@Html.AntiForgeryToken()<p><label for="cancel-@amendment.Id">Reason</label><input id="cancel-@amendment.Id" name="reason" maxlength="2000" required /></p><button type="submit">Cancel</button></form></details>
+                        }
+                    </div>
+                </article>
+            }
+        </div>
+    }
+</section>

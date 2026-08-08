@@ -1,0 +1,113 @@
+@model LedgerForge.Infrastructure.Procurement.ContractDetailSnapshot
+@using LedgerForge.Domain.Procurement
+@{
+    ViewData["Title"] = Model.Contract.Name;
+    var canManage = ViewData["CanManageProcurement"] as bool? == true;
+    var canApprove = ViewData["CanApprove"] as bool? == true;
+    var errorMessage = ViewData["ErrorMessage"] as string;
+    var saved = ViewData["Saved"] as bool? == true;
+}
+
+<div class="lf-page-header">
+    <div>
+        <h1 class="lf-page-title">@Model.Contract.Name</h1>
+        <p class="lf-subtitle">@Model.Contract.ContractNumber · @Model.Contract.Vendor</p>
+    </div>
+    <a class="button" href="/contracts">Back to contracts</a>
+</div>
+
+@if (!string.IsNullOrWhiteSpace(errorMessage))
+{
+    <div class="lf-card lf-alert lf-alert-danger" role="alert">@errorMessage</div>
+}
+@if (saved)
+{
+    <div class="lf-card lf-alert lf-alert-success" role="status">Contract workflow saved.</div>
+}
+
+<div class="lf-kpi-grid">
+    <article class="lf-card lf-kpi"><div class="lf-kpi-icon blue">C</div><div><div class="lf-card-title">State</div><div class="lf-kpi-value">@Model.Contract.State</div><div class="lf-kpi-note">Contract lifecycle</div></div></article>
+    <article class="lf-card lf-kpi"><div class="lf-kpi-icon gold">N</div><div><div class="lf-card-title">Notice Date</div><div class="lf-kpi-value">@Model.Contract.RenewalNoticeDate.ToString("yyyy-MM-dd")</div><div class="lf-kpi-note">Renewal decision window</div></div></article>
+    <article class="lf-card lf-kpi"><div class="lf-kpi-icon red">E</div><div><div class="lf-card-title">End Date</div><div class="lf-kpi-value">@Model.Contract.EndDate.ToString("yyyy-MM-dd")</div><div class="lf-kpi-note">Current agreement term</div></div></article>
+    <article class="lf-card lf-kpi"><div class="lf-kpi-icon teal">$</div><div><div class="lf-card-title">Annual Estimate</div><div class="lf-kpi-value">@Model.Contract.EstimatedAnnualAmount.ToString("C2")</div><div class="lf-kpi-note">Planning exposure</div></div></article>
+</div>
+
+<div class="lf-settings-grid">
+    <section class="lf-card" aria-labelledby="contract-summary-title">
+        <h2 id="contract-summary-title">Agreement summary</h2>
+        <dl class="lf-detail-grid">
+            <div><dt>Vendor</dt><dd>@Model.Contract.Vendor</dd></div>
+            <div><dt>Term</dt><dd>@Model.Contract.StartDate.ToString("yyyy-MM-dd") – @Model.Contract.EndDate.ToString("yyyy-MM-dd")</dd></div>
+            <div><dt>Auto renew</dt><dd>@(Model.Contract.AutoRenew ? "Yes" : "No")</dd></div>
+            <div><dt>Renewal status</dt><dd>@(Model.Contract.RenewalStatus?.ToString() ?? "—")</dd></div>
+            <div><dt>Budget item</dt><dd>@(Model.BudgetItem ?? "Not linked")</dd></div>
+            <div><dt>Finance account</dt><dd>@(Model.FinanceAccount ?? "Not linked")</dd></div>
+            <div class="lf-span-all"><dt>Description</dt><dd>@(Model.Description ?? "—")</dd></div>
+        </dl>
+    </section>
+
+    <aside class="lf-card" aria-labelledby="contract-actions-title">
+        <h2 id="contract-actions-title">Contract actions</h2>
+        @if (canManage && Model.Contract.State == ContractState.Draft)
+        {
+            <form method="post" action="/contracts/@Model.Contract.Id/activate">@Html.AntiForgeryToken()<button class="primary" type="submit">Activate contract</button></form>
+        }
+        @if (canManage && Model.Contract.State is ContractState.Draft or ContractState.Active)
+        {
+            <details>
+                <summary>Terminate contract</summary>
+                <form method="post" action="/contracts/@Model.Contract.Id/terminate">@Html.AntiForgeryToken()<p><label for="terminationReason">Reason</label><input id="terminationReason" name="reason" maxlength="1000" required /></p><button type="submit">Terminate</button></form>
+            </details>
+        }
+        @if (!canManage || Model.Contract.State is ContractState.Expired or ContractState.Terminated)
+        {
+            <p class="lf-muted">No lifecycle action is currently available.</p>
+        }
+    </aside>
+</div>
+
+<section class="lf-card" aria-labelledby="renewal-history-title">
+    <div class="lf-panel-header"><div><h2 id="renewal-history-title">Renewal reviews</h2><p class="lf-muted">Decision records are retained even after completion.</p></div><span class="badge">@Model.Renewals.Count review@(Model.Renewals.Count == 1 ? string.Empty : "s")</span></div>
+    @if (Model.Renewals.Count == 0)
+    {
+        <div class="lf-empty-state"><p>No renewal review records exist for this contract.</p></div>
+    }
+    else
+    {
+        <div class="lf-admin-stack">
+            @foreach (var renewal in Model.Renewals)
+            {
+                <article class="lf-card">
+                    <div class="lf-panel-header">
+                        <div><h3>Renewal @renewal.RenewalDate.ToString("yyyy-MM-dd")</h3><p class="lf-muted">Notice @renewal.NoticeDate.ToString("yyyy-MM-dd") · @renewal.ExpectedAmount.ToString("C2")</p></div>
+                        <span class="badge">@renewal.Status</span>
+                    </div>
+                    @if (!string.IsNullOrWhiteSpace(renewal.DecisionBy))
+                    {
+                        <p><strong>@renewal.DecisionBy</strong>@if (renewal.DecisionAtUtc is not null) { <span> · @renewal.DecisionAtUtc.Value.ToString("u")</span> }</p>
+                        <p>@renewal.DecisionNote</p>
+                    }
+                    @if (canApprove && renewal.Status != ContractRenewalStatus.Completed)
+                    {
+                        <form method="post" action="/contracts/@Model.Contract.Id/renewals/@renewal.Id/decision">
+                            @Html.AntiForgeryToken()
+                            <div class="lf-form-grid">
+                                <div><label for="status-@renewal.Id">Decision</label><select id="status-@renewal.Id" name="status"><option value="Renew">Renew</option><option value="Renegotiate">Renegotiate</option><option value="Terminate">Terminate</option><option value="Deferred">Deferred</option></select></div>
+                                <div class="lf-span-all"><label for="note-@renewal.Id">Decision note</label><textarea id="note-@renewal.Id" name="note" rows="3" maxlength="2000" required></textarea></div>
+                            </div>
+                            <button class="primary" type="submit">Save renewal decision</button>
+                        </form>
+                    }
+                    @if (canManage && renewal.Status is ContractRenewalStatus.Renew or ContractRenewalStatus.Renegotiate or ContractRenewalStatus.Terminate)
+                    {
+                        <form method="post" action="/contracts/@Model.Contract.Id/renewals/@renewal.Id/complete">
+                            @Html.AntiForgeryToken()
+                            <p><label for="complete-note-@renewal.Id">Completion note</label><input id="complete-note-@renewal.Id" name="note" maxlength="2000" required /></p>
+                            <button type="submit">Mark decision complete</button>
+                        </form>
+                    }
+                </article>
+            }
+        </div>
+    }
+</section>

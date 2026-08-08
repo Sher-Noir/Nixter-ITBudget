@@ -1,0 +1,233 @@
+name: ci
+on:
+  push:
+    branches: [ main, 'agent/**' ]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+      - run: dotnet --info
+      - run: dotnet restore LedgerForge.slnx
+      - run: dotnet build LedgerForge.slnx --configuration Release --no-restore
+      - name: Unit tests
+        run: dotnet test tests/LedgerForge.UnitTests/LedgerForge.UnitTests.csproj --configuration Release --no-build --logger "trx;LogFileName=ledgerforge-unit-tests.trx"
+      - name: Integration tests
+        run: dotnet test tests/LedgerForge.IntegrationTests/LedgerForge.IntegrationTests.csproj --configuration Release --no-build --logger "trx;LogFileName=ledgerforge-integration-tests.trx"
+      - name: UI tests
+        run: dotnet test tests/LedgerForge.UiTests/LedgerForge.UiTests.csproj --configuration Release --no-build --logger "trx;LogFileName=ledgerforge-ui-tests.trx"
+
+  migration-gate:
+    runs-on: ubuntu-latest
+    services:
+      sqlserver:
+        image: mcr.microsoft.com/mssql/server:2022-latest
+        env:
+          ACCEPT_EULA: 'Y'
+          MSSQL_SA_PASSWORD: 'LedgerForge_CI_2026_Aa7!'
+        ports:
+          - 1433:1433
+
+    env:
+      LEDGERFORGE_TEST_CONNECTION: 'Server=localhost,1433;Database=LedgerForgeMigrationGate;User Id=sa;Password=LedgerForge_CI_2026_Aa7!;Encrypt=True;TrustServerCertificate=True;Connect Timeout=30'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      - name: Restore tools and solution
+        run: |
+          dotnet tool restore
+          dotnet restore LedgerForge.slnx
+
+      - name: Build release
+        run: dotnet build LedgerForge.slnx --configuration Release --no-restore
+
+      - name: Wait for disposable SQL Server
+        shell: bash
+        run: |
+          container_id='${{ job.services.sqlserver.id }}'
+          for attempt in $(seq 1 60); do
+            if docker exec "$container_id" bash -lc '
+              if [ -x /opt/mssql-tools18/bin/sqlcmd ]; then SQLCMD=/opt/mssql-tools18/bin/sqlcmd; else SQLCMD=/opt/mssql-tools/bin/sqlcmd; fi
+              "$SQLCMD" -b -S localhost -U sa -P "$MSSQL_SA_PASSWORD" -C -Q "SELECT 1" >/dev/null
+            '; then
+              echo 'SQL Server is ready.'
+              exit 0
+            fi
+            sleep 2
+          done
+          echo 'SQL Server did not become ready.'
+          docker logs "$container_id"
+          exit 1
+
+      - name: Require committed migrations
+        shell: bash
+        run: |
+          migration_dir='src/LedgerForge.Infrastructure/Persistence/Migrations'
+          if ! find "$migration_dir" -maxdepth 1 -name '*_InitialCreate.cs' -print -quit 2>/dev/null | grep -q .; then
+            echo 'InitialCreate is not committed. Generate and review migrations explicitly before CI.'
+            exit 1
+          fi
+          echo "Committed migration files:"
+          find "$migration_dir" -maxdepth 1 -name '*.cs' ! -name '*.Designer.cs' ! -name '*ModelSnapshot.cs' -print | sort
+
+      - name: Verify migration matches the EF model
+        run: |
+          dotnet ef migrations has-pending-model-changes \
+            --project src/LedgerForge.Infrastructure/LedgerForge.Infrastructure.csproj \
+            --startup-project src/LedgerForge.Web/LedgerForge.Web.csproj \
+            --context LedgerForgeDbContext
+
+      - name: Generate full migration SQL
+        shell: bash
+        run: |
+          mkdir -p artifacts
+          dotnet ef migrations script 0 \
+            --project src/LedgerForge.Infrastructure/LedgerForge.Infrastructure.csproj \
+            --startup-project src/LedgerForge.Web/LedgerForge.Web.csproj \
+            --context LedgerForgeDbContext \
+            --output artifacts/LedgerForge-Migrations.sql
+
+      - name: Review migration SQL safety invariants
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          sql_path = Path('artifacts/LedgerForge-Migrations.sql')
+          sql = sql_path.read_text(encoding='utf-8')
+          upper = sql.upper()
+          blocked = ['DROP TABLE', 'DROP COLUMN', 'TRUNCATE TABLE', 'ON DELETE CASCADE']
+          hits = [token for token in blocked if token in upper]
+          if hits:
+              raise SystemExit('Blocked migration SQL token(s): ' + ', '.join(hits))
+          summary = [
+              f'CREATE TABLE statements: {upper.count("CREATE TABLE")}',
+              f'CREATE INDEX statements: {upper.count("CREATE INDEX")}',
+              f'UNIQUE index markers: {upper.count("UNIQUE INDEX")}',
+              f'CHECK constraints: {upper.count("CHECK")}',
+              f'rowversion columns: {upper.count("ROWVERSION")}',
+              f'decimal(19,4) columns: {upper.count("DECIMAL(19,4)")}',
+              'Destructive/cascade token scan: PASS',
+          ]
+          Path('artifacts/schema-review.txt').write_text('\n'.join(summary) + '\n', encoding='utf-8')
+          print('\n'.join(summary))
+          PY
+
+      - name: Initialize disposable database with deployment bootstrap
+        run: dotnet run --project src/LedgerForge.Bootstrap/LedgerForge.Bootstrap.csproj --configuration Release --no-build -- initialize
+        env:
+          LEDGERFORGE_CONNECTION_STRING: ${{ env.LEDGERFORGE_TEST_CONNECTION }}
+
+      - name: Verify database with deployment bootstrap
+        run: dotnet run --project src/LedgerForge.Bootstrap/LedgerForge.Bootstrap.csproj --configuration Release --no-build -- verify
+        env:
+          LEDGERFORGE_CONNECTION_STRING: ${{ env.LEDGERFORGE_TEST_CONNECTION }}
+
+      - name: Inspect applied schema
+        shell: bash
+        run: |
+          mkdir -p artifacts
+          cat > artifacts/schema-inspection.sql <<'SQL'
+          SET NOCOUNT ON;
+
+          SELECT COUNT(*) AS UserTableCount
+          FROM sys.tables
+          WHERE is_ms_shipped = 0;
+
+          SELECT MigrationId, ProductVersion
+          FROM __EFMigrationsHistory
+          ORDER BY MigrationId;
+
+          SELECT COUNT(*) AS CascadeForeignKeyCount
+          FROM sys.foreign_keys
+          WHERE delete_referential_action_desc = N'CASCADE';
+
+          SELECT COUNT(*) AS CheckConstraintCount
+          FROM sys.check_constraints;
+
+          SELECT COUNT(*) AS IndexCount
+          FROM sys.indexes
+          WHERE is_hypothetical = 0 AND index_id > 0;
+
+          SELECT TABLE_NAME, COLUMN_NAME, NUMERIC_PRECISION, NUMERIC_SCALE
+          FROM INFORMATION_SCHEMA.COLUMNS
+          WHERE DATA_TYPE IN (N'decimal', N'numeric')
+          ORDER BY TABLE_NAME, ORDINAL_POSITION;
+
+          IF EXISTS (
+              SELECT 1
+              FROM sys.foreign_keys
+              WHERE delete_referential_action_desc = N'CASCADE'
+          )
+              THROW 50001, 'LedgerForge financial schema must not contain cascading foreign-key deletes.', 1;
+
+          IF NOT EXISTS (
+              SELECT 1
+              FROM __EFMigrationsHistory
+              WHERE MigrationId LIKE N'%_InitialCreate'
+          )
+              THROW 50002, 'InitialCreate migration history row is missing.', 1;
+
+          IF EXISTS (
+              SELECT 1
+              FROM INFORMATION_SCHEMA.COLUMNS
+              WHERE DATA_TYPE IN (N'decimal', N'numeric')
+                AND NOT (
+                    NUMERIC_SCALE = 4
+                    AND (
+                        NUMERIC_PRECISION = 19
+                        OR (
+                            TABLE_NAME = N'BudgetItemAllocation'
+                            AND COLUMN_NAME = N'Percentage'
+                            AND NUMERIC_PRECISION = 9
+                        )
+                    )
+                )
+          )
+              THROW 50003, 'Unexpected decimal precision or scale found in the applied schema.', 1;
+          SQL
+
+          container_id='${{ job.services.sqlserver.id }}'
+          docker cp artifacts/schema-inspection.sql "$container_id:/tmp/schema-inspection.sql"
+          docker exec "$container_id" bash -lc '
+            if [ -x /opt/mssql-tools18/bin/sqlcmd ]; then SQLCMD=/opt/mssql-tools18/bin/sqlcmd; else SQLCMD=/opt/mssql-tools/bin/sqlcmd; fi
+            "$SQLCMD" -b -S localhost -U sa -P "$MSSQL_SA_PASSWORD" -C -d LedgerForgeMigrationGate -i /tmp/schema-inspection.sql
+          '
+
+      - name: Unit tests after database validation
+        run: dotnet test tests/LedgerForge.UnitTests/LedgerForge.UnitTests.csproj --configuration Release --no-build --logger "trx;LogFileName=ledgerforge-unit-tests.trx"
+        env:
+          ConnectionStrings__LedgerForge: ${{ env.LEDGERFORGE_TEST_CONNECTION }}
+
+      - name: Integration tests after database validation
+        run: dotnet test tests/LedgerForge.IntegrationTests/LedgerForge.IntegrationTests.csproj --configuration Release --no-build --logger "trx;LogFileName=ledgerforge-integration-tests.trx"
+        env:
+          ConnectionStrings__LedgerForge: ${{ env.LEDGERFORGE_TEST_CONNECTION }}
+
+      - name: UI tests after database validation
+        run: dotnet test tests/LedgerForge.UiTests/LedgerForge.UiTests.csproj --configuration Release --no-build --logger "trx;LogFileName=ledgerforge-ui-tests.trx"
+        env:
+          ConnectionStrings__LedgerForge: ${{ env.LEDGERFORGE_TEST_CONNECTION }}
+
+      - name: Upload migration review
+        uses: actions/upload-artifact@v4
+        with:
+          name: ledgerforge-migrations
+          if-no-files-found: error
+          path: |
+            src/LedgerForge.Infrastructure/Persistence/Migrations/**
+            artifacts/LedgerForge-Migrations.sql
+            artifacts/schema-review.txt
+            artifacts/schema-inspection.sql

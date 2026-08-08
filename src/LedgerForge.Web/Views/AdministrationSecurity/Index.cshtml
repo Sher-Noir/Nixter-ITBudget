@@ -1,0 +1,27 @@
+@model LedgerForge.Web.Models.Administration.SecurityMappingsViewModel
+@{
+    ViewData["Title"] = "Security Administration";
+}
+<section class="lf-card" aria-labelledby="security-title">
+    <h1 id="security-title" class="lf-page-title">Security administration</h1>
+    <p class="lf-subtitle">Map LedgerForge roles to directory groups and manage explicit per-user grant/deny exceptions. Deployment configuration remains available for bootstrap and recovery.</p>
+    @if (!string.IsNullOrWhiteSpace(Model.ErrorMessage)) { <div role="alert" class="lf-alert lf-alert-danger">@Model.ErrorMessage</div> }
+    @if (!string.IsNullOrWhiteSpace(Model.SuccessMessage)) { <div role="status" class="lf-alert lf-alert-success">@Model.SuccessMessage</div> }
+    <h2>Add or reactivate a directory group mapping</h2>
+    <form method="post" action="/admin/security/ad-groups">
+        @Html.AntiForgeryToken()
+        <div class="lf-form-grid"><div><label for="role">Application role</label><select id="role" name="role" required>@foreach (var role in Model.Roles) { <option value="@role">@role</option> }</select></div><div><label for="groupName">Directory group</label><input id="groupName" name="groupName" maxlength="256" required autocomplete="off" /></div><div class="lf-span-all"><label for="description">Description</label><input id="description" name="description" maxlength="1000" /></div></div>
+        <p><button type="submit" class="primary">Save mapping</button></p>
+    </form>
+</section>
+<section class="lf-card">
+    <h2>Database-backed directory mappings</h2>
+    @if (Model.Mappings.Count == 0) { <p class="lf-muted">No database mappings have been configured yet.</p> }
+    else { <div class="lf-table-wrap"><table class="lf-table"><thead><tr><th>Role</th><th>Directory group</th><th>Description</th><th>State</th><th>Action</th></tr></thead><tbody>@foreach (var mapping in Model.Mappings) { <tr><td>@mapping.Role</td><td><code>@mapping.GroupName</code></td><td>@mapping.Description</td><td>@(mapping.IsActive ? "Active" : "Inactive")</td><td><form method="post" action="/admin/security/ad-groups/@mapping.Id/state">@Html.AntiForgeryToken()<input type="hidden" name="isActive" value="@(!mapping.IsActive)" /><button type="submit">@(mapping.IsActive ? "Deactivate" : "Activate")</button></form></td></tr> }</tbody></table></div> }
+</section>
+<section class="lf-card">
+    <h2>Per-user role exceptions</h2><p class="lf-muted">Use exceptions sparingly. An active Deny overrides a user grant and directory-group membership for that role.</p>
+    <form method="post" action="/admin/security/user-exceptions">@Html.AntiForgeryToken()<div class="lf-form-grid lf-form-grid-3"><div><label for="domainIdentity">Directory username</label><input id="domainIdentity" name="domainIdentity" maxlength="256" placeholder="DOMAIN\username" required /></div><div><label for="exceptionRole">Role</label><select id="exceptionRole" name="role" required>@foreach (var role in Model.Roles) { <option value="@role">@role</option> }</select></div><div><label for="effect">Effect</label><select id="effect" name="effect" required>@foreach (var effect in Model.Effects) { <option value="@effect">@effect</option> }</select></div><div class="lf-span-all"><label for="reason">Reason</label><input id="reason" name="reason" maxlength="2000" required /></div></div><p><button type="submit" class="primary">Save user exception</button></p></form>
+    @if (Model.UserExceptions.Count == 0) { <p class="lf-muted">No user-specific role exceptions have been configured.</p> }
+    else { <div class="lf-table-wrap"><table class="lf-table"><thead><tr><th>User</th><th>Role</th><th>Effect</th><th>Reason</th><th>State</th><th>Action</th></tr></thead><tbody>@foreach (var exception in Model.UserExceptions) { <tr><td><code>@exception.DomainIdentity</code></td><td>@exception.Role</td><td>@exception.Effect</td><td>@exception.Reason</td><td>@(exception.IsActive ? "Active" : "Inactive")</td><td>@if (exception.IsActive) { <form method="post" action="/admin/security/user-exceptions/@exception.Id/deactivate">@Html.AntiForgeryToken()<button type="submit">Deactivate</button></form> }</td></tr> }</tbody></table></div> }
+</section>

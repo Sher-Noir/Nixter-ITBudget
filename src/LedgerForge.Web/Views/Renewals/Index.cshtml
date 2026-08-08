@@ -1,0 +1,91 @@
+@model LedgerForge.Infrastructure.Reporting.RenewalCalendarSnapshot
+@using LedgerForge.Infrastructure.Reporting
+@{
+    ViewData["Title"] = "Renewals";
+}
+
+<div class="lf-page-header">
+    <div>
+        <h1 class="lf-page-title">Renewal Calendar</h1>
+        <p class="lf-subtitle">Contract renewals are authoritative where available, with budget-item dates used as fallback.</p>
+    </div>
+</div>
+
+<form method="get" action="/renewals" class="lf-toolbar lf-budget-selector" aria-label="Renewal fiscal year">
+    <div>
+        <label for="fiscalYearId"><strong>Fiscal year</strong></label>
+        <select id="fiscalYearId" name="fiscalYearId">
+            @foreach (var year in Model.FiscalYears)
+            {
+                <option value="@year.Id" selected="@(Model.SelectedFiscalYearId == year.Id ? "selected" : null)">@year.Name@(year.IsCurrent ? " · Current" : string.Empty)</option>
+            }
+        </select>
+    </div>
+    <div class="lf-toolbar-action"><button type="submit">Load renewals</button></div>
+    @if (Model.SelectedFiscalYearId is not null)
+    {
+        <div class="lf-toolbar-action"><a class="button" href="/exports/renewals.csv?fiscalYearId=@Model.SelectedFiscalYearId">Export CSV</a></div>
+    }
+</form>
+
+<div class="lf-kpi-grid">
+    <article class="lf-card lf-kpi"><div class="lf-kpi-icon red">!</div><div><div class="lf-card-title">Overdue</div><div class="lf-kpi-value">@Model.OverdueCount</div><div class="lf-kpi-note">Renewal date has passed</div></div></article>
+    <article class="lf-card lf-kpi"><div class="lf-kpi-icon gold">30</div><div><div class="lf-card-title">Due in 30 Days</div><div class="lf-kpi-value">@Model.DueWithin30DaysCount</div><div class="lf-kpi-note">Immediate renewal window</div></div></article>
+    <article class="lf-card lf-kpi"><div class="lf-kpi-icon blue">90</div><div><div class="lf-card-title">Due in 90 Days</div><div class="lf-kpi-value">@Model.DueWithin90DaysCount</div><div class="lf-kpi-note">30- and 90-day planning window</div></div></article>
+    <article class="lf-card lf-kpi"><div class="lf-kpi-icon teal">$</div><div><div class="lf-card-title">90-Day Estimate</div><div class="lf-kpi-value">@Model.DueWithin90DaysAmount.ToString("C2")</div><div class="lf-kpi-note">Estimated renewal exposure</div></div></article>
+</div>
+
+<section class="lf-card" aria-labelledby="renewal-list-title">
+    <div class="lf-panel-header">
+        <div><h2 id="renewal-list-title">Renewal schedule</h2><p class="lf-muted">@Model.FiscalYearName · ordered by renewal date.</p></div>
+        <span class="badge">@Model.Items.Count renewal@(Model.Items.Count == 1 ? string.Empty : "s")</span>
+    </div>
+
+    @if (Model.Items.Count == 0)
+    {
+        <div class="lf-empty-state"><p>No contract or fallback budget renewals are scheduled for this fiscal year.</p></div>
+    }
+    else
+    {
+        <div class="lf-table-wrap">
+            <table class="lf-table">
+                <thead><tr><th>Reference</th><th>Source</th><th>Vendor / description</th><th>Renewal date</th><th>Notice date</th><th>Timing</th><th>Status</th><th class="lf-number">Estimate</th></tr></thead>
+                <tbody>
+                @foreach (var item in Model.Items)
+                {
+                    var timingLabel = item.Timing switch
+                    {
+                        RenewalTiming.Overdue => $"Overdue by {Math.Abs(item.DaysUntilRenewal)} day(s)",
+                        RenewalTiming.DueWithin30Days => $"Due in {item.DaysUntilRenewal} day(s)",
+                        RenewalTiming.DueWithin90Days => $"Due in {item.DaysUntilRenewal} day(s)",
+                        _ => $"Due in {item.DaysUntilRenewal} day(s)"
+                    };
+                    <tr>
+                        <td>
+                            @if (item.ContractId is not null)
+                            {
+                                <a href="/contracts/@item.ContractId"><strong>@item.Reference</strong></a>
+                            }
+                            else if (item.BudgetItemId is not null)
+                            {
+                                <a href="/budget/items/@item.BudgetItemId"><strong>@item.Reference</strong></a>
+                            }
+                            else
+                            {
+                                <strong>@item.Reference</strong>
+                            }
+                        </td>
+                        <td><span class="badge">@item.Source</span></td>
+                        <td>@(string.IsNullOrWhiteSpace(item.Vendor) ? item.Description : $"{item.Vendor} · {item.Description}")</td>
+                        <td>@item.RenewalDate.ToString("yyyy-MM-dd")</td>
+                        <td>@(item.NoticeDate?.ToString("yyyy-MM-dd") ?? "—")</td>
+                        <td><span class="badge">@timingLabel</span></td>
+                        <td>@item.Status</td>
+                        <td class="lf-number">@item.EstimatedAmount.ToString("C2")</td>
+                    </tr>
+                }
+                </tbody>
+            </table>
+        </div>
+    }
+</section>
