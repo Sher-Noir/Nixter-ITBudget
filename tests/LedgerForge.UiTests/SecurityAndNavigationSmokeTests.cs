@@ -28,6 +28,27 @@ public sealed class SecurityAndNavigationSmokeTests
     }
 
     [Fact]
+    public void ErrorEndpoints_CanHandleReExecutedPostRequests()
+    {
+        var home = Read("src", "LedgerForge.Web", "Controllers", "HomeController.cs");
+
+        Assert.Contains("public IActionResult AccessDenied", home, StringComparison.Ordinal);
+        Assert.Contains("public IActionResult Error()", home, StringComparison.Ordinal);
+        Assert.DoesNotContain("[HttpGet]\n    public IActionResult AccessDenied", home, StringComparison.Ordinal);
+        Assert.DoesNotContain("[HttpGet]\n    public IActionResult Error()", home, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void OrganizationOverrides_UseWritableNonWebRootHostStorage()
+    {
+        var store = Read("src", "LedgerForge.Web", "Configuration", "OrganizationSettingsStore.cs");
+
+        Assert.Contains("Documents:StoragePath", store, StringComparison.Ordinal);
+        Assert.Contains(".ledgerforge", store, StringComparison.Ordinal);
+        Assert.Contains("Organization settings storage cannot be inside the public web root", store, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void PrimaryNavigation_ExposesCoreLedgerForgeModules()
     {
         var layout = Read("src", "LedgerForge.Web", "Views", "Shared", "_Layout.cshtml");
