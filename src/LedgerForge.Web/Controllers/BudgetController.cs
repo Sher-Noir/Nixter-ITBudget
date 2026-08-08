@@ -12,6 +12,7 @@ namespace LedgerForge.Web.Controllers;
 [Route("budget")]
 public sealed class BudgetController(
     BudgetPlanningService planningService,
+    BudgetItemWorkspaceService workspaceService,
     ApprovalQueueService approvalQueueService,
     IAuthorizationService authorizationService) : Controller
 {
@@ -70,16 +71,17 @@ public sealed class BudgetController(
     [HttpGet("items/{id:guid}")]
     public async Task<IActionResult> Item(Guid id, CancellationToken cancellationToken)
     {
-        var snapshot = await planningService.GetItemAsync(id, cancellationToken);
-        if (snapshot is null) return NotFound();
+        var workspace = await workspaceService.GetAsync(id, cancellationToken);
+        if (workspace is null) return NotFound();
 
+        var snapshot = workspace.Item;
         var canEditRole = (await authorizationService.AuthorizeAsync(User, AuthorizationPolicies.EditPlanningBudget)).Succeeded;
         var workflowEditable = snapshot.Status is BudgetItemStatus.Draft or BudgetItemStatus.Proposed or BudgetItemStatus.Deferred;
         ViewData["CanSubmit"] = canEditRole && !snapshot.VersionLocked && workflowEditable;
         ViewData["Submitted"] = Request.Query.ContainsKey("submitted");
 
         return View("Item", new BudgetItemEditViewModel(
-            snapshot,
+            workspace,
             canEditRole && !snapshot.VersionLocked && workflowEditable,
             TempData["BudgetItemError"] as string,
             Request.Query.ContainsKey("saved")));
