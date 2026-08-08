@@ -5,15 +5,29 @@
   min-height: 35px;
   display: inline-flex;
   align-items: center;
-  justify-content: space-between;
-  gap: .55rem;
-  padding: .45rem .65rem;
+  gap: .4rem;
+  padding: 0 .3rem 0 .62rem;
   border: 1px solid var(--lf-border);
   border-radius: 7px;
   background: var(--lf-surface);
-  color: var(--lf-text);
+  color: var(--lf-primary);
   font-size: .72rem;
 }
+.lf-dashboard-filter select {
+  min-width: 125px;
+  min-height: 33px;
+  height: 33px;
+  padding: .3rem 1.6rem .3rem .15rem;
+  border: 0;
+  border-radius: 0;
+  background-color: transparent;
+  box-shadow: none;
+  color: var(--lf-text);
+  font-size: .72rem;
+  font-weight: 600;
+}
+.lf-dashboard-filter select:focus-visible { outline-offset: -2px; }
+.lf-dashboard-filter-apply { min-height: 35px; padding: .42rem .7rem; font-size: .7rem; }
 .lf-dashboard-version { margin-left: auto; color: var(--lf-muted); font-size: .7rem; }
 .lf-dashboard-kpis { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: .55rem; margin-bottom: .65rem; }
 .lf-dashboard-kpis .lf-kpi { min-height: 94px; padding: .7rem; grid-template-columns: 42px 1fr; }
@@ -99,7 +113,8 @@
 @media (max-width: 760px) {
   .lf-dashboard-grid-top, .lf-dashboard-grid-bottom, .lf-report-grid { grid-template-columns: 1fr; }
   .lf-dashboard-grid > article:last-child { grid-column: auto; }
-  .lf-dashboard-filter { min-width: 0; flex: 1 1 140px; }
+  .lf-dashboard-filter { min-width: 0; flex: 1 1 155px; }
+  .lf-dashboard-filter select { min-width: 0; width: 100%; }
   .lf-dashboard-version { width: 100%; margin-left: 0; }
   .lf-donut-layout { grid-template-columns: 120px 1fr; }
   .lf-donut { width: 115px; height: 115px; }
