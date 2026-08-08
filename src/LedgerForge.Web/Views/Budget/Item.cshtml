@@ -261,6 +261,14 @@
                 {
                     <form method="post" action="/budget/items/@item.Id/submit" class="lf-secondary-form">@Html.AntiForgeryToken()<button class="primary" type="submit">Submit for approval</button></form>
                 }
+                @if (Model.CanEdit)
+                {
+                    <form method="post" action="/budget/items/@item.Id/delete" class="lf-danger-zone">
+                        @Html.AntiForgeryToken()
+                        <button type="submit" class="danger">Delete planning item</button>
+                        <small class="muted">Deletion is allowed only while the item is in an editable planning state and has no linked documents, logos, procurement, actual, forecast, or workflow history.</small>
+                    </form>
+                }
             </div>
         </details>
     </div>
