@@ -2,9 +2,12 @@
 @using LedgerForge.Web.Security
 @using Microsoft.AspNetCore.Authorization
 @inject OrganizationSettingsStore OrganizationSettings
+@inject LedgerForge.Web.Documents.BrandingAssetService BrandingAssets
 @inject IAuthorizationService AuthorizationService
 @{
     var branding = await OrganizationSettings.GetAsync(Context.RequestAborted);
+    var uploadedOrganizationLogo = await BrandingAssets.GetOrganizationLogoAsync(Context.RequestAborted);
+    var uploadedOrganizationIcon = await BrandingAssets.GetOrganizationIconAsync(Context.RequestAborted);
     var pageTitle = ViewData["Title"] as string;
     var title = string.IsNullOrWhiteSpace(pageTitle) ? branding.ProductName : $"{pageTitle} - {branding.ProductName}";
     var userName = User.Identity?.Name ?? "Signed-in user";
@@ -23,7 +26,11 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="color-scheme" content="light dark" />
     <title>@title</title>
-    @if (!string.IsNullOrWhiteSpace(branding.IconPath))
+    @if (uploadedOrganizationIcon is not null)
+    {
+        <link rel="icon" href="/branding-assets/organization/icon" />
+    }
+    else if (!string.IsNullOrWhiteSpace(branding.IconPath))
     {
         <link rel="icon" href="@branding.IconPath" />
     }
@@ -38,7 +45,11 @@
 <div class="lf-shell">
     <aside class="lf-sidebar" aria-label="Primary navigation">
         <a class="lf-brand" href="/" aria-label="@branding.ProductName home">
-            @if (!string.IsNullOrWhiteSpace(branding.LogoPath))
+            @if (uploadedOrganizationLogo is not null)
+            {
+                <img src="/branding-assets/organization/logo" alt="" class="lf-brand-logo" />
+            }
+            else if (!string.IsNullOrWhiteSpace(branding.LogoPath))
             {
                 <img src="@branding.LogoPath" alt="" class="lf-brand-logo" />
             }
