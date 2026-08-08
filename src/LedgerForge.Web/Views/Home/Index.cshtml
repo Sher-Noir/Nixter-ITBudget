@@ -20,6 +20,7 @@
     var categoryTitle = categoryUsesActual ? "Spending by Category (Actual)" : "Budget by Category (Planned)";
     var categoryRows = Model.CategorySpend.Where(x => (categoryUsesActual ? x.Actual : x.Budget) > 0m).Take(6).ToArray();
     var colors = new[] { "segment-0", "segment-1", "segment-2", "segment-3", "segment-4", "segment-5" };
+    string SvgNumber(double value) => value.ToString("0.###", CultureInfo.InvariantCulture);
 }
 
 <div class="lf-page-header lf-dashboard-header">
@@ -71,9 +72,11 @@
                         var actualHeight = (double)(month.Actual / monthlyMax) * chartHeight;
                         var plannedY = chartBaseY - plannedHeight;
                         var actualY = chartBaseY - actualHeight;
-                        <rect class="lf-svg-planned" x="@x.ToString("0.##", CultureInfo.InvariantCulture)" y="@plannedY.ToString("0.##", CultureInfo.InvariantCulture)" width="@barWidth" height="@plannedHeight.ToString("0.##", CultureInfo.InvariantCulture)" rx="2" />
-                        <rect class="lf-svg-actual" x="@((x + barWidth + 2).ToString("0.##", CultureInfo.InvariantCulture))" y="@actualY.ToString("0.##", CultureInfo.InvariantCulture)" width="@barWidth" height="@actualHeight.ToString("0.##", CultureInfo.InvariantCulture)" rx="2" />
-                        <text class="lf-svg-label" x="@((x + barWidth).ToString("0.##", CultureInfo.InvariantCulture))" y="169" text-anchor="middle">@month.Label</text>
+                        var actualX = x + barWidth + 2d;
+                        var labelX = x + barWidth;
+                        <rect class="lf-svg-planned" x="@SvgNumber(x)" y="@SvgNumber(plannedY)" width="@SvgNumber(barWidth)" height="@SvgNumber(plannedHeight)" rx="2" />
+                        <rect class="lf-svg-actual" x="@SvgNumber(actualX)" y="@SvgNumber(actualY)" width="@SvgNumber(barWidth)" height="@SvgNumber(actualHeight)" rx="2" />
+                        <text class="lf-svg-label" x="@SvgNumber(labelX)" y="169" text-anchor="middle">@month.Label</text>
                     }
                 </svg>
             </div>
@@ -99,7 +102,9 @@
                         var fraction = (double)(amount / categoryTotal);
                         var dash = fraction * 263.893d;
                         var gap = 263.893d - dash;
-                        <circle class="lf-donut-segment @colors[index]" cx="55" cy="55" r="42" transform="rotate(-90 55 55)" stroke-dasharray="@dash.ToString("0.###", CultureInfo.InvariantCulture) @gap.ToString("0.###", CultureInfo.InvariantCulture)" stroke-dashoffset="@(-offset).ToString("0.###", CultureInfo.InvariantCulture)" />
+                        var dashArray = $"{SvgNumber(dash)} {SvgNumber(gap)}";
+                        var dashOffset = SvgNumber(-offset);
+                        <circle class="lf-donut-segment @colors[index]" cx="55" cy="55" r="42" transform="rotate(-90 55 55)" stroke-dasharray="@dashArray" stroke-dashoffset="@dashOffset" />
                         offset += dash;
                     }
                     <text class="lf-donut-value" x="55" y="53" text-anchor="middle">@categoryTotal.ToString("C0")</text>
