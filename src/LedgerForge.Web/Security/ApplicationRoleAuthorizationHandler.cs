@@ -8,6 +8,7 @@ namespace LedgerForge.Web.Security;
 public sealed class ApplicationRoleAuthorizationHandler(
     LedgerForgeDbContext dbContext,
     IConfiguration configuration,
+    ModuleAccessResolver moduleAccessResolver,
     ILogger<ApplicationRoleAuthorizationHandler> logger)
     : AuthorizationHandler<ApplicationRoleRequirement>
 {
@@ -16,6 +17,22 @@ public sealed class ApplicationRoleAuthorizationHandler(
         if (context.User.Identity?.IsAuthenticated != true) return;
         var domainIdentity = context.User.Identity.Name;
         if (string.IsNullOrWhiteSpace(domainIdentity)) return;
+
+        // Configurable Role -> Module -> Access Level grants are evaluated first.
+        // Legacy database/config mappings remain a bootstrap/recovery compatibility path.
+        if (requirement.Module is LedgerForgeModule module)
+        {
+            if (await moduleAccessResolver.HasAccessAsync(context.User, module, requirement.MinimumAccess))
+            {
+                context.Succeed(requirement);
+                return;
+            }
+        }
+        else if (await moduleAccessResolver.HasAnyAccessAsync(context.User))
+        {
+            context.Succeed(requirement);
+            return;
+        }
 
         var requestedRoles = requirement.AllowedRoles.ToArray();
         List<UserRoleException> exceptions;
