@@ -12,6 +12,8 @@ public static class AuthorizationPolicies
     public const string PostActuals = nameof(PostActuals);
     public const string ManageProcurement = nameof(ManageProcurement);
     public const string ManageVendors = nameof(ManageVendors);
+    public const string ManageContracts = nameof(ManageContracts);
+    public const string EditDocuments = nameof(EditDocuments);
     public const string Approve = nameof(Approve);
     public const string ManageImports = nameof(ManageImports);
     public const string ManageFiscalYears = nameof(ManageFiscalYears);
@@ -42,6 +44,10 @@ public static class AuthorizationPolicies
         Add(options, ManageProcurement, LedgerForgeModule.Procurement, ModuleAccessLevel.Manage,
             ApplicationRole.SystemAdministrator, ApplicationRole.BudgetAdministrator, ApplicationRole.BudgetEditor);
         Add(options, ManageVendors, LedgerForgeModule.Vendors, ModuleAccessLevel.Manage,
+            ApplicationRole.SystemAdministrator, ApplicationRole.BudgetAdministrator, ApplicationRole.BudgetEditor);
+        Add(options, ManageContracts, LedgerForgeModule.Contracts, ModuleAccessLevel.Manage,
+            ApplicationRole.SystemAdministrator, ApplicationRole.BudgetAdministrator, ApplicationRole.BudgetEditor);
+        Add(options, EditDocuments, LedgerForgeModule.Documents, ModuleAccessLevel.Edit,
             ApplicationRole.SystemAdministrator, ApplicationRole.BudgetAdministrator, ApplicationRole.BudgetEditor);
         Add(options, Approve, LedgerForgeModule.Approvals, ModuleAccessLevel.Manage,
             ApplicationRole.SystemAdministrator, ApplicationRole.BudgetAdministrator, ApplicationRole.Approver);
