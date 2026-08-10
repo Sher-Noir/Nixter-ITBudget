@@ -2,7 +2,7 @@
 
 LedgerForge is a free and open-source budget management platform for organizations that need structured annual planning, actuals, purchase orders, invoices, renewals, approvals, audit history, and controlled exports without relying on spreadsheets as the system of record.
 
-LedgerForge is designed for self-hosted deployments using ASP.NET Core, SQL Server, IIS, and Windows authentication by default. Organization identity, branding, fiscal-year labels, role/module authorization, import expectations, and operational settings are configurable so adopters can tailor the application without maintaining a private fork.
+LedgerForge is designed for self-hosted deployments using ASP.NET Core, SQL Server, IIS, and Windows authentication by default. Organization identity, branding, fiscal-year labels, role/module authorization, import expectations, update behavior, and operational settings are configurable so adopters can tailor the application without maintaining a private fork.
 
 ## Current status
 
@@ -18,6 +18,8 @@ LedgerForge is under active development. The current foundation includes:
 - Light, dark, and system theme support.
 - Fiscal-year planning without fiscal periods in the active product workflow. Legacy period tables/columns remain only for non-destructive upgrade/history compatibility.
 - Actual entry directly from the related Budget Item, with the full Actual Ledger retained as a compatibility/bulk workflow.
+- Setup maintenance modes for safe **Upgrade** and **Reinstall / repair** while preserving SQL, documents, `.ledgerforge` host data, production configuration, and existing IIS bindings.
+- Cached stable-release update checks with a small in-app notification when a newer tagged GitHub Release is available.
 - Adapter-based spreadsheet migration infrastructure with optional reconciliation expectations.
 - Allocation, import workflow, security/navigation, integration, and spreadsheet-reader test coverage.
 
@@ -56,6 +58,25 @@ Mutable host configuration is stored under a protected `.ledgerforge` directory 
 ```
 
 Administrators can upload an organization logo and browser icon directly. Uploaded branding overrides the advanced `LogoPath` / `IconPath` fallback. Do not commit adopter-specific branding, production identities, internal finance mappings, or mutable host configuration to the upstream project.
+
+## Updates and maintenance Setup
+
+Official tagged releases stamp the same semantic version into the deployed web application and `LedgerForge.Setup.exe`. The web application checks the configured public GitHub Releases feed in the background and caches that result; it never blocks page rendering or application startup on internet access. When a newer stable release exists, authenticated users see a small update control in the application header that opens the release page.
+
+Default update configuration is organization-neutral and can be overridden or disabled:
+
+```json
+{
+  "Updates": {
+    "Enabled": true,
+    "Repository": "Sher-Noir/Nixter-ITBudget",
+    "CheckIntervalHours": 12,
+    "InitialDelaySeconds": 5
+  }
+}
+```
+
+LedgerForge does not silently download or execute an update. Download the intended `LedgerForge.Setup.exe` from the tagged release and verify the published checksum according to local policy. When Setup detects an existing deployment it offers **Upgrade** or **Reinstall / repair**. Both preserve data/configuration; Upgrade additionally requires the downloaded Setup package to be newer than the installed version. See `docs/deployment/backup-restore-upgrade.md`.
 
 ## Local build
 
