@@ -15,7 +15,7 @@ public sealed class ContractsController(
     [HttpGet("")]
     public async Task<IActionResult> Index(CancellationToken cancellationToken)
     {
-        ViewData["CanManageProcurement"] = (await authorizationService.AuthorizeAsync(User, AuthorizationPolicies.ManageProcurement)).Succeeded;
+        ViewData["CanManageProcurement"] = (await authorizationService.AuthorizeAsync(User, AuthorizationPolicies.ManageContracts)).Succeeded;
         ViewData["ErrorMessage"] = TempData["ContractError"] as string;
         ViewData["Saved"] = Request.Query.ContainsKey("saved");
         return View(await contractService.GetIndexAsync(cancellationToken));
@@ -26,14 +26,14 @@ public sealed class ContractsController(
     {
         var detail = await contractService.GetAsync(id, cancellationToken);
         if (detail is null) return NotFound();
-        ViewData["CanManageProcurement"] = (await authorizationService.AuthorizeAsync(User, AuthorizationPolicies.ManageProcurement)).Succeeded;
+        ViewData["CanManageProcurement"] = (await authorizationService.AuthorizeAsync(User, AuthorizationPolicies.ManageContracts)).Succeeded;
         ViewData["CanApprove"] = (await authorizationService.AuthorizeAsync(User, AuthorizationPolicies.Approve)).Succeeded;
         ViewData["ErrorMessage"] = TempData["ContractError"] as string;
         ViewData["Saved"] = Request.Query.ContainsKey("saved");
         return View(detail);
     }
 
-    [Authorize(Policy = AuthorizationPolicies.ManageProcurement)]
+    [Authorize(Policy = AuthorizationPolicies.ManageContracts)]
     [HttpPost("")]
     public async Task<IActionResult> Create(
         Guid vendorId,
@@ -63,12 +63,12 @@ public sealed class ContractsController(
         }
     }
 
-    [Authorize(Policy = AuthorizationPolicies.ManageProcurement)]
+    [Authorize(Policy = AuthorizationPolicies.ManageContracts)]
     [HttpPost("{id:guid}/activate")]
     public Task<IActionResult> Activate(Guid id, CancellationToken cancellationToken)
         => RunContractAction(id, () => contractService.ActivateAsync(id, RequireActor(), cancellationToken));
 
-    [Authorize(Policy = AuthorizationPolicies.ManageProcurement)]
+    [Authorize(Policy = AuthorizationPolicies.ManageContracts)]
     [HttpPost("{id:guid}/terminate")]
     public async Task<IActionResult> Terminate(Guid id, string reason, CancellationToken cancellationToken)
     {
@@ -114,7 +114,7 @@ public sealed class ContractsController(
         }
     }
 
-    [Authorize(Policy = AuthorizationPolicies.ManageProcurement)]
+    [Authorize(Policy = AuthorizationPolicies.ManageContracts)]
     [HttpPost("{contractId:guid}/renewals/{renewalId:guid}/complete")]
     public async Task<IActionResult> CompleteRenewal(
         Guid contractId,

@@ -5,11 +5,11 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace LedgerForge.Web.Controllers;
 
-[Authorize(Policy = AuthorizationPolicies.ViewBudget)]
 public sealed class HomeController(
     DashboardService dashboardService,
     IAuthorizationService authorizationService) : Controller
 {
+    [AllowAnonymous]
     [HttpGet]
     public async Task<IActionResult> Index(
         Guid? fiscalYearId,
@@ -17,6 +17,12 @@ public sealed class HomeController(
         Guid? categoryId,
         CancellationToken cancellationToken)
     {
+        if (User.Identity?.IsAuthenticated != true)
+            return RedirectToAction("Login", "Account", new { returnUrl = Request.Path + Request.QueryString });
+
+        if (!(await authorizationService.AuthorizeAsync(User, AuthorizationPolicies.ViewBudget)).Succeeded)
+            return Forbid();
+
         ViewData["CanManageImports"] = (await authorizationService.AuthorizeAsync(User, AuthorizationPolicies.ManageImports)).Succeeded;
         return View(await dashboardService.GetAsync(fiscalYearId, locationId, categoryId, cancellationToken));
     }

@@ -36,7 +36,7 @@ public sealed class DocumentsController : Controller
     [HttpGet("")]
     public async Task<IActionResult> Index(CancellationToken cancellationToken)
     {
-        ViewData["CanManageDocuments"] = await CanManageDocumentsAsync();
+        ViewData["CanManageDocuments"] = await CanEditDocumentsAsync();
         ViewData["ErrorMessage"] = TempData["DocumentError"] as string;
         ViewData["Saved"] = Request.Query.ContainsKey("saved");
         return View(await _store.ListAsync(cancellationToken));
@@ -47,12 +47,13 @@ public sealed class DocumentsController : Controller
     {
         var document = await _store.GetAsync(id, cancellationToken);
         if (document is null) return NotFound();
-        ViewData["CanManageDocuments"] = await CanManageDocumentsAsync();
+        ViewData["CanManageDocuments"] = await CanEditDocumentsAsync();
         ViewData["ErrorMessage"] = TempData["DocumentError"] as string;
         ViewData["Saved"] = Request.Query.ContainsKey("saved");
         return View(document);
     }
 
+    [Authorize(Policy = AuthorizationPolicies.EditDocuments)]
     [HttpPost("")]
     [RequestFormLimits(MultipartBodyLengthLimit = 26L * 1024 * 1024)]
     public async Task<IActionResult> Create(
@@ -63,7 +64,6 @@ public sealed class DocumentsController : Controller
         IFormFile? file,
         CancellationToken cancellationToken)
     {
-        if (!await CanManageDocumentsAsync()) return Forbid();
         if (file is null || file.Length == 0)
         {
             TempData["DocumentError"] = "Select a non-empty document to upload.";
@@ -96,11 +96,11 @@ public sealed class DocumentsController : Controller
         }
     }
 
+    [Authorize(Policy = AuthorizationPolicies.EditDocuments)]
     [HttpPost("{id:guid}/versions")]
     [RequestFormLimits(MultipartBodyLengthLimit = 26L * 1024 * 1024)]
     public async Task<IActionResult> AddVersion(Guid id, IFormFile? file, CancellationToken cancellationToken)
     {
-        if (!await CanManageDocumentsAsync()) return Forbid();
         if (file is null || file.Length == 0)
         {
             TempData["DocumentError"] = "Select a non-empty document version to upload.";
@@ -146,10 +146,8 @@ public sealed class DocumentsController : Controller
         catch (FileNotFoundException) { return NotFound(); }
     }
 
-    private async Task<bool> CanManageDocumentsAsync()
-        => (await _authorizationService.AuthorizeAsync(User, AuthorizationPolicies.EditPlanningBudget)).Succeeded ||
-           (await _authorizationService.AuthorizeAsync(User, AuthorizationPolicies.ManageProcurement)).Succeeded ||
-           (await _authorizationService.AuthorizeAsync(User, AuthorizationPolicies.Administration)).Succeeded;
+    private async Task<bool> CanEditDocumentsAsync()
+        => (await _authorizationService.AuthorizeAsync(User, AuthorizationPolicies.EditDocuments)).Succeeded;
 
     private string RequireActor()
     {

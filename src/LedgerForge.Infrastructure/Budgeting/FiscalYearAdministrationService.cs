@@ -18,6 +18,8 @@ public sealed record FiscalYearSummary(
     int PeriodCount,
     int VersionCount);
 
+// Retained for binary/source compatibility with older callers and historical data.
+// Fiscal periods are no longer part of the active LedgerForge workflow.
 public sealed record FiscalPeriodSummary(
     Guid Id,
     int PeriodNumber,
@@ -67,7 +69,7 @@ public sealed class FiscalYearAdministrationService(
                 x.Status,
                 x.IsCurrent,
                 x.LockedAtUtc != null,
-                dbContext.FiscalPeriods.Count(period => period.FiscalYearId == x.Id),
+                0,
                 dbContext.BudgetVersions.Count(version => version.FiscalYearId == x.Id)))
             .ToListAsync(cancellationToken);
     }
@@ -114,6 +116,8 @@ public sealed class FiscalYearAdministrationService(
         string initialVersionName,
         CancellationToken cancellationToken = default)
     {
+        // Parameter retained for compatibility. New LedgerForge fiscal years never create periods.
+        _ = createMonthlyPeriods;
         displayName = displayName?.Trim() ?? string.Empty;
         if (await dbContext.FiscalYears.AnyAsync(x => x.DisplayName == displayName, cancellationToken))
             throw new InvalidOperationException("A fiscal year with this display name already exists.");
@@ -131,12 +135,6 @@ public sealed class FiscalYearAdministrationService(
         fiscalYear.SetCurrent(isCurrent);
         fiscalYear.SetStatus(FiscalYearStatus.Planning);
         dbContext.FiscalYears.Add(fiscalYear);
-
-        if (createMonthlyPeriods)
-        {
-            foreach (var period in BuildMonthlyPeriods(fiscalYear.Id, startDate, endDate))
-                dbContext.FiscalPeriods.Add(period);
-        }
 
         var initialVersion = new BudgetVersion(
             fiscalYear.Id,
@@ -163,6 +161,7 @@ public sealed class FiscalYearAdministrationService(
         await dbContext.SaveChangesAsync(cancellationToken);
     }
 
+    // Legacy maintenance API retained for installations that already contain historical periods.
     public async Task ClosePeriodAsync(
         Guid fiscalYearId,
         Guid periodId,
@@ -171,7 +170,7 @@ public sealed class FiscalYearAdministrationService(
     {
         var year = await RequireYearAsync(fiscalYearId, tracking: true, cancellationToken);
         if (year.Status is FiscalYearStatus.Closed or FiscalYearStatus.Archived)
-            throw new InvalidOperationException("Closed or archived fiscal years cannot change period state.");
+            throw new InvalidOperationException("Closed or archived fiscal years cannot change legacy period state.");
         var period = await dbContext.FiscalPeriods.SingleOrDefaultAsync(
             x => x.Id == periodId && x.FiscalYearId == fiscalYearId,
             cancellationToken) ?? throw new KeyNotFoundException("Fiscal period was not found in this fiscal year.");
@@ -185,8 +184,6 @@ public sealed class FiscalYearAdministrationService(
     {
         _ = await RequireYearAsync(fiscalYearId, tracking: false, cancellationToken);
 
-        var openPeriods = await dbContext.FiscalPeriods.AsNoTracking()
-            .CountAsync(x => x.FiscalYearId == fiscalYearId && !x.IsClosed, cancellationToken);
         var pendingBudgetItems = await dbContext.BudgetItems.AsNoTracking()
             .CountAsync(x => x.FiscalYearId == fiscalYearId && x.Status == BudgetItemStatus.Submitted, cancellationToken);
         var openPurchaseOrders = await dbContext.PurchaseOrders.AsNoTracking()
@@ -211,7 +208,6 @@ public sealed class FiscalYearAdministrationService(
         var outstandingCommitment = await outstandingCommitmentService.GetTotalForFiscalYearAsync(fiscalYearId, cancellationToken);
 
         var blockers = new List<string>();
-        if (openPeriods > 0) blockers.Add($"{openPeriods} fiscal period(s) remain open.");
         if (pendingBudgetItems > 0) blockers.Add($"{pendingBudgetItems} budget item(s) are awaiting approval.");
         if (openPurchaseOrders > 0) blockers.Add($"{openPurchaseOrders} purchase order(s) are still draft, pending, or approved but not issued/closed.");
         if (openInvoices > 0) blockers.Add($"{openInvoices} invoice(s) are not posted/cancelled/rejected.");
@@ -221,7 +217,7 @@ public sealed class FiscalYearAdministrationService(
         return new(
             blockers.Count == 0,
             blockers,
-            openPeriods,
+            0,
             pendingBudgetItems,
             openPurchaseOrders,
             openInvoices,
@@ -262,6 +258,8 @@ public sealed class FiscalYearAdministrationService(
         bool createMonthlyPeriods = true,
         CancellationToken cancellationToken = default)
     {
+        // Parameter retained for compatibility. Rollovers no longer create or map periods.
+        _ = createMonthlyPeriods;
         var sourceYear = await RequireYearAsync(sourceFiscalYearId, tracking: false, cancellationToken);
         if (sourceYear.Status != FiscalYearStatus.Closed)
             throw new InvalidOperationException("Only a closed fiscal year can be rolled forward.");
@@ -287,9 +285,6 @@ public sealed class FiscalYearAdministrationService(
             : await dbContext.BudgetItemAllocations.AsNoTracking()
                 .Where(x => sourceItemIds.Contains(x.BudgetItemId))
                 .ToListAsync(cancellationToken);
-        var sourcePeriods = await dbContext.FiscalPeriods.AsNoTracking()
-            .Where(x => x.FiscalYearId == sourceFiscalYearId)
-            .ToDictionaryAsync(x => x.Id, x => x.PeriodNumber, cancellationToken);
 
         await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
         var currentYears = await dbContext.FiscalYears.Where(x => x.IsCurrent).ToListAsync(cancellationToken);
@@ -300,12 +295,6 @@ public sealed class FiscalYearAdministrationService(
         targetYear.SetStatus(FiscalYearStatus.Planning);
         targetYear.SetCurrent(true);
         dbContext.FiscalYears.Add(targetYear);
-
-        var targetPeriods = createMonthlyPeriods
-            ? BuildMonthlyPeriods(targetYear.Id, startDate, endDate).ToList()
-            : [];
-        dbContext.FiscalPeriods.AddRange(targetPeriods);
-        var targetPeriodIds = targetPeriods.ToDictionary(x => x.PeriodNumber, x => x.Id);
 
         var targetVersion = new BudgetVersion(
             targetYear.Id,
@@ -350,12 +339,6 @@ public sealed class FiscalYearAdministrationService(
         foreach (var allocation in sourceAllocations)
         {
             if (!targetItemIds.TryGetValue(allocation.BudgetItemId, out var targetItemId)) continue;
-            Guid? targetPeriodId = null;
-            if (allocation.FiscalPeriodId is Guid sourcePeriodId &&
-                sourcePeriods.TryGetValue(sourcePeriodId, out var periodNumber) &&
-                targetPeriodIds.TryGetValue(periodNumber, out var mappedPeriodId))
-                targetPeriodId = mappedPeriodId;
-
             dbContext.BudgetItemAllocations.Add(new BudgetItemAllocation(
                 targetItemId,
                 allocation.Method,
@@ -364,7 +347,7 @@ public sealed class FiscalYearAdministrationService(
                 allocation.DepartmentId,
                 allocation.LocationId,
                 allocation.FinanceAccountId,
-                targetPeriodId,
+                fiscalPeriodId: null,
                 allocation.Notes));
         }
 
@@ -383,33 +366,4 @@ public sealed class FiscalYearAdministrationService(
 
     private static DateOnly? ShiftDate(DateOnly? date, DateOnly sourceStart, DateOnly targetStart)
         => date is null ? null : targetStart.AddDays(date.Value.DayNumber - sourceStart.DayNumber);
-
-    private static IReadOnlyList<FiscalPeriod> BuildMonthlyPeriods(
-        Guid fiscalYearId,
-        DateOnly startDate,
-        DateOnly endDate)
-    {
-        var periods = new List<FiscalPeriod>();
-        var cursor = startDate;
-        var periodNumber = 1;
-
-        while (cursor <= endDate)
-        {
-            var monthEnd = new DateOnly(cursor.Year, cursor.Month, DateTime.DaysInMonth(cursor.Year, cursor.Month));
-            var periodEnd = monthEnd < endDate ? monthEnd : endDate;
-            periods.Add(new FiscalPeriod(
-                fiscalYearId,
-                periodNumber,
-                $"P{periodNumber:00}",
-                cursor.ToString("MMM yyyy"),
-                cursor,
-                periodEnd));
-
-            if (periodEnd == endDate) break;
-            cursor = periodEnd.AddDays(1);
-            periodNumber++;
-        }
-
-        return periods;
-    }
 }

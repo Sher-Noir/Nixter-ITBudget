@@ -10,10 +10,10 @@ The reference deployment is a Windows Server or supported Windows workstation us
 - the .NET 10 ASP.NET Core Hosting Bundle / ASP.NET Core Module V2;
 - SQL Server or SQL Server Express reachable by Windows Integrated Security;
 - LedgerForge running in its own IIS application pool;
-- LedgerForge document storage on a local or organization-managed path outside the web root;
-- Windows/Active Directory identities used for application authorization.
+- LedgerForge document/configuration storage on a local or organization-managed path outside the web root;
+- Windows/Active Directory identities used for application authentication and authorization.
 
-A single-server IIS + local SQL Server/Express layout is the fully automated Setup path. A remote SQL Server can be used when an administrator provisions the application identity/login and connection configuration according to organizational policy, but remote service-account automation is outside the v1 interactive Setup path.
+A single-server IIS + local SQL Server/Express layout is the fully automated Setup path. A remote SQL Server can be used when an administrator provisions the application identity/login and connection configuration according to organizational policy.
 
 ## Why prerequisites are not auto-downloaded
 
@@ -33,7 +33,7 @@ Recommended procedure:
 4. Remove the localhost-only HTTP binding, or retain HTTP only to redirect to HTTPS according to organizational policy.
 5. Set `Deployment:HttpsRedirection` to `true` in the production configuration.
 6. Restart/recycle the LedgerForge application pool.
-7. Verify `https://<ledgerforge-name>/health` returns HTTP 200 and normal Windows Authentication works.
+7. Verify `https://<ledgerforge-name>/health` returns HTTP 200 and the LedgerForge Windows sign-in flow works.
 
 Example administrator PowerShell after a certificate is already installed:
 
@@ -51,27 +51,46 @@ Get-Item "Cert:\LocalMachine\My\$thumbprint" | New-Item $bindingPath -Force
 
 Certificate acquisition/private-key handling remains an infrastructure responsibility; LedgerForge does not generate or export private TLS keys.
 
-## Windows Authentication and application roles
+## Windows Authentication and application access
 
-IIS anonymous authentication must be disabled and Windows Authentication enabled for the LedgerForge site. LedgerForge then maps authenticated identities to logical roles through configured directory groups and explicit audited grant/deny exceptions.
+LedgerForge uses an explicit application sign-in landing page instead of forcing a Windows challenge on the first request.
 
-The application fails closed when role configuration or directory membership cannot be resolved. The first administrator may be explicitly provisioned by Setup and can subsequently configure directory groups from Administration > Security.
+For the LedgerForge IIS application:
+
+- **Windows Authentication: Enabled**
+- **Anonymous Authentication: Enabled**
+
+Anonymous IIS access is required only so the application can render `/account/login`, `/health`, and friendly error/status endpoints before a Windows challenge. It does **not** make protected LedgerForge routes anonymous; ASP.NET Core authorization still protects application data and actions.
+
+When the user chooses **Continue with Windows**, `/account/windows` requires authenticated Windows access and Negotiate performs the challenge as needed. After authentication, LedgerForge resolves configurable Role → Module → Access Level grants plus any retained legacy bootstrap/recovery mappings.
+
+The application fails closed when authorization configuration or directory membership cannot be resolved.
+
+## Active Directory service identity
+
+Normal Windows sign-in and token-based group checks do not require LedgerForge to store an Active Directory bind password.
+
+If directory search/autocomplete is enabled in a future release, prefer a dedicated least-privilege gMSA as the IIS application-pool identity and use the process identity for directory reads. Do not store a reusable AD password in LedgerForge configuration, SQL Server, source control, the web root, or installer arguments. See `ad-authentication.md` for the detailed model.
 
 ## SQL Server permissions
 
 The web application's IIS application-pool identity requires only the permissions needed by the application runtime. The field-tested local-server Setup creates the virtual-account login/user and grants `db_datareader` and `db_datawriter`.
 
-Migration/bootstrap credentials are more privileged and are used only during explicit deployment. The normal web application does not call `Database.Migrate()` at startup.
+If the application pool is changed to a domain/gMSA identity, provision the SQL login/user for that identity before switching the pool and re-run deployment diagnostics. Migration/bootstrap credentials are more privileged and are used only during explicit deployment. The normal web application does not call `Database.Migrate()` at startup.
 
 ## Filesystem permissions
 
 The deployed web/application directory should be read/execute for the application-pool identity. The configured document-storage directory requires modify access for that identity and must not be beneath `wwwroot`.
 
-Administration > Diagnostics verifies database access, migration state, and document-storage location/writability without revealing the connection-string value.
+Mutable organization settings, branding, and configurable role/module access data are stored beneath the protected `.ledgerforge` configuration root associated with document storage. Preserve this directory across upgrades along with SQL Server and document files.
+
+Administration → Diagnostics verifies database access, migration state, and document-storage location/writability without revealing the connection-string value.
 
 ## Upgrade and recovery
 
-Follow `backup-restore-upgrade.md` before every production upgrade. Back up SQL Server, document storage, and production configuration together. LedgerForge favors restoring a known-good backup/application release over executing generated migration `Down` operations against financial history.
+Follow `backup-restore-upgrade.md` before every production upgrade. Back up SQL Server, document storage (including `.ledgerforge`), and production configuration together. LedgerForge favors restoring a known-good backup/application release over executing generated migration `Down` operations against financial history.
+
+Do not wipe/recreate an existing LedgerForge database simply because a newly released UI control is not visible. First verify the installed web payload, workflow/artifact source SHA, IIS physical path, Setup replacement behavior, and app-pool/site restart. Browser cache should be investigated only after the server payload is confirmed current.
 
 ## Validation before go-live
 
@@ -80,7 +99,10 @@ Require all of the following:
 - tagged LedgerForge release artifact checksum verified;
 - current CI build/test and SQL migration gate green;
 - `/health` HTTP 200 over HTTPS;
-- Windows Authentication verified with both authorized and unauthorized test identities;
+- `/account/login` renders without an automatic Windows challenge;
+- **Continue with Windows** authenticates the expected domain identity;
+- authorized and unauthorized application identities tested;
+- Role → Module → Access Level boundaries verified on representative modules;
 - Administrator Diagnostics all expected checks pass;
 - document upload/download authorization verified;
 - backup and restore procedure tested in an isolated environment;

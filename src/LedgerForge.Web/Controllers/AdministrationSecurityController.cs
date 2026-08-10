@@ -9,11 +9,82 @@ namespace LedgerForge.Web.Controllers;
 
 [Authorize(Policy = AuthorizationPolicies.Administration)]
 [Route("admin/security")]
-public sealed class AdministrationSecurityController(SecurityAdministrationService securityAdministrationService) : Controller
+public sealed class AdministrationSecurityController(
+    SecurityAdministrationService securityAdministrationService,
+    SecurityAccessConfigurationStore accessConfigurationStore) : Controller
 {
     [HttpGet("")]
     public async Task<IActionResult> Index(CancellationToken cancellationToken)
         => View(await BuildModelAsync(cancellationToken));
+
+    [HttpPost("roles")]
+    public async Task<IActionResult> CreateRole(string name, string? description, CancellationToken cancellationToken)
+    {
+        try { await accessConfigurationStore.CreateRoleAsync(name, description, cancellationToken); }
+        catch (Exception exception) when (exception is ArgumentException or InvalidOperationException)
+        {
+            return View("Index", await BuildModelAsync(cancellationToken, exception.Message));
+        }
+        return RedirectToAction(nameof(Index), new { saved = true });
+    }
+
+    [HttpPost("roles/{roleId:guid}")]
+    public async Task<IActionResult> UpdateRole(Guid roleId, string name, string? description, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var access = new Dictionary<LedgerForgeModule, ModuleAccessLevel>();
+            foreach (var module in Enum.GetValues<LedgerForgeModule>())
+            {
+                var raw = Request.Form[$"access-{module}"].ToString();
+                access[module] = Enum.TryParse<ModuleAccessLevel>(raw, true, out var level) && Enum.IsDefined(level)
+                    ? level
+                    : ModuleAccessLevel.None;
+            }
+            await accessConfigurationStore.UpdateRoleAsync(roleId, name, description, access, cancellationToken);
+        }
+        catch (KeyNotFoundException) { return NotFound(); }
+        catch (Exception exception) when (exception is ArgumentException or InvalidOperationException)
+        {
+            return View("Index", await BuildModelAsync(cancellationToken, exception.Message));
+        }
+        return RedirectToAction(nameof(Index), new { saved = true });
+    }
+
+    [HttpPost("roles/{roleId:guid}/delete")]
+    public async Task<IActionResult> DeleteRole(Guid roleId, CancellationToken cancellationToken)
+    {
+        try { await accessConfigurationStore.DeleteRoleAsync(roleId, cancellationToken); }
+        catch (KeyNotFoundException) { return NotFound(); }
+        return RedirectToAction(nameof(Index), new { saved = true });
+    }
+
+    [HttpPost("assignments")]
+    public async Task<IActionResult> CreateAssignment(
+        Guid roleId,
+        string principalType,
+        string principalName,
+        string? description,
+        CancellationToken cancellationToken)
+    {
+        if (!Enum.TryParse<SecurityPrincipalType>(principalType, true, out var parsedType) || !Enum.IsDefined(parsedType))
+            return View("Index", await BuildModelAsync(cancellationToken, "Select a valid assignment type."));
+        try { await accessConfigurationStore.CreateAssignmentAsync(roleId, parsedType, principalName, description, cancellationToken); }
+        catch (KeyNotFoundException) { return NotFound(); }
+        catch (Exception exception) when (exception is ArgumentException or InvalidOperationException)
+        {
+            return View("Index", await BuildModelAsync(cancellationToken, exception.Message));
+        }
+        return RedirectToAction(nameof(Index), new { saved = true });
+    }
+
+    [HttpPost("assignments/{assignmentId:guid}/delete")]
+    public async Task<IActionResult> DeleteAssignment(Guid assignmentId, CancellationToken cancellationToken)
+    {
+        try { await accessConfigurationStore.DeleteAssignmentAsync(assignmentId, cancellationToken); }
+        catch (KeyNotFoundException) { return NotFound(); }
+        return RedirectToAction(nameof(Index), new { saved = true });
+    }
 
     [HttpPost("ad-groups")]
     public async Task<IActionResult> AddMapping(string role, string groupName, string? description, CancellationToken cancellationToken)
@@ -115,10 +186,21 @@ public sealed class AdministrationSecurityController(SecurityAdministrationServi
 
     private async Task<SecurityMappingsViewModel> BuildModelAsync(CancellationToken cancellationToken, string? errorMessage = null)
     {
+        var configurable = await accessConfigurationStore.GetAsync(cancellationToken);
         var mappings = await securityAdministrationService.ListMappingsAsync(cancellationToken);
         var userExceptions = await securityAdministrationService.ListUserExceptionsAsync(cancellationToken);
-        var successMessage = Request.Query.TryGetValue("saved", out var saved) && saved == "True" ? "Security configuration saved." : null;
-        return new(mappings, userExceptions, Enum.GetValues<ApplicationRole>(), Enum.GetValues<UserRoleExceptionEffect>(), errorMessage, successMessage);
+        var successMessage = Request.Query.ContainsKey("saved") ? "Security configuration saved." : null;
+        return new(
+            configurable.Roles.OrderBy(x => x.Name).ToArray(),
+            configurable.Assignments.OrderBy(x => x.PrincipalName).ToArray(),
+            Enum.GetValues<LedgerForgeModule>(),
+            Enum.GetValues<ModuleAccessLevel>(),
+            mappings,
+            userExceptions,
+            Enum.GetValues<ApplicationRole>(),
+            Enum.GetValues<UserRoleExceptionEffect>(),
+            errorMessage,
+            successMessage);
     }
 
     private static bool TryParseRole(string role, out ApplicationRole parsedRole)

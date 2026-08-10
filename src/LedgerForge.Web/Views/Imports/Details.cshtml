@@ -2,6 +2,7 @@
 @using LedgerForge.Domain.Importing
 @{
     ViewData["Title"] = $"Import {Model.Detail.Batch.SourceFileName}";
+    var canManage = ViewData["CanManageImports"] as bool? == true;
     var detail = Model.Detail;
     var batch = detail.Batch;
     var reviewOpen = batch.Status == ImportBatchStatus.PreviewReady && string.IsNullOrWhiteSpace(batch.AcceptedBy);
@@ -55,7 +56,11 @@
 
     <aside class="lf-card" aria-labelledby="batch-actions-title">
         <h2 id="batch-actions-title">Batch actions</h2>
-        @if (reviewOpen)
+        @if (!canManage)
+        {
+            <p class="lf-muted">You have View access to import history. Manage access is required to change review state or commit data.</p>
+        }
+        else if (reviewOpen)
         {
             @if (detail.CanAcceptPreview)
             {
@@ -117,7 +122,7 @@
                     </div>
                     <p>@exception.Message</p>
                     @if (!string.IsNullOrWhiteSpace(exception.AssignedTo)) { <p class="lf-muted">Assigned to: <strong>@exception.AssignedTo</strong></p> }
-                    @if (exception.ResolutionStatus == ImportExceptionResolutionStatus.Open && reviewOpen)
+                    @if (canManage && exception.ResolutionStatus == ImportExceptionResolutionStatus.Open && reviewOpen)
                     {
                         <div class="lf-import-exception-actions">
                             <form method="post" action="/imports/@batch.Id/exceptions/@exception.Id/assign">@Html.AntiForgeryToken()<label for="assigned-@exception.Id">Assign</label><div class="lf-inline-form"><input id="assigned-@exception.Id" name="assignedTo" value="@exception.AssignedTo" maxlength="256" placeholder="DOMAIN\username" /><button type="submit">Save assignment</button></div></form>
@@ -126,7 +131,7 @@
                     }
                     else if (exception.ResolutionStatus != ImportExceptionResolutionStatus.Open)
                     {
-                        <div class="lf-resolution-summary"><strong>@exception.ResolutionStatus by @exception.ResolvedBy</strong>@if (exception.ResolvedAtUtc is not null) { <span> · @exception.ResolvedAtUtc.Value.ToString("u")</span> }<p>@exception.ResolutionNote</p>@if (reviewOpen) { <form method="post" action="/imports/@batch.Id/exceptions/@exception.Id/reopen">@Html.AntiForgeryToken()<button type="submit">Reopen</button></form> }</div>
+                        <div class="lf-resolution-summary"><strong>@exception.ResolutionStatus by @exception.ResolvedBy</strong>@if (exception.ResolvedAtUtc is not null) { <span> · @exception.ResolvedAtUtc.Value.ToString("u")</span> }<p>@exception.ResolutionNote</p>@if (canManage && reviewOpen) { <form method="post" action="/imports/@batch.Id/exceptions/@exception.Id/reopen">@Html.AntiForgeryToken()<button type="submit">Reopen</button></form> }</div>
                     }
                 </article>
             }
@@ -152,7 +157,7 @@
                     {
                         <div class="lf-resolution-summary"><strong>Reviewed by @row.ReviewedBy</strong>@if (row.ReviewedAtUtc is not null) { <span> · @row.ReviewedAtUtc.Value.ToString("u")</span> }<p>@row.ReviewNote</p></div>
                     }
-                    @if (reviewOpen && row.Outcome != ImportRowOutcome.Committed)
+                    @if (canManage && reviewOpen && row.Outcome != ImportRowOutcome.Committed)
                     {
                         <form method="post" action="/imports/@batch.Id/rows/@row.Id/outcome" class="lf-row-review-form">
                             @Html.AntiForgeryToken()

@@ -14,16 +14,17 @@ public sealed class VendorsController(
     IAuthorizationService authorizationService) : Controller
 {
     [HttpGet("")]
-    public async Task<IActionResult> Index(CancellationToken cancellationToken)
+    public async Task<IActionResult> Index(Guid? edit, CancellationToken cancellationToken)
     {
-        ViewData["CanManageProcurement"] = (await authorizationService.AuthorizeAsync(User, AuthorizationPolicies.ManageProcurement)).Succeeded;
+        ViewData["CanManageVendors"] = (await authorizationService.AuthorizeAsync(User, AuthorizationPolicies.ManageVendors)).Succeeded;
+        ViewData["EditVendorId"] = edit;
         ViewData["ErrorMessage"] = TempData["VendorError"] as string;
         ViewData["Notice"] = TempData["VendorNotice"] as string;
         ViewData["Saved"] = Request.Query.ContainsKey("saved");
         return View(await procurementService.ListVendorsAsync(cancellationToken));
     }
 
-    [Authorize(Policy = AuthorizationPolicies.ManageProcurement)]
+    [Authorize(Policy = AuthorizationPolicies.ManageVendors)]
     [HttpPost("")]
     public async Task<IActionResult> Add(
         string code,
@@ -45,7 +46,7 @@ public sealed class VendorsController(
         }
     }
 
-    [Authorize(Policy = AuthorizationPolicies.ManageProcurement)]
+    [Authorize(Policy = AuthorizationPolicies.ManageVendors)]
     [HttpPost("{id:guid}")]
     public async Task<IActionResult> Update(
         Guid id,
@@ -68,11 +69,11 @@ public sealed class VendorsController(
         catch (Exception exception) when (exception is ArgumentException or InvalidOperationException)
         {
             TempData["VendorError"] = exception.Message;
-            return RedirectToAction(nameof(Index));
+            return RedirectToAction(nameof(Index), new { edit = id });
         }
     }
 
-    [Authorize(Policy = AuthorizationPolicies.ManageProcurement)]
+    [Authorize(Policy = AuthorizationPolicies.ManageVendors)]
     [HttpPost("{id:guid}/delete")]
     public async Task<IActionResult> Delete(Guid id, CancellationToken cancellationToken)
     {
@@ -89,7 +90,7 @@ public sealed class VendorsController(
         catch (Exception exception) when (exception is ArgumentException or InvalidOperationException)
         {
             TempData["VendorError"] = exception.Message;
-            return RedirectToAction(nameof(Index));
+            return RedirectToAction(nameof(Index), new { edit = id });
         }
     }
 }

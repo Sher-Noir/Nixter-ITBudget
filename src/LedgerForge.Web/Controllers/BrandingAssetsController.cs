@@ -128,7 +128,7 @@ public sealed class BrandingAssetsController(BrandingAssetService brandingAssetS
         return Redirect($"/budget/items/{id}?saved=true#item-branding");
     }
 
-    [Authorize(Policy = AuthorizationPolicies.ManageProcurement)]
+    [Authorize(Policy = AuthorizationPolicies.ManageVendors)]
     [HttpPost("vendors/{id:guid}/logo")]
     [RequestFormLimits(MultipartBodyLengthLimit = BrandingAssetService.MaxLogoFileSizeBytes + 1024 * 1024)]
     public async Task<IActionResult> UploadVendorLogo(Guid id, IFormFile? logo, CancellationToken cancellationToken)
@@ -151,7 +151,7 @@ public sealed class BrandingAssetsController(BrandingAssetService brandingAssetS
         }
     }
 
-    [Authorize(Policy = AuthorizationPolicies.ManageProcurement)]
+    [Authorize(Policy = AuthorizationPolicies.ManageVendors)]
     [HttpPost("vendors/{id:guid}/logo/remove")]
     public async Task<IActionResult> RemoveVendorLogo(Guid id, CancellationToken cancellationToken)
     {

@@ -1,44 +1,151 @@
 @model LedgerForge.Web.Models.Administration.SecurityMappingsViewModel
+@using LedgerForge.Web.Security
 @{
     ViewData["Title"] = "Security Administration";
+    string RoleName(Guid roleId) => Model.ConfigurableRoles.FirstOrDefault(x => x.Id == roleId)?.Name ?? "Unknown role";
 }
 
-<section class="lf-card" aria-labelledby="security-title">
-    <h1 id="security-title" class="lf-page-title">Security administration</h1>
-    <p class="lf-subtitle">Map LedgerForge roles to directory groups and manage explicit per-user grant/deny exceptions. Existing records can be edited or deleted below.</p>
-    @if (!string.IsNullOrWhiteSpace(Model.ErrorMessage))
-    {
-        <div role="alert" class="lf-alert lf-alert-danger">@Model.ErrorMessage</div>
-    }
-    @if (!string.IsNullOrWhiteSpace(Model.SuccessMessage))
-    {
-        <div role="status" class="lf-alert lf-alert-success">@Model.SuccessMessage</div>
-    }
+<div class="lf-page-header">
+    <div>
+        <h1 class="lf-page-title">Security administration</h1>
+        <p class="lf-subtitle">Create roles, assign Windows users or Active Directory groups, and grant module access from None through Admin.</p>
+    </div>
+</div>
 
-    <h2>Add or reactivate a directory group mapping</h2>
-    <form method="post" action="/admin/security/ad-groups">
-        @Html.AntiForgeryToken()
-        <div class="lf-form-grid">
-            <div><label for="role">Application role</label><select id="role" name="role" required>@foreach (var role in Model.Roles) { <option value="@role">@role</option> }</select></div>
-            <div><label for="groupName">Directory group</label><input id="groupName" name="groupName" maxlength="256" required autocomplete="off" /></div>
-            <div class="lf-span-all"><label for="description">Description</label><input id="description" name="description" maxlength="1000" /></div>
-        </div>
-        <p><button type="submit" class="primary">Add mapping</button></p>
-    </form>
-</section>
+@if (!string.IsNullOrWhiteSpace(Model.ErrorMessage))
+{
+    <div role="alert" class="lf-alert lf-alert-danger">@Model.ErrorMessage</div>
+}
+@if (!string.IsNullOrWhiteSpace(Model.SuccessMessage))
+{
+    <div role="status" class="lf-alert lf-alert-success">@Model.SuccessMessage</div>
+}
 
 <section class="lf-card">
     <div class="lf-panel-header">
-        <div><h2>Edit directory mappings</h2><p class="lf-muted">Role is the stable key for this mapping. The directory group, description, and active state can be changed.</p></div>
-        <span class="badge">@Model.Mappings.Count mapping@(Model.Mappings.Count == 1 ? string.Empty : "s")</span>
+        <div><h2>Role → Module → Access</h2><p class="lf-muted">Higher levels include the levels below them: None, View, Edit, Manage, Admin.</p></div>
+        <span class="badge">@Model.ConfigurableRoles.Count role@(Model.ConfigurableRoles.Count == 1 ? string.Empty : "s")</span>
     </div>
-    @if (Model.Mappings.Count == 0)
+
+    <form method="post" action="/admin/security/roles" class="lf-form-grid lf-form-grid-3">
+        @Html.AntiForgeryToken()
+        <div><label for="role-name">Role name</label><input id="role-name" name="name" maxlength="100" placeholder="Budget Owner" required /></div>
+        <div class="lf-span-2"><label for="role-description">Description</label><input id="role-description" name="description" maxlength="1000" placeholder="What this role is intended to do" /></div>
+        <div><button type="submit" class="primary">Create role</button></div>
+    </form>
+
+    @if (Model.ConfigurableRoles.Count == 0)
     {
-        <p class="lf-muted">No database mappings have been configured yet.</p>
+        <div class="lf-empty-state"><p>No configurable roles exist yet. Existing legacy/bootstrap mappings continue to authorize users until you migrate them.</p></div>
     }
     else
     {
         <div class="lf-admin-stack">
+        @foreach (var role in Model.ConfigurableRoles)
+        {
+            <form method="post" action="/admin/security/roles/@role.Id" class="lf-card lf-role-editor">
+                @Html.AntiForgeryToken()
+                <div class="lf-form-grid lf-form-grid-3">
+                    <div><label for="role-name-@role.Id">Role name</label><input id="role-name-@role.Id" name="name" maxlength="100" value="@role.Name" required /></div>
+                    <div class="lf-span-2"><label for="role-description-@role.Id">Description</label><input id="role-description-@role.Id" name="description" maxlength="1000" value="@role.Description" /></div>
+                </div>
+                <div class="lf-table-wrap">
+                    <table class="lf-table lf-permission-table">
+                        <thead><tr><th>Module</th><th>Access</th></tr></thead>
+                        <tbody>
+                        @foreach (var module in Model.Modules)
+                        {
+                            var selected = role.ModuleAccess.GetValueOrDefault(module, ModuleAccessLevel.None);
+                            <tr>
+                                <td><strong>@module</strong></td>
+                                <td>
+                                    <select name="access-@module" aria-label="@module access for @role.Name">
+                                    @foreach (var level in Model.AccessLevels)
+                                    {
+                                        <option value="@level" selected="@(level == selected)">@level</option>
+                                    }
+                                    </select>
+                                </td>
+                            </tr>
+                        }
+                        </tbody>
+                    </table>
+                </div>
+                <div class="lf-admin-actions">
+                    <button type="submit" class="primary">Save role</button>
+                    <button type="submit" class="danger" formaction="/admin/security/roles/@role.Id/delete">Delete role</button>
+                </div>
+            </form>
+        }
+        </div>
+    }
+</section>
+
+<section class="lf-card">
+    <div class="lf-panel-header">
+        <div><h2>User and AD group assignments</h2><p class="lf-muted">Assign a role to an exact Windows identity such as DOMAIN\user or to an Active Directory security group.</p></div>
+        <span class="badge">@Model.Assignments.Count assignment@(Model.Assignments.Count == 1 ? string.Empty : "s")</span>
+    </div>
+
+    @if (Model.ConfigurableRoles.Count > 0)
+    {
+        <form method="post" action="/admin/security/assignments" class="lf-form-grid lf-form-grid-4">
+            @Html.AntiForgeryToken()
+            <div><label for="assignment-role">Role</label><select id="assignment-role" name="roleId" required>@foreach (var role in Model.ConfigurableRoles) { <option value="@role.Id">@role.Name</option> }</select></div>
+            <div><label for="principal-type">Assign to</label><select id="principal-type" name="principalType"><option value="User">Specific user</option><option value="ActiveDirectoryGroup">AD group</option></select></div>
+            <div><label for="principal-name">Windows user / group</label><input id="principal-name" name="principalName" maxlength="256" placeholder="DOMAIN\user or DOMAIN\group" required /></div>
+            <div><label for="assignment-description">Note</label><input id="assignment-description" name="description" maxlength="1000" /></div>
+            <div><button type="submit" class="primary">Assign role</button></div>
+        </form>
+    }
+
+    @if (Model.Assignments.Count > 0)
+    {
+        <div class="lf-table-wrap">
+            <table class="lf-table">
+                <thead><tr><th>Principal</th><th>Type</th><th>Role</th><th>Note</th><th></th></tr></thead>
+                <tbody>
+                @foreach (var assignment in Model.Assignments)
+                {
+                    <tr>
+                        <td><code>@assignment.PrincipalName</code></td>
+                        <td>@(assignment.PrincipalType == SecurityPrincipalType.ActiveDirectoryGroup ? "AD group" : "User")</td>
+                        <td><strong>@RoleName(assignment.RoleId)</strong></td>
+                        <td>@(string.IsNullOrWhiteSpace(assignment.Description) ? "—" : assignment.Description)</td>
+                        <td><form method="post" action="/admin/security/assignments/@assignment.Id/delete">@Html.AntiForgeryToken()<button type="submit" class="danger">Remove</button></form></td>
+                    </tr>
+                }
+                </tbody>
+            </table>
+        </div>
+    }
+</section>
+
+<section class="lf-card">
+    <div class="lf-panel-header"><div><h2>Active Directory connection model</h2><p class="lf-muted">Windows authentication and group authorization do not require LedgerForge to store a service-account password.</p></div><span class="badge">Windows / Negotiate</span></div>
+    <p>For directory searches or richer user/group pickers, run the IIS application pool under a dedicated least-privilege <strong>gMSA</strong> or service identity and query AD over Kerberos/LDAPS using that process identity. Do not place an AD password in <code>appsettings.json</code>, the database, or source control.</p>
+    <p class="lf-muted">Standalone authentication can be added later behind the same role/module authorization model without changing the budget data model.</p>
+</section>
+
+<details class="lf-card">
+    <summary><strong>Legacy bootstrap / recovery authorization</strong><span>Existing fixed roles, directory mappings, and per-user exceptions remain available during migration.</span></summary>
+    <div class="lf-item-edit-body">
+        <p class="lf-muted">These mappings preserve current installations and provide a recovery path while configurable module roles are introduced. New day-to-day authorization should use the role/module model above.</p>
+
+        <h3>Add or reactivate a legacy directory group mapping</h3>
+        <form method="post" action="/admin/security/ad-groups">
+            @Html.AntiForgeryToken()
+            <div class="lf-form-grid">
+                <div><label for="role">Application role</label><select id="role" name="role" required>@foreach (var role in Model.Roles) { <option value="@role">@role</option> }</select></div>
+                <div><label for="groupName">Directory group</label><input id="groupName" name="groupName" maxlength="256" required autocomplete="off" /></div>
+                <div class="lf-span-all"><label for="description">Description</label><input id="description" name="description" maxlength="1000" /></div>
+            </div>
+            <p><button type="submit">Add legacy mapping</button></p>
+        </form>
+
+        @if (Model.Mappings.Count > 0)
+        {
+            <div class="lf-admin-stack">
             @foreach (var mapping in Model.Mappings)
             {
                 <form method="post" action="/admin/security/ad-groups/@mapping.Id" class="lf-admin-row">
@@ -47,41 +154,27 @@
                     <div><label for="group-@mapping.Id">Directory group</label><input id="group-@mapping.Id" name="groupName" value="@mapping.GroupName" maxlength="256" required /></div>
                     <div><label for="description-@mapping.Id">Description</label><input id="description-@mapping.Id" name="description" value="@mapping.Description" maxlength="1000" /></div>
                     <div class="lf-admin-state"><label for="active-@mapping.Id">Active</label><input id="active-@mapping.Id" type="checkbox" name="isActive" value="true" checked="@(mapping.IsActive ? "checked" : null)" /></div>
-                    <div class="lf-admin-action lf-admin-actions">
-                        <button type="submit">Save changes</button>
-                        <button type="submit" class="danger" formaction="/admin/security/ad-groups/@mapping.Id/delete">Delete</button>
-                    </div>
+                    <div class="lf-admin-action lf-admin-actions"><button type="submit">Save</button><button type="submit" class="danger" formaction="/admin/security/ad-groups/@mapping.Id/delete">Delete</button></div>
                 </form>
             }
-        </div>
-    }
-</section>
+            </div>
+        }
 
-<section class="lf-card">
-    <h2>Add or update a per-user role exception</h2>
-    <p class="lf-muted">Use exceptions sparingly. An active Deny overrides a user grant and directory-group membership for that role.</p>
-    <form method="post" action="/admin/security/user-exceptions">
-        @Html.AntiForgeryToken()
-        <div class="lf-form-grid lf-form-grid-3">
-            <div><label for="domainIdentity">Directory username</label><input id="domainIdentity" name="domainIdentity" maxlength="256" placeholder="DOMAIN\username" required /></div>
-            <div><label for="exceptionRole">Role</label><select id="exceptionRole" name="role" required>@foreach (var role in Model.Roles) { <option value="@role">@role</option> }</select></div>
-            <div><label for="effect">Effect</label><select id="effect" name="effect" required>@foreach (var effect in Model.Effects) { <option value="@effect">@effect</option> }</select></div>
-            <div class="lf-span-all"><label for="reason">Reason</label><input id="reason" name="reason" maxlength="2000" required /></div>
-        </div>
-        <p><button type="submit" class="primary">Add / update user exception</button></p>
-    </form>
+        <h3>Legacy per-user exceptions</h3>
+        <form method="post" action="/admin/security/user-exceptions">
+            @Html.AntiForgeryToken()
+            <div class="lf-form-grid lf-form-grid-3">
+                <div><label for="domainIdentity">Directory username</label><input id="domainIdentity" name="domainIdentity" maxlength="256" placeholder="DOMAIN\username" required /></div>
+                <div><label for="exceptionRole">Role</label><select id="exceptionRole" name="role" required>@foreach (var role in Model.Roles) { <option value="@role">@role</option> }</select></div>
+                <div><label for="effect">Effect</label><select id="effect" name="effect" required>@foreach (var effect in Model.Effects) { <option value="@effect">@effect</option> }</select></div>
+                <div class="lf-span-all"><label for="reason">Reason</label><input id="reason" name="reason" maxlength="2000" required /></div>
+            </div>
+            <p><button type="submit">Add / update exception</button></p>
+        </form>
 
-    <div class="lf-panel-header">
-        <div><h2>Edit user exceptions</h2><p class="lf-muted">Identity and role identify the exception. Effect, reason, and active state can be changed in place.</p></div>
-        <span class="badge">@Model.UserExceptions.Count exception@(Model.UserExceptions.Count == 1 ? string.Empty : "s")</span>
-    </div>
-    @if (Model.UserExceptions.Count == 0)
-    {
-        <p class="lf-muted">No user-specific role exceptions have been configured.</p>
-    }
-    else
-    {
-        <div class="lf-admin-stack">
+        @if (Model.UserExceptions.Count > 0)
+        {
+            <div class="lf-admin-stack">
             @foreach (var exception in Model.UserExceptions)
             {
                 <form method="post" action="/admin/security/user-exceptions/@exception.Id" class="lf-admin-row">
@@ -90,12 +183,10 @@
                     <div><label for="effect-@exception.Id">Effect</label><select id="effect-@exception.Id" name="effect" required>@foreach (var effect in Model.Effects) { <option value="@effect" selected="@(effect == exception.Effect)">@effect</option> }</select></div>
                     <div><label for="reason-@exception.Id">Reason</label><input id="reason-@exception.Id" name="reason" value="@exception.Reason" maxlength="2000" required /></div>
                     <div class="lf-admin-state"><label for="exception-active-@exception.Id">Active</label><input id="exception-active-@exception.Id" type="checkbox" name="isActive" value="true" checked="@(exception.IsActive ? "checked" : null)" /></div>
-                    <div class="lf-admin-action lf-admin-actions">
-                        <button type="submit">Save changes</button>
-                        <button type="submit" class="danger" formaction="/admin/security/user-exceptions/@exception.Id/delete">Delete</button>
-                    </div>
+                    <div class="lf-admin-action lf-admin-actions"><button type="submit">Save</button><button type="submit" class="danger" formaction="/admin/security/user-exceptions/@exception.Id/delete">Delete</button></div>
                 </form>
             }
-        </div>
-    }
-</section>
+            </div>
+        }
+    </div>
+</details>

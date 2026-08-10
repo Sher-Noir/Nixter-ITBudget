@@ -20,3 +20,27 @@
 }
 .lf-admin-subnav a:hover { color: var(--lf-primary); background: var(--lf-surface-2); text-decoration: none; }
 .lf-admin-subnav a.active { color: #fff; background: var(--lf-primary); }
+
+.lf-nav-heading {
+  margin: .85rem .72rem .3rem;
+  color: var(--lf-sidebar-muted);
+  font-size: .62rem;
+  font-weight: 800;
+  letter-spacing: .09em;
+  text-transform: uppercase;
+}
+.lf-nav-heading:first-child { margin-top: .2rem; }
+.lf-user { color: var(--lf-text); border-radius: 8px; }
+.lf-user:hover { background: var(--lf-surface-3); text-decoration: none; }
+
+.lf-role-editor { margin-top: .75rem; box-shadow: none; }
+.lf-permission-table { margin-top: .75rem; }
+.lf-permission-table select { min-width: 150px; }
+.lf-admin-actions { display: flex; align-items: center; gap: .4rem; flex-wrap: wrap; }
+.lf-admin-actions form { margin: 0; }
+.lf-inline-entry { margin-bottom: .8rem; border: 1px solid var(--lf-border); border-radius: 8px; background: var(--lf-surface-2); }
+.lf-inline-entry > summary { padding: .65rem .75rem; cursor: pointer; }
+.lf-inline-entry > summary span { display: block; margin-top: .15rem; color: var(--lf-muted); font-size: .75rem; font-weight: 400; }
+.lf-inline-entry > form { padding: .2rem .75rem .75rem; }
+.lf-row-selected { background: var(--lf-primary-soft); }
+.lf-vendor-table td:last-child { white-space: nowrap; }

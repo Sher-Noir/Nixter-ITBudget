@@ -10,6 +10,7 @@
     ViewData["Title"] = $"Budget Item {item.ItemNumber}";
     var canSubmit = ViewData["CanSubmit"] as bool? == true;
     var submitted = ViewData["Submitted"] as bool? == true;
+    var actualSaved = ViewData["ActualSaved"] as bool? == true;
     var brandingError = TempData["BudgetItemError"] as string;
     var canEditBranding = (await AuthorizationService.AuthorizeAsync(User, LedgerForge.Web.Security.AuthorizationPolicies.EditPlanningBudget)).Succeeded;
     var resolvedLogo = await BrandingAssets.ResolveBudgetItemLogoAsync(item.Id);
@@ -28,6 +29,7 @@
     var variance = workspace.CurrentBudget - workspace.Actual;
     var itemMark = item.ItemNumber.Length >= 2 ? item.ItemNumber[..2].ToUpperInvariant() : "BI";
     var documentUploadUrl = $"/documents?linkedEntityType=BudgetItem&linkedEntityId={item.Id}";
+    var defaultActualDate = DateOnly.FromDateTime(DateTime.Today);
 }
 
 <div class="lf-page-header">
@@ -48,6 +50,10 @@
 @if (Model.Saved)
 {
     <div class="card lf-alert lf-alert-success" role="status">Budget item saved.</div>
+}
+@if (actualSaved)
+{
+    <div class="card lf-alert lf-alert-success" role="status">Actual transaction added to this budget item.</div>
 }
 @if (submitted)
 {
@@ -159,6 +165,23 @@
 
             <section id="actuals-invoices" class="lf-card">
                 <div class="lf-panel-header"><h2>Actuals &amp; Invoices</h2><a href="/invoices">View invoices</a></div>
+                @if (Model.CanPostActuals)
+                {
+                    <details class="lf-inline-entry" open="@actualSaved">
+                        <summary><strong>Add actual</strong><span>Record spending directly against this budget item.</span></summary>
+                        <form method="post" action="/budget/items/@item.Id/actuals" class="lf-form-grid lf-form-grid-3">
+                            @Html.AntiForgeryToken()
+                            <div><label for="actual-date">Transaction date</label><input id="actual-date" name="transactionDate" type="date" value="@defaultActualDate.ToString("yyyy-MM-dd")" required /></div>
+                            <div><label for="actual-amount">Amount</label><input id="actual-amount" name="amount" type="number" min="0.01" step="0.01" required /></div>
+                            <div><label for="actual-reference">Reference</label><input id="actual-reference" name="sourceReference" maxlength="200" placeholder="Invoice, journal, receipt..." /></div>
+                            <div class="lf-span-all"><label for="actual-description">Description</label><input id="actual-description" name="description" maxlength="500" required /></div>
+                            <div><label for="actual-account">Finance account</label><select id="actual-account" name="financeAccountId"><option value="">Unassigned</option>@foreach (var option in Model.ActualEntryOptions.FinanceAccounts){<option value="@option.Id">@option.Label</option>}</select></div>
+                            <div><label for="actual-department">Department</label><select id="actual-department" name="departmentId"><option value="">Unassigned</option>@foreach (var option in Model.ActualEntryOptions.Departments){<option value="@option.Id">@option.Label</option>}</select></div>
+                            <div><label for="actual-location">Location</label><select id="actual-location" name="locationId"><option value="">Unassigned</option>@foreach (var option in Model.ActualEntryOptions.Locations){<option value="@option.Id">@option.Label</option>}</select></div>
+                            <div><button class="primary" type="submit">Add actual</button></div>
+                        </form>
+                    </details>
+                }
                 @if (workspace.Invoices.Count == 0 && workspace.Actuals.Count == 0)
                 {
                     <div class="lf-empty-state lf-compact-empty"><p>No invoices or actual transactions are linked to this item.</p></div>
@@ -338,6 +361,7 @@
             <div class="lf-item-quick-actions">
                 <a class="button" href="/purchase-orders">Create / View Purchase Order</a>
                 <a class="button" href="/invoices">Record / View Invoice</a>
+                @if (Model.CanPostActuals){<a class="button" href="#actuals-invoices">Add Actual</a>}
                 <a class="button" href="@documentUploadUrl">Upload Document</a>
                 <a class="button" href="/budget/amendments?budgetItemId=@item.Id">Create Amendment</a>
                 <a class="button" href="/renewals">Open Renewal Center</a>

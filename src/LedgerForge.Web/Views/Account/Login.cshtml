@@ -1,0 +1,30 @@
+@inject LedgerForge.Web.Configuration.OrganizationSettingsStore OrganizationSettings
+@{
+    Layout = null;
+    var branding = await OrganizationSettings.GetAsync();
+    var returnUrl = ViewData["ReturnUrl"] as string ?? "/";
+    var windowsUrl = Url.Action("Windows", "Account", new { returnUrl }) ?? "/account/windows";
+}
+<!doctype html>
+<html lang="en" data-theme="@branding.DefaultTheme" data-default-theme="@branding.DefaultTheme">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light dark" />
+    <title>Sign in · @branding.ProductName</title>
+    <link rel="stylesheet" href="/css/ledgerforge.css" />
+    <link rel="stylesheet" href="/css/ledgerforge-login.css" />
+</head>
+<body class="lf-login-page">
+    <main class="lf-login-shell">
+        <section class="lf-login-card" aria-labelledby="signin-title">
+            <div class="lf-login-mark" aria-hidden="true">LF</div>
+            <p class="lf-login-eyebrow">@branding.OrganizationName</p>
+            <h1 id="signin-title">Sign in to @branding.ProductName</h1>
+            <p class="lf-muted">Use your organization Windows account. LedgerForge does not collect or store your Windows password.</p>
+            <a class="button primary lf-login-button" href="@windowsUrl">Continue with Windows</a>
+            <p class="lf-login-help">Your browser may complete Windows authentication immediately after you choose Continue.</p>
+        </section>
+    </main>
+</body>
+</html>
