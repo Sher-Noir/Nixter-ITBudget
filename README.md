@@ -2,20 +2,24 @@
 
 LedgerForge is a free and open-source budget management platform for organizations that need structured annual planning, actuals, purchase orders, invoices, renewals, approvals, audit history, and controlled exports without relying on spreadsheets as the system of record.
 
-LedgerForge is designed for self-hosted deployments using ASP.NET Core, SQL Server, IIS, and Integrated Windows Authentication by default. Organization identity, branding, fiscal-year labels, authorization mappings, import expectations, and operational settings are configurable so adopters can tailor the application without maintaining a private fork.
+LedgerForge is designed for self-hosted deployments using ASP.NET Core, SQL Server, IIS, and Windows authentication by default. Organization identity, branding, fiscal-year labels, role/module authorization, import expectations, and operational settings are configurable so adopters can tailor the application without maintaining a private fork.
 
 ## Current status
 
 LedgerForge is under active development. The current foundation includes:
 
 - .NET 10 LTS modular-monolith solution structure.
-- SQL Server / EF Core models for fiscal years, fiscal periods, budget versions, budget items, allocations, managed lookups, import lineage, and authorization mappings.
-- Integrated Windows Authentication with application-role policies that fail closed.
-- Deployment-config and database-backed directory-group mappings plus protected administration screens.
-- Organization and appearance administration with host-local overrides under `App_Data`.
+- SQL Server / EF Core models for fiscal years, budget versions, budget items, allocations, actual transactions, managed lookups, import lineage, procurement, approvals, audit history, and legacy-compatible authorization data.
+- Explicit LedgerForge sign-in landing with Integrated Windows Authentication / Negotiate for the authenticated session.
+- Configurable **Role → Module → Access Level** authorization using `None`, `View`, `Edit`, `Manage`, and `Admin`, with assignments to Windows users or Active Directory security groups.
+- Legacy fixed-role directory mappings retained as a bootstrap/recovery compatibility path for existing installations.
+- Organization and appearance administration with protected host-local overrides outside the web root.
+- Direct upload/replace/remove controls for organization logo, browser icon, vendor logos, and budget-item logos.
 - Light, dark, and system theme support.
+- Fiscal-year planning without fiscal periods in the active product workflow. Legacy period tables/columns remain only for non-destructive upgrade/history compatibility.
+- Actual entry directly from the related Budget Item, with the full Actual Ledger retained as a compatibility/bulk workflow.
 - Adapter-based spreadsheet migration infrastructure with optional reconciliation expectations.
-- Allocation, import workflow, and spreadsheet-reader unit-test coverage.
+- Allocation, import workflow, security/navigation, integration, and spreadsheet-reader test coverage.
 
 Implementation status and remaining milestones are tracked in `docs/architecture/implementation-checklist.md`.
 
@@ -24,14 +28,16 @@ Implementation status and remaining milestones are tracked in `docs/architecture
 - .NET 10 LTS / ASP.NET Core MVC + Razor
 - Microsoft SQL Server / Entity Framework Core
 - IIS in-process hosting
-- Integrated Windows Authentication by default
+- Integrated Windows Authentication / Negotiate by default
 - Server-rendered UI with progressive enhancement
 - ClosedXML for controlled Excel import/export workflows
 - xUnit, integration tests, and Playwright UI tests
 
 ## Organization configuration
 
-Deployment defaults live under `Branding` in `appsettings.json` or environment variables. System Administrators can override normal branding values from `/admin/organization`; those host-local overrides are stored in `src/LedgerForge.Web/App_Data/organization-settings.json` and are intentionally git-ignored.
+Deployment defaults live under `Branding` in `appsettings.json` or environment variables. System Administrators can override normal branding values from `/admin/organization`.
+
+Mutable host configuration is stored under a protected `.ledgerforge` directory associated with the configured document-storage root. If no document-storage path is configured, the application uses its protected `App_Data` fallback. Mutable configuration and uploaded branding must remain outside `wwwroot` and should be preserved across application upgrades.
 
 ```json
 {
@@ -49,7 +55,7 @@ Deployment defaults live under `Branding` in `appsettings.json` or environment v
 }
 ```
 
-Organization-specific logos should be placed under the deployment's locally hosted static assets and referenced by `LogoPath` / `IconPath`. Do not commit adopter-specific branding, production identities, or internal finance mappings to the upstream project.
+Administrators can upload an organization logo and browser icon directly. Uploaded branding overrides the advanced `LogoPath` / `IconPath` fallback. Do not commit adopter-specific branding, production identities, internal finance mappings, or mutable host configuration to the upstream project.
 
 ## Local build
 
@@ -61,9 +67,13 @@ dotnet test LedgerForge.slnx --configuration Release --no-build
 
 Production deployment must use explicit database migration steps; destructive migrations must not run automatically at application startup.
 
-## Security bootstrap
+## Windows sign-in and authorization bootstrap
 
-Checked-in configuration grants no directory group access. Configure an approved System Administrator bootstrap group through deployment configuration before first interactive use, then manage normal database-backed mappings in `/admin/security`. See `docs/deployment/ad-authentication.md`.
+The reference IIS deployment enables both Windows Authentication and Anonymous Authentication. Anonymous IIS access allows LedgerForge to render `/account/login`, `/health`, and friendly status/error pages; protected application routes still require ASP.NET Core authorization. Choosing **Continue with Windows** enters the explicit Negotiate-authenticated flow.
+
+Checked-in configuration grants no organization-specific directory group access. Configure an approved System Administrator recovery/bootstrap group before first interactive administration, then create normal configurable roles in `/admin/security`, assign users or Active Directory groups, and set module access levels.
+
+LedgerForge does not store a Windows/Active Directory user password. If richer directory searches are enabled later, the preferred Windows deployment is a dedicated least-privilege gMSA/application-pool identity rather than a reusable AD password in application configuration. See `docs/deployment/ad-authentication.md`.
 
 ## Import adapters
 
@@ -76,7 +86,6 @@ LedgerForge is licensed under the MIT License. See `LICENSE`.
 ## Public-repository hygiene
 
 Avoid committing organization names, internal network paths, employee data, private documents, production secrets, proprietary account mappings, or real migration source files to the upstream repository.
-
 
 ## LedgerForge v1
 
