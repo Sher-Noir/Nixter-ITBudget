@@ -1,12 +1,13 @@
 @model LedgerForge.Web.Models.Imports.ImportIndexViewModel
 @{
-    ViewData["Title"] = "Imports & Exports";
+    ViewData["Title"] = "Imports";
+    var canManage = ViewData["CanManageImports"] as bool? == true;
 }
 
 <div class="lf-page-header">
     <div>
-        <h1 class="lf-page-title">Imports &amp; Exports</h1>
-        <p class="lf-subtitle">Validate legacy workbooks, review exceptions, and preserve source lineage before any authoritative budget commit.</p>
+        <h1 class="lf-page-title">Imports</h1>
+        <p class="lf-subtitle">Review import history and source lineage. Users with Manage access can create, review, accept, and commit import batches.</p>
     </div>
 </div>
 
@@ -15,30 +16,33 @@
     <div role="alert" class="lf-card lf-alert lf-alert-danger"><strong>Upload could not be previewed.</strong><br />@Model.ErrorMessage</div>
 }
 
-<div class="lf-settings-grid">
-    <section class="lf-card" aria-labelledby="upload-title">
-        <h2 id="upload-title">Create import preview</h2>
-        <p class="lf-muted">The reference adapter accepts a compatible `.xlsx` workbook, validates its structure, recalculates planned totals server-side, resolves managed lookups, and stores an auditable preview.</p>
-        <form method="post" action="/imports/legacy-budget/preview" enctype="multipart/form-data">
-            @Html.AntiForgeryToken()
-            <div class="lf-form-field">
-                <label for="workbook"><strong>Excel workbook</strong></label>
-                <input id="workbook" name="workbook" type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" required />
-            </div>
-            <button type="submit" class="primary">Generate import preview</button>
-        </form>
-    </section>
+@if (canManage)
+{
+    <div class="lf-settings-grid">
+        <section class="lf-card" aria-labelledby="upload-title">
+            <h2 id="upload-title">Create import preview</h2>
+            <p class="lf-muted">The reference adapter accepts a compatible `.xlsx` workbook, validates its structure, recalculates planned totals server-side, resolves managed lookups, and stores an auditable preview.</p>
+            <form method="post" action="/imports/legacy-budget/preview" enctype="multipart/form-data">
+                @Html.AntiForgeryToken()
+                <div class="lf-form-field">
+                    <label for="workbook"><strong>Excel workbook</strong></label>
+                    <input id="workbook" name="workbook" type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" required />
+                </div>
+                <button type="submit" class="primary">Generate import preview</button>
+            </form>
+        </section>
 
-    <aside class="lf-card" aria-labelledby="import-guidance-title">
-        <h2 id="import-guidance-title">Review gates</h2>
-        <ul>
-            <li>Open error exceptions must be resolved before acceptance.</li>
-            <li>Rejected source rows require a written acceptance reason.</li>
-            <li>Configured reconciliation mismatches require explicit administrator acceptance.</li>
-            <li>Preview acceptance does not yet write authoritative budget records.</li>
-        </ul>
-    </aside>
-</div>
+        <aside class="lf-card" aria-labelledby="import-guidance-title">
+            <h2 id="import-guidance-title">Review gates</h2>
+            <ul>
+                <li>Open error exceptions must be resolved before acceptance.</li>
+                <li>Rejected source rows require a written acceptance reason.</li>
+                <li>Configured reconciliation mismatches require explicit administrator acceptance.</li>
+                <li>Preview acceptance does not yet write authoritative budget records.</li>
+            </ul>
+        </aside>
+    </div>
+}
 
 <section class="lf-card" aria-labelledby="batch-history-title">
     <div class="lf-panel-header">
