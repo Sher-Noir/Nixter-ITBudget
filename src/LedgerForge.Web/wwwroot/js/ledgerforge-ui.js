@@ -16,7 +16,7 @@
         if (menuButton) document.documentElement.classList.toggle("lf-nav-open");
     });
 
-    const showUpdateNotice = async () => {
+    const showUpdateNotice = async (attempt = 0) => {
         const actions = document.querySelector(".lf-top-actions");
         if (!actions || actions.querySelector("[data-ledgerforge-update]")) return;
 
@@ -30,6 +30,10 @@
             if (!response.ok) return;
 
             const status = await response.json();
+            if (!status.checkedAtUtc && attempt < 2) {
+                window.setTimeout(() => void showUpdateNotice(attempt + 1), 5000);
+                return;
+            }
             if (!status.isUpdateAvailable || !status.latestVersion || !status.releaseUrl) return;
 
             const notice = document.createElement("a");
@@ -49,7 +53,7 @@
     };
 
     if (document.readyState === "loading")
-        document.addEventListener("DOMContentLoaded", showUpdateNotice, { once: true });
+        document.addEventListener("DOMContentLoaded", () => void showUpdateNotice(), { once: true });
     else
         void showUpdateNotice();
 })();
