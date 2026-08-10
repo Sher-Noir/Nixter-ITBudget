@@ -2,18 +2,24 @@
 @inject LedgerForge.Web.Documents.BrandingAssetService BrandingAssets
 @{
     ViewData["Title"] = "Vendors";
-    var canManage = ViewData["CanManageProcurement"] as bool? == true;
+    var canManage = ViewData["CanManageVendors"] as bool? == true;
+    var editVendorId = ViewData["EditVendorId"] as Guid?;
     var errorMessage = ViewData["ErrorMessage"] as string;
     var notice = ViewData["Notice"] as string;
     var saved = ViewData["Saved"] as bool? == true;
     var vendorLogoIds = await BrandingAssets.GetVendorIdsWithLogosAsync();
+    var editVendor = editVendorId is Guid id ? Model.FirstOrDefault(x => x.Id == id) : null;
 }
 
 <div class="lf-page-header">
     <div>
-        <h1 class="lf-page-title">Vendors</h1>
-        <p class="lf-subtitle">Maintain vendor identities and optional branding. Vendor codes remain stable for historical references.</p>
+        <h1 class="lf-page-title">Vendor Directory</h1>
+        <p class="lf-subtitle">Manage vendors in a compact table. Referenced vendors are retired instead of destructively deleted.</p>
     </div>
+    @if (canManage)
+    {
+        <a class="button primary" href="#add-vendor">+ New Vendor</a>
+    }
 </div>
 
 @if (!string.IsNullOrWhiteSpace(errorMessage))
@@ -31,42 +37,29 @@
 
 @if (canManage)
 {
-    <section class="lf-card" aria-labelledby="add-vendor-title">
-        <h2 id="add-vendor-title">Add vendor</h2>
-        <form method="post" action="/vendors">
-            @Html.AntiForgeryToken()
-            <div class="lf-form-grid">
-                <div>
-                    <label for="code"><strong>Vendor code</strong></label>
-                    <input id="code" name="code" maxlength="100" required autocomplete="off" />
+    <details id="add-vendor" class="lf-card lf-item-edit-panel">
+        <summary><strong>Add vendor</strong><span>Create a new vendor directory entry.</span></summary>
+        <div class="lf-item-edit-body">
+            <form method="post" action="/vendors">
+                @Html.AntiForgeryToken()
+                <div class="lf-form-grid lf-form-grid-3">
+                    <div><label for="code"><strong>Vendor code</strong></label><input id="code" name="code" maxlength="100" required autocomplete="off" /></div>
+                    <div><label for="name"><strong>Vendor name</strong></label><input id="name" name="name" maxlength="250" required /></div>
+                    <div><label for="contactName">Contact name</label><input id="contactName" name="contactName" maxlength="250" /></div>
+                    <div><label for="email">Email</label><input id="email" name="email" type="email" maxlength="320" /></div>
+                    <div><label for="phone">Phone</label><input id="phone" name="phone" maxlength="100" /></div>
+                    <div><button class="primary" type="submit">Add vendor</button></div>
                 </div>
-                <div>
-                    <label for="name"><strong>Vendor name</strong></label>
-                    <input id="name" name="name" maxlength="250" required />
-                </div>
-                <div>
-                    <label for="contactName">Contact name</label>
-                    <input id="contactName" name="contactName" maxlength="250" />
-                </div>
-                <div>
-                    <label for="email">Email</label>
-                    <input id="email" name="email" type="email" maxlength="320" />
-                </div>
-                <div>
-                    <label for="phone">Phone</label>
-                    <input id="phone" name="phone" maxlength="100" />
-                </div>
-            </div>
-            <p><button class="primary" type="submit">Add vendor</button></p>
-        </form>
-    </section>
+            </form>
+        </div>
+    </details>
 }
 
 <section class="lf-card" aria-labelledby="vendor-list-title">
     <div class="lf-panel-header">
         <div>
-            <h2 id="vendor-list-title">@(canManage ? "Edit vendor directory" : "Vendor directory")</h2>
-            <p class="lf-muted">Delete / Retire removes unused vendors. Vendors referenced by procurement history are retired automatically. A vendor logo is used as the fallback when a budget item has no item-specific logo.</p>
+            <h2 id="vendor-list-title">Vendors</h2>
+            <p class="lf-muted">Vendor logos are optional and act as the budget-item fallback when an item-specific logo is not configured.</p>
         </div>
         <span class="badge">@Model.Count vendor@(Model.Count == 1 ? string.Empty : "s")</span>
     </div>
@@ -75,93 +68,35 @@
     {
         <div class="lf-empty-state"><p>No vendors have been configured.</p></div>
     }
-    else if (canManage)
-    {
-        <div class="lf-admin-stack lf-vendor-admin-stack">
-            @foreach (var vendor in Model)
-            {
-                var hasLogo = vendorLogoIds.Contains(vendor.Id);
-                <article class="lf-vendor-config-card">
-                    <div class="lf-vendor-branding-header">
-                        <div class="lf-logo-tile lf-logo-tile-small">
-                            @if (hasLogo)
-                            {
-                                <img src="/branding-assets/vendors/@vendor.Id/logo" alt="@vendor.Name logo" />
-                            }
-                            else
-                            {
-                                <span aria-hidden="true">@vendor.Name[..1].ToUpperInvariant()</span>
-                            }
-                        </div>
-                        <div><strong>@vendor.Code · @vendor.Name</strong><div class="lf-muted">@(vendor.IsActive ? "Active" : "Inactive")</div></div>
-                    </div>
-
-                    <form method="post" action="/vendors/@vendor.Id" class="lf-admin-row">
-                        @Html.AntiForgeryToken()
-                        <div class="lf-admin-code">
-                            <strong>@vendor.Code</strong>
-                            <span class="lf-muted">Stable code</span>
-                        </div>
-                        <div>
-                            <label for="name-@vendor.Id">Name</label>
-                            <input id="name-@vendor.Id" name="name" value="@vendor.Name" maxlength="250" required />
-                        </div>
-                        <div>
-                            <label for="contact-@vendor.Id">Contact</label>
-                            <input id="contact-@vendor.Id" name="contactName" value="@vendor.ContactName" maxlength="250" />
-                        </div>
-                        <div>
-                            <label for="email-@vendor.Id">Email</label>
-                            <input id="email-@vendor.Id" name="email" type="email" value="@vendor.Email" maxlength="320" />
-                        </div>
-                        <div>
-                            <label for="phone-@vendor.Id">Phone</label>
-                            <input id="phone-@vendor.Id" name="phone" value="@vendor.Phone" maxlength="100" />
-                        </div>
-                        <div class="lf-admin-state">
-                            <label for="active-@vendor.Id">Active</label>
-                            <input id="active-@vendor.Id" name="isActive" type="checkbox" value="true" checked="@(vendor.IsActive ? "checked" : null)" />
-                        </div>
-                        <div class="lf-admin-action lf-admin-actions">
-                            <button type="submit">Save changes</button>
-                            <button type="submit" class="danger" formaction="/vendors/@vendor.Id/delete" title="Unused vendors are deleted. Referenced vendors are retired instead.">Delete / Retire</button>
-                        </div>
-                    </form>
-
-                    <div class="lf-branding-editor">
-                        <div>
-                            <strong>Vendor logo</strong>
-                            <div class="lf-muted">Optional PNG/JPEG, maximum 5 MB. Used when a budget item does not have its own logo.</div>
-                        </div>
-                        <form method="post" enctype="multipart/form-data" action="/branding-assets/vendors/@vendor.Id/logo" class="lf-inline-upload">
-                            @Html.AntiForgeryToken()
-                            <input type="file" name="logo" accept="image/png,image/jpeg" required />
-                            <button type="submit">@(hasLogo ? "Replace logo" : "Upload logo")</button>
-                        </form>
-                        @if (hasLogo)
-                        {
-                            <form method="post" action="/branding-assets/vendors/@vendor.Id/logo/remove">
-                                @Html.AntiForgeryToken()
-                                <button type="submit" class="danger">Remove logo</button>
-                            </form>
-                        }
-                    </div>
-                </article>
-            }
-        </div>
-    }
     else
     {
         <div class="lf-table-wrap">
-            <table class="lf-table">
-                <thead><tr><th>Logo</th><th>Code</th><th>Name</th><th>Contact</th><th>Email</th><th>Phone</th><th>Status</th></tr></thead>
+            <table class="lf-table lf-vendor-table">
+                <thead><tr><th>Logo</th><th>Code</th><th>Vendor</th><th>Contact</th><th>Email</th><th>Phone</th><th>Status</th>@if (canManage){<th>Actions</th>}</tr></thead>
                 <tbody>
                 @foreach (var vendor in Model)
                 {
                     var hasLogo = vendorLogoIds.Contains(vendor.Id);
-                    <tr>
+                    <tr class="@(editVendorId == vendor.Id ? "lf-row-selected" : null)">
                         <td><div class="lf-logo-tile lf-logo-tile-tiny">@if (hasLogo){<img src="/branding-assets/vendors/@vendor.Id/logo" alt="" />}else{<span aria-hidden="true">@vendor.Name[..1].ToUpperInvariant()</span>}</div></td>
-                        <td><strong>@vendor.Code</strong></td><td>@vendor.Name</td><td>@(vendor.ContactName ?? "—")</td><td>@(vendor.Email ?? "—")</td><td>@(vendor.Phone ?? "—")</td><td><span class="badge">@(vendor.IsActive ? "Active" : "Inactive")</span></td>
+                        <td><strong>@vendor.Code</strong></td>
+                        <td><strong>@vendor.Name</strong></td>
+                        <td>@(vendor.ContactName ?? "—")</td>
+                        <td>@(vendor.Email ?? "—")</td>
+                        <td>@(vendor.Phone ?? "—")</td>
+                        <td><span class="badge">@(vendor.IsActive ? "Active" : "Inactive")</span></td>
+                        @if (canManage)
+                        {
+                            <td>
+                                <div class="lf-admin-actions">
+                                    <a class="button" href="/vendors?edit=@vendor.Id#vendor-editor">Edit</a>
+                                    <form method="post" action="/vendors/@vendor.Id/delete">
+                                        @Html.AntiForgeryToken()
+                                        <button type="submit" class="danger" title="Unused vendors are deleted; referenced vendors are retired.">Delete / Retire</button>
+                                    </form>
+                                </div>
+                            </td>
+                        }
                     </tr>
                 }
                 </tbody>
@@ -169,3 +104,41 @@
         </div>
     }
 </section>
+
+@if (canManage && editVendor is not null)
+{
+    var hasLogo = vendorLogoIds.Contains(editVendor.Id);
+    <section id="vendor-editor" class="lf-card">
+        <div class="lf-panel-header"><div><h2>Edit @editVendor.Name</h2><p class="lf-muted">Code <strong>@editVendor.Code</strong> remains stable for historical references.</p></div><a class="button" href="/vendors">Close editor</a></div>
+        <form method="post" action="/vendors/@editVendor.Id">
+            @Html.AntiForgeryToken()
+            <div class="lf-form-grid lf-form-grid-3">
+                <div><label for="edit-name">Name</label><input id="edit-name" name="name" value="@editVendor.Name" maxlength="250" required /></div>
+                <div><label for="edit-contact">Contact</label><input id="edit-contact" name="contactName" value="@editVendor.ContactName" maxlength="250" /></div>
+                <div><label for="edit-email">Email</label><input id="edit-email" name="email" type="email" value="@editVendor.Email" maxlength="320" /></div>
+                <div><label for="edit-phone">Phone</label><input id="edit-phone" name="phone" value="@editVendor.Phone" maxlength="100" /></div>
+                <div><label class="lf-check"><input name="isActive" type="checkbox" value="true" checked="@(editVendor.IsActive ? "checked" : null)" /> Active</label></div>
+                <div><button class="primary" type="submit">Save changes</button></div>
+            </div>
+        </form>
+
+        <div class="lf-branding-editor">
+            <div class="lf-vendor-branding-header">
+                <div class="lf-logo-tile lf-logo-tile-small">@if (hasLogo){<img src="/branding-assets/vendors/@editVendor.Id/logo" alt="@editVendor.Name logo" />}else{<span aria-hidden="true">@editVendor.Name[..1].ToUpperInvariant()</span>}</div>
+                <div><strong>Vendor logo</strong><div class="lf-muted">PNG or JPEG, maximum 5 MB.</div></div>
+            </div>
+            <form method="post" enctype="multipart/form-data" action="/branding-assets/vendors/@editVendor.Id/logo" class="lf-inline-upload">
+                @Html.AntiForgeryToken()
+                <input type="file" name="logo" accept="image/png,image/jpeg" required />
+                <button type="submit">@(hasLogo ? "Replace logo" : "Upload logo")</button>
+            </form>
+            @if (hasLogo)
+            {
+                <form method="post" action="/branding-assets/vendors/@editVendor.Id/logo/remove">
+                    @Html.AntiForgeryToken()
+                    <button type="submit" class="danger">Remove logo</button>
+                </form>
+            }
+        </div>
+    </section>
+}
