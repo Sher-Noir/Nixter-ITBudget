@@ -9,7 +9,7 @@
 <div class="lf-page-header">
     <div>
         <h1 class="lf-page-title">Fiscal Years</h1>
-        <p class="lf-subtitle">Create planning years, monthly periods, and initial budget versions.</p>
+        <p class="lf-subtitle">Create and manage planning years and their budget versions.</p>
     </div>
 </div>
 
@@ -29,7 +29,7 @@
         {
             <div class="lf-table-wrap">
                 <table class="lf-table">
-                    <thead><tr><th>Fiscal year</th><th>Dates</th><th>Status</th><th>Periods</th><th>Versions</th><th>Current</th></tr></thead>
+                    <thead><tr><th>Fiscal year</th><th>Dates</th><th>Status</th><th>Versions</th><th>Current</th></tr></thead>
                     <tbody>
                     @foreach (var year in Model.FiscalYears)
                     {
@@ -37,7 +37,6 @@
                             <td><a href="/fiscal-years/@year.Id"><strong>@year.DisplayName</strong></a><br /><span class="muted">Planning @year.PlanningYear</span></td>
                             <td>@year.StartDate.ToString("yyyy-MM-dd") – @year.EndDate.ToString("yyyy-MM-dd")</td>
                             <td><span class="badge">@year.Status</span>@(year.IsLocked ? " · Locked" : string.Empty)</td>
-                            <td>@year.PeriodCount</td>
                             <td>@year.VersionCount</td>
                             <td>@(year.IsCurrent ? "Yes" : "—")</td>
                         </tr>
@@ -60,7 +59,6 @@
             <p><label for="planningYear"><strong>Planning year</strong></label><input id="planningYear" name="planningYear" type="number" min="1900" max="9999" value="@today.Year" required /></p>
             <p><label for="initialVersionName"><strong>Initial version</strong></label><input id="initialVersionName" name="initialVersionName" value="Initial Planning" maxlength="100" required /></p>
             <p><label for="description">Description</label><textarea id="description" name="description" rows="3" maxlength="1000"></textarea></p>
-            <p><label class="lf-check"><input name="createMonthlyPeriods" type="checkbox" value="true" checked /> Generate monthly fiscal periods</label></p>
             <p><label class="lf-check"><input name="isCurrent" type="checkbox" value="true" /> Make this the current fiscal year</label></p>
             <button class="primary" type="submit">Create fiscal year</button>
         </form>
