@@ -258,7 +258,7 @@ public partial class MainWindow : Window
             var bootstrap = await RunProcessAsync(bootstrapExecutable, ["initialize"], bootstrapEnvironment);
             AppendProcessOutput(bootstrap);
 
-            AppendLog("Configuring IIS site and Windows Authentication...");
+            AppendLog("Configuring IIS site for the LedgerForge sign-in flow...");
             await ConfigureSiteAsync(plan, webRoot);
 
             AppendLog("Starting LedgerForge...");
@@ -318,7 +318,7 @@ public partial class MainWindow : Window
         await RunProcessAsync(AppCmdPath, ["set", "app", $"{plan.SiteName}/", $"/applicationPool:{plan.ApplicationPoolName}"]);
         await RunProcessAsync(
             AppCmdPath,
-            ["set", "config", plan.SiteName, "-section:system.webServer/security/authentication/anonymousAuthentication", "/enabled:false", "/commit:apphost"]);
+            ["set", "config", plan.SiteName, "-section:system.webServer/security/authentication/anonymousAuthentication", "/enabled:true", "/commit:apphost"]);
         await RunProcessAsync(
             AppCmdPath,
             ["set", "config", plan.SiteName, "-section:system.webServer/security/authentication/windowsAuthentication", "/enabled:true", "/commit:apphost"]);
