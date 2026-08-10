@@ -1,18 +1,14 @@
 using LedgerForge.Infrastructure.Budgeting;
-using LedgerForge.Infrastructure.Persistence;
 using LedgerForge.Web.Models.FiscalYears;
 using LedgerForge.Web.Security;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
 
 namespace LedgerForge.Web.Controllers;
 
 [Authorize(Policy = AuthorizationPolicies.ManageFiscalYears)]
 [Route("fiscal-years")]
-public sealed class FiscalYearsController(
-    FiscalYearAdministrationService service,
-    LedgerForgeDbContext dbContext) : Controller
+public sealed class FiscalYearsController(FiscalYearAdministrationService service) : Controller
 {
     [HttpGet("")]
     public async Task<IActionResult> Index(CancellationToken cancellationToken)
@@ -62,7 +58,7 @@ public sealed class FiscalYearsController(
         if (year is null) return NotFound();
 
         var versions = await service.ListVersionsAsync(id, cancellationToken);
-        var closeReadiness = IgnoreLegacyPeriodBlocker(await service.GetCloseReadinessAsync(id, cancellationToken));
+        var closeReadiness = await service.GetCloseReadinessAsync(id, cancellationToken);
         ViewData["Saved"] = Request.Query.ContainsKey("saved");
         return View(new FiscalYearDetailViewModel(year, versions, closeReadiness));
     }
@@ -88,18 +84,7 @@ public sealed class FiscalYearsController(
 
     [HttpPost("{id:guid}/close")]
     public Task<IActionResult> CloseYear(Guid id, CancellationToken cancellationToken)
-        => RunMutation(id, async () =>
-        {
-            // Fiscal periods are retained only as legacy database metadata. Close any
-            // old open rows automatically so they no longer participate in the product workflow.
-            var actor = RequireActor();
-            var legacyPeriods = await dbContext.FiscalPeriods
-                .Where(x => x.FiscalYearId == id && !x.IsClosed)
-                .ToListAsync(cancellationToken);
-            foreach (var period in legacyPeriods) period.Close(actor, DateTimeOffset.UtcNow);
-            if (legacyPeriods.Count > 0) await dbContext.SaveChangesAsync(cancellationToken);
-            await service.CloseAsync(id, actor, cancellationToken);
-        });
+        => RunMutation(id, () => service.CloseAsync(id, RequireActor(), cancellationToken));
 
     [HttpPost("{id:guid}/rollover")]
     public async Task<IActionResult> Rollover(
@@ -153,14 +138,6 @@ public sealed class FiscalYearsController(
             TempData["FiscalYearError"] = exception.Message;
             return RedirectToAction(nameof(Details), new { id = fiscalYearId });
         }
-    }
-
-    private static FiscalCloseReadiness IgnoreLegacyPeriodBlocker(FiscalCloseReadiness readiness)
-    {
-        var blockers = readiness.Blockers
-            .Where(x => !x.Contains("fiscal period", StringComparison.OrdinalIgnoreCase))
-            .ToArray();
-        return readiness with { CanClose = blockers.Length == 0, Blockers = blockers, OpenPeriods = 0 };
     }
 
     private string RequireActor()
