@@ -11,24 +11,30 @@ using Microsoft.Extensions.Options;
 
 namespace LedgerForge.Web.Controllers;
 
-[Authorize(Policy = AuthorizationPolicies.ManageImports)]
+[Authorize(Policy = AuthorizationPolicies.ViewBudget)]
 [Route("imports")]
 public sealed class ImportsController(
     LegacyBudgetImportPreviewService previewService,
     ImportReviewService reviewService,
     LegacyBudgetImportCommitService commitService,
     IOptions<LegacyImportOptions> legacyImportOptions,
-    IConfiguration configuration) : Controller
+    IConfiguration configuration,
+    IAuthorizationService authorizationService) : Controller
 {
     private const long DefaultMaxFileSizeBytes = 25 * 1024 * 1024;
 
     [HttpGet("")]
     public async Task<IActionResult> Index(CancellationToken cancellationToken)
-        => View(await BuildIndexAsync(TempData["ImportError"] as string, cancellationToken));
+    {
+        ViewData["CanManageImports"] = (await authorizationService.AuthorizeAsync(User, AuthorizationPolicies.ManageImports)).Succeeded;
+        return View(await BuildIndexAsync(TempData["ImportError"] as string, cancellationToken));
+    }
 
+    [Authorize(Policy = AuthorizationPolicies.ManageImports)]
     [HttpPost("legacy-budget/preview")]
     public async Task<IActionResult> Preview(IFormFile? workbook, CancellationToken cancellationToken)
     {
+        ViewData["CanManageImports"] = true;
         if (workbook is null || workbook.Length == 0)
             return View("Index", await BuildIndexAsync("Select a non-empty .xlsx workbook.", cancellationToken));
 
@@ -61,7 +67,9 @@ public sealed class ImportsController(
         var detail = await reviewService.GetBatchAsync(id, cancellationToken);
         if (detail is null) return NotFound();
 
-        var targets = !string.IsNullOrWhiteSpace(detail.Batch.AcceptedBy) && detail.Batch.Status == ImportBatchStatus.PreviewReady
+        var canManage = (await authorizationService.AuthorizeAsync(User, AuthorizationPolicies.ManageImports)).Succeeded;
+        ViewData["CanManageImports"] = canManage;
+        var targets = canManage && !string.IsNullOrWhiteSpace(detail.Batch.AcceptedBy) && detail.Batch.Status == ImportBatchStatus.PreviewReady
             ? await commitService.ListTargetsAsync(cancellationToken)
             : [];
 
@@ -74,6 +82,7 @@ public sealed class ImportsController(
             Request.Query.ContainsKey("committed")));
     }
 
+    [Authorize(Policy = AuthorizationPolicies.ManageImports)]
     [HttpPost("{batchId:guid}/exceptions/{exceptionId:guid}/resolve")]
     public async Task<IActionResult> ResolveException(Guid batchId, Guid exceptionId, string resolutionStatus, string resolutionNote, CancellationToken cancellationToken)
     {
@@ -88,14 +97,17 @@ public sealed class ImportsController(
             batchId, exceptionId, parsedStatus, resolutionNote, RequireActor(), cancellationToken));
     }
 
+    [Authorize(Policy = AuthorizationPolicies.ManageImports)]
     [HttpPost("{batchId:guid}/exceptions/{exceptionId:guid}/assign")]
     public Task<IActionResult> AssignException(Guid batchId, Guid exceptionId, string? assignedTo, CancellationToken cancellationToken)
         => RunReviewAction(batchId, () => reviewService.AssignExceptionAsync(batchId, exceptionId, assignedTo, cancellationToken));
 
+    [Authorize(Policy = AuthorizationPolicies.ManageImports)]
     [HttpPost("{batchId:guid}/exceptions/{exceptionId:guid}/reopen")]
     public Task<IActionResult> ReopenException(Guid batchId, Guid exceptionId, CancellationToken cancellationToken)
         => RunReviewAction(batchId, () => reviewService.ReopenExceptionAsync(batchId, exceptionId, cancellationToken));
 
+    [Authorize(Policy = AuthorizationPolicies.ManageImports)]
     [HttpPost("{batchId:guid}/rows/{rowId:guid}/outcome")]
     public async Task<IActionResult> OverrideRowOutcome(
         Guid batchId,
@@ -115,6 +127,7 @@ public sealed class ImportsController(
             batchId, rowId, parsedOutcome, RequireActor(), reviewNote, cancellationToken));
     }
 
+    [Authorize(Policy = AuthorizationPolicies.ManageImports)]
     [HttpPost("{id:guid}/accept")]
     public async Task<IActionResult> Accept(Guid id, string? acceptanceReason, CancellationToken cancellationToken)
     {
@@ -131,6 +144,7 @@ public sealed class ImportsController(
         }
     }
 
+    [Authorize(Policy = AuthorizationPolicies.ManageImports)]
     [HttpPost("{id:guid}/commit")]
     public async Task<IActionResult> Commit(Guid id, Guid budgetVersionId, CancellationToken cancellationToken)
     {
@@ -147,6 +161,7 @@ public sealed class ImportsController(
         }
     }
 
+    [Authorize(Policy = AuthorizationPolicies.ManageImports)]
     [HttpPost("{id:guid}/reject")]
     public async Task<IActionResult> Reject(Guid id, CancellationToken cancellationToken)
     {
