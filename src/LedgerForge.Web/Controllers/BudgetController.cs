@@ -1,4 +1,5 @@
 using LedgerForge.Domain.Budgeting;
+using LedgerForge.Infrastructure.Actuals;
 using LedgerForge.Infrastructure.Approvals;
 using LedgerForge.Infrastructure.Budgeting;
 using LedgerForge.Web.Documents;
@@ -14,6 +15,7 @@ namespace LedgerForge.Web.Controllers;
 public sealed class BudgetController(
     BudgetPlanningService planningService,
     BudgetItemWorkspaceService workspaceService,
+    BudgetItemActualEntryService actualEntryService,
     ApprovalQueueService approvalQueueService,
     IAuthorizationService authorizationService,
     IWebHostEnvironment environment,
@@ -80,9 +82,11 @@ public sealed class BudgetController(
 
         var snapshot = workspace.Item;
         var canEditRole = (await authorizationService.AuthorizeAsync(User, AuthorizationPolicies.EditPlanningBudget)).Succeeded;
+        var canPostActuals = (await authorizationService.AuthorizeAsync(User, AuthorizationPolicies.PostActuals)).Succeeded;
         var workflowEditable = snapshot.Status is BudgetItemStatus.Draft or BudgetItemStatus.Proposed or BudgetItemStatus.Deferred;
         ViewData["CanSubmit"] = canEditRole && !snapshot.VersionLocked && workflowEditable;
         ViewData["Submitted"] = Request.Query.ContainsKey("submitted");
+        ViewData["ActualSaved"] = Request.Query.ContainsKey("actualSaved");
 
         var configuredLimit = configuration.GetValue<long?>("Documents:MaxFileSizeBytes");
         var configuredStoragePath = configuration.GetValue<string>("Documents:StoragePath");
@@ -94,11 +98,14 @@ public sealed class BudgetController(
             .Where(x => string.Equals(x.LinkedEntityType, nameof(BudgetItem), StringComparison.OrdinalIgnoreCase) && x.LinkedEntityId == id)
             .OrderByDescending(x => x.CreatedAtUtc)
             .ToArray();
+        var actualOptions = await actualEntryService.GetOptionsAsync(cancellationToken);
 
         return View("Item", new BudgetItemEditViewModel(
             workspace,
             documents,
             canEditRole && !snapshot.VersionLocked && workflowEditable,
+            canPostActuals,
+            actualOptions,
             TempData["BudgetItemError"] as string,
             Request.Query.ContainsKey("saved")));
     }
@@ -152,6 +159,44 @@ public sealed class BudgetController(
             return NotFound();
         }
         catch (Exception exception) when (exception is ArgumentException or InvalidOperationException)
+        {
+            TempData["BudgetItemError"] = exception.Message;
+            return RedirectToAction(nameof(Item), new { id });
+        }
+    }
+
+    [Authorize(Policy = AuthorizationPolicies.PostActuals)]
+    [HttpPost("items/{id:guid}/actuals")]
+    public async Task<IActionResult> AddActual(
+        Guid id,
+        DateOnly transactionDate,
+        decimal amount,
+        string description,
+        string? sourceReference,
+        Guid? financeAccountId,
+        Guid? departmentId,
+        Guid? locationId,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await actualEntryService.PostAsync(
+                id,
+                transactionDate,
+                amount,
+                description,
+                sourceReference,
+                financeAccountId,
+                departmentId,
+                locationId,
+                cancellationToken);
+            return RedirectToAction(nameof(Item), new { id, actualSaved = true });
+        }
+        catch (KeyNotFoundException)
+        {
+            return NotFound();
+        }
+        catch (Exception exception) when (exception is ArgumentException or ArgumentOutOfRangeException or InvalidOperationException or OverflowException)
         {
             TempData["BudgetItemError"] = exception.Message;
             return RedirectToAction(nameof(Item), new { id });
