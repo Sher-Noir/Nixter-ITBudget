@@ -96,15 +96,6 @@ public sealed class ActualLedgerService(LedgerForgeDbContext dbContext)
             .Select(x => new ActualEntryOption(x.Id, x.Code + " · " + x.Name))
             .ToListAsync(cancellationToken);
 
-        var fiscalPeriods = await dbContext.FiscalPeriods
-            .AsNoTracking()
-            .Where(x => x.FiscalYearId == selectedFiscalYearId.Value)
-            .OrderBy(x => x.PeriodNumber)
-            .Select(x => new ActualEntryOption(
-                x.Id,
-                x.Code + " · " + x.Name + (x.IsClosed ? " (closed)" : string.Empty)))
-            .ToListAsync(cancellationToken);
-
         var transactionRows = await dbContext.ActualTransactions
             .AsNoTracking()
             .Where(x => x.FiscalYearId == selectedFiscalYearId.Value)
@@ -122,7 +113,6 @@ public sealed class ActualLedgerService(LedgerForgeDbContext dbContext)
                 x.FinanceAccountId,
                 x.DepartmentId,
                 x.LocationId,
-                x.FiscalPeriodId,
                 x.ReversesTransactionId,
                 x.ReversalReason
             })
@@ -136,9 +126,6 @@ public sealed class ActualLedgerService(LedgerForgeDbContext dbContext)
         var departmentNames = await dbContext.Departments.AsNoTracking()
             .ToDictionaryAsync(x => x.Id, x => x.Code + " · " + x.Name, cancellationToken);
         var locationNames = await dbContext.Locations.AsNoTracking()
-            .ToDictionaryAsync(x => x.Id, x => x.Code + " · " + x.Name, cancellationToken);
-        var periodNames = await dbContext.FiscalPeriods.AsNoTracking()
-            .Where(x => x.FiscalYearId == selectedFiscalYearId.Value)
             .ToDictionaryAsync(x => x.Id, x => x.Code + " · " + x.Name, cancellationToken);
 
         var reversedIds = transactionRows
@@ -157,7 +144,7 @@ public sealed class ActualLedgerService(LedgerForgeDbContext dbContext)
             NameFor(x.FinanceAccountId, accountNames),
             NameFor(x.DepartmentId, departmentNames),
             NameFor(x.LocationId, locationNames),
-            NameFor(x.FiscalPeriodId, periodNames),
+            null,
             x.ReversesTransactionId,
             x.ReversalReason,
             x.Kind != ActualTransactionKind.Reversal && !reversedIds.Contains(x.Id)))
@@ -170,7 +157,7 @@ public sealed class ActualLedgerService(LedgerForgeDbContext dbContext)
             financeAccounts,
             departments,
             locations,
-            fiscalPeriods,
+            [],
             transactions,
             transactions.Sum(x => x.Amount));
     }
@@ -188,8 +175,12 @@ public sealed class ActualLedgerService(LedgerForgeDbContext dbContext)
         Guid? fiscalPeriodId,
         CancellationToken cancellationToken = default)
     {
+        // fiscalPeriodId is intentionally ignored for source/binary compatibility with
+        // existing callers. Fiscal periods are no longer part of the active ledger model.
+        _ = fiscalPeriodId;
         var fiscalYear = await RequireFiscalYearAsync(fiscalYearId, transactionDate, cancellationToken);
-        var period = await ResolveOpenPeriodAsync(fiscalYear.Id, transactionDate, fiscalPeriodId, cancellationToken);
+        if (fiscalYear.Status is FiscalYearStatus.Closed or FiscalYearStatus.Archived)
+            throw new InvalidOperationException($"{fiscalYear.DisplayName} is {fiscalYear.Status} and cannot accept actual transactions.");
 
         if (budgetItemId is not null)
         {
@@ -213,7 +204,7 @@ public sealed class ActualLedgerService(LedgerForgeDbContext dbContext)
             financeAccountId,
             departmentId,
             locationId,
-            period?.Id);
+            fiscalPeriodId: null);
 
         dbContext.ActualTransactions.Add(transaction);
         await dbContext.SaveChangesAsync(cancellationToken);
@@ -239,9 +230,10 @@ public sealed class ActualLedgerService(LedgerForgeDbContext dbContext)
         if (reversalDate < original.TransactionDate)
             throw new InvalidOperationException("A reversal cannot be dated before the original transaction.");
 
-        await RequireFiscalYearAsync(original.FiscalYearId, reversalDate, cancellationToken);
-        var period = await ResolveOpenPeriodAsync(original.FiscalYearId, reversalDate, null, cancellationToken);
-        var reversal = original.CreateReversal(reversalDate, reason, period?.Id);
+        var fiscalYear = await RequireFiscalYearAsync(original.FiscalYearId, reversalDate, cancellationToken);
+        if (fiscalYear.Status is FiscalYearStatus.Closed or FiscalYearStatus.Archived)
+            throw new InvalidOperationException($"{fiscalYear.DisplayName} is {fiscalYear.Status} and cannot accept reversal transactions.");
+        var reversal = original.CreateReversal(reversalDate, reason, reversalFiscalPeriodId: null);
 
         dbContext.ActualTransactions.Add(reversal);
         await dbContext.SaveChangesAsync(cancellationToken);
@@ -259,34 +251,6 @@ public sealed class ActualLedgerService(LedgerForgeDbContext dbContext)
         if (transactionDate < year.StartDate || transactionDate > year.EndDate)
             throw new InvalidOperationException("Transaction date must fall within the selected fiscal year.");
         return year;
-    }
-
-    private async Task<FiscalPeriod?> ResolveOpenPeriodAsync(
-        Guid fiscalYearId,
-        DateOnly transactionDate,
-        Guid? requestedPeriodId,
-        CancellationToken cancellationToken)
-    {
-        FiscalPeriod? period;
-        if (requestedPeriodId is not null)
-        {
-            if (requestedPeriodId == Guid.Empty) throw new ArgumentException("Fiscal period ID cannot be empty.", nameof(requestedPeriodId));
-            period = await dbContext.FiscalPeriods.SingleOrDefaultAsync(x => x.Id == requestedPeriodId, cancellationToken)
-                ?? throw new ArgumentException("Selected fiscal period does not exist.", nameof(requestedPeriodId));
-            if (period.FiscalYearId != fiscalYearId)
-                throw new InvalidOperationException("Selected fiscal period does not belong to the selected fiscal year.");
-            if (transactionDate < period.StartDate || transactionDate > period.EndDate)
-                throw new InvalidOperationException("Transaction date does not fall within the selected fiscal period.");
-        }
-        else
-        {
-            period = await dbContext.FiscalPeriods
-                .SingleOrDefaultAsync(x => x.FiscalYearId == fiscalYearId && x.StartDate <= transactionDate && x.EndDate >= transactionDate, cancellationToken);
-        }
-
-        if (period?.IsClosed == true)
-            throw new InvalidOperationException($"Fiscal period {period.Code} is closed and cannot accept actual transactions.");
-        return period;
     }
 
     private static async Task RequireActiveLookupAsync<TEntity>(
