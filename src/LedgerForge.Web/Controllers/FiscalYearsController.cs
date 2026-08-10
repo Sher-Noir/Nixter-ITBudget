@@ -6,7 +6,7 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace LedgerForge.Web.Controllers;
 
-[Authorize(Policy = AuthorizationPolicies.ManageFiscalYears)]
+[Authorize(Policy = AuthorizationPolicies.ViewBudget)]
 [Route("fiscal-years")]
 public sealed class FiscalYearsController(FiscalYearAdministrationService service) : Controller
 {
@@ -19,6 +19,7 @@ public sealed class FiscalYearsController(FiscalYearAdministrationService servic
             Saved: Request.Query.ContainsKey("saved")));
     }
 
+    [Authorize(Policy = AuthorizationPolicies.ManageFiscalYears)]
     [HttpPost("")]
     public async Task<IActionResult> Create(
         string displayName,
@@ -59,10 +60,13 @@ public sealed class FiscalYearsController(FiscalYearAdministrationService servic
 
         var versions = await service.ListVersionsAsync(id, cancellationToken);
         var closeReadiness = await service.GetCloseReadinessAsync(id, cancellationToken);
+        ViewData["CanManageFiscalYears"] = (await HttpContext.RequestServices.GetRequiredService<IAuthorizationService>()
+            .AuthorizeAsync(User, AuthorizationPolicies.ManageFiscalYears)).Succeeded;
         ViewData["Saved"] = Request.Query.ContainsKey("saved");
         return View(new FiscalYearDetailViewModel(year, versions, closeReadiness));
     }
 
+    [Authorize(Policy = AuthorizationPolicies.ManageFiscalYears)]
     [HttpPost("{id:guid}/current")]
     public async Task<IActionResult> SetCurrent(Guid id, CancellationToken cancellationToken)
     {
@@ -82,10 +86,12 @@ public sealed class FiscalYearsController(FiscalYearAdministrationService servic
         return RedirectToAction(nameof(Details), new { id });
     }
 
+    [Authorize(Policy = AuthorizationPolicies.ManageFiscalYears)]
     [HttpPost("{id:guid}/close")]
     public Task<IActionResult> CloseYear(Guid id, CancellationToken cancellationToken)
         => RunMutation(id, () => service.CloseAsync(id, RequireActor(), cancellationToken));
 
+    [Authorize(Policy = AuthorizationPolicies.ManageFiscalYears)]
     [HttpPost("{id:guid}/rollover")]
     public async Task<IActionResult> Rollover(
         Guid id,
