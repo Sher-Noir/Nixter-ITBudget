@@ -77,7 +77,16 @@ public static class AuthorizationPolicies
     {
         if (minimum == ModuleAccessLevel.Admin) return [ApplicationRole.SystemAdministrator];
         if (minimum == ModuleAccessLevel.View)
-            return [ApplicationRole.SystemAdministrator, ApplicationRole.BudgetAdministrator, ApplicationRole.BudgetEditor, ApplicationRole.Approver, ApplicationRole.ReadOnly, ApplicationRole.Auditor];
+        {
+            return module switch
+            {
+                LedgerForgeModule.Administration => [ApplicationRole.SystemAdministrator],
+                LedgerForgeModule.Audit => [ApplicationRole.SystemAdministrator, ApplicationRole.Auditor],
+                LedgerForgeModule.Imports or LedgerForgeModule.FiscalYears => [ApplicationRole.SystemAdministrator, ApplicationRole.BudgetAdministrator],
+                LedgerForgeModule.Approvals => [ApplicationRole.SystemAdministrator, ApplicationRole.BudgetAdministrator, ApplicationRole.Approver],
+                _ => [ApplicationRole.SystemAdministrator, ApplicationRole.BudgetAdministrator, ApplicationRole.BudgetEditor, ApplicationRole.Approver, ApplicationRole.ReadOnly, ApplicationRole.Auditor]
+            };
+        }
 
         return module switch
         {
