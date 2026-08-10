@@ -19,6 +19,8 @@ public sealed record ActualImportProfile(
     string LocationHeader,
     string FiscalPeriodHeader)
 {
+    // FiscalPeriodHeader is retained so existing deployment configuration and callers
+    // remain compatible. LedgerForge no longer reads or writes fiscal-period values.
     public static ActualImportProfile Default { get; } = new(
         "TransactionDate", "Amount", "Description", "SourceReference", "BudgetItem",
         "FinanceAccount", "Department", "Location", "FiscalPeriod");
@@ -95,14 +97,14 @@ public sealed class ActualCsvImportService(LedgerForgeDbContext dbContext)
             .ToDictionaryAsync(x => x.Code, x => x.Id, StringComparer.OrdinalIgnoreCase, cancellationToken);
         var locations = await dbContext.Locations.AsNoTracking().Where(x => x.IsActive)
             .ToDictionaryAsync(x => x.Code, x => x.Id, StringComparer.OrdinalIgnoreCase, cancellationToken);
-        var periods = await dbContext.FiscalPeriods.AsNoTracking().Where(x => x.FiscalYearId == fiscalYearId)
-            .ToDictionaryAsync(x => x.Code, StringComparer.OrdinalIgnoreCase, cancellationToken);
 
         var pending = new List<ActualTransaction>(records.Count - 1);
         var errors = new List<string>();
         var seenReferences = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         decimal total = 0m;
         var safeFileName = Path.GetFileName(string.IsNullOrWhiteSpace(sourceFileName) ? "actuals.csv" : sourceFileName);
+        _ = safeFileName;
+        _ = profile.FiscalPeriodHeader;
 
         for (var recordIndex = 1; recordIndex < records.Count; recordIndex++)
         {
@@ -138,22 +140,6 @@ public sealed class ActualCsvImportService(LedgerForgeDbContext dbContext)
             Guid? financeAccountId = ResolveOptionalCode(row, header, profile.FinanceAccountHeader, accounts, "finance account", rowNumber, errors);
             Guid? departmentId = ResolveOptionalCode(row, header, profile.DepartmentHeader, departments, "department", rowNumber, errors);
             Guid? locationId = ResolveOptionalCode(row, header, profile.LocationHeader, locations, "location", rowNumber, errors);
-            var periodCode = Value(row, header, profile.FiscalPeriodHeader);
-            FiscalPeriod? period = null;
-            if (!string.IsNullOrWhiteSpace(periodCode))
-            {
-                if (!periods.TryGetValue(periodCode.Trim(), out period))
-                    errors.Add($"Row {rowNumber}: fiscal period code '{periodCode}' was not found in {year.DisplayName}.");
-                else if (period.IsClosed)
-                    errors.Add($"Row {rowNumber}: fiscal period {period.Code} is closed.");
-                else if (transactionDate < period.StartDate || transactionDate > period.EndDate)
-                    errors.Add($"Row {rowNumber}: transaction date does not fall within fiscal period {period.Code}.");
-            }
-            else
-            {
-                period = periods.Values.SingleOrDefault(x => x.StartDate <= transactionDate && x.EndDate >= transactionDate);
-                if (period?.IsClosed == true) errors.Add($"Row {rowNumber}: fiscal period {period.Code} is closed.");
-            }
 
             if (errors.Any(x => x.StartsWith($"Row {rowNumber}:", StringComparison.Ordinal))) continue;
 
@@ -161,10 +147,10 @@ public sealed class ActualCsvImportService(LedgerForgeDbContext dbContext)
             if (string.IsNullOrWhiteSpace(reference)) reference = $"import:{sourceHash}:row-{rowNumber}";
 
             if (!seenReferences.Add(reference))
-  {
-      errors.Add($"Row {rowNumber}: source reference '{reference}' is duplicated within this import file.");
-      continue;
-  }
+            {
+                errors.Add($"Row {rowNumber}: source reference '{reference}' is duplicated within this import file.");
+                continue;
+            }
 
             try
             {
@@ -179,7 +165,7 @@ public sealed class ActualCsvImportService(LedgerForgeDbContext dbContext)
                     financeAccountId,
                     departmentId,
                     locationId,
-                    period?.Id));
+                    fiscalPeriodId: null));
                 total = checked(total + amount);
             }
             catch (Exception exception) when (exception is ArgumentException or ArgumentOutOfRangeException or OverflowException)
@@ -193,20 +179,20 @@ public sealed class ActualCsvImportService(LedgerForgeDbContext dbContext)
 
         await using var transaction = await dbContext.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable, cancellationToken);
         var importReferences = pending
-  .Select(x => x.SourceReference)
-  .Where(x => x is not null)
-  .Select(x => x!)
-  .Distinct(StringComparer.OrdinalIgnoreCase)
-  .ToArray();
+            .Select(x => x.SourceReference)
+            .Where(x => x is not null)
+            .Select(x => x!)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
         var existingReferences = await dbContext.ActualTransactions.AsNoTracking()
-  .Where(x => x.FiscalYearId == fiscalYearId && x.Kind == ActualTransactionKind.Import && x.SourceReference != null && importReferences.Contains(x.SourceReference))
-  .Select(x => x.SourceReference!)
-  .ToListAsync(cancellationToken);
+            .Where(x => x.FiscalYearId == fiscalYearId && x.Kind == ActualTransactionKind.Import && x.SourceReference != null && importReferences.Contains(x.SourceReference))
+            .Select(x => x.SourceReference!)
+            .ToListAsync(cancellationToken);
         if (existingReferences.Count > 0)
         {
-  await transaction.RollbackAsync(cancellationToken);
-  var shown = string.Join(", ", existingReferences.Distinct(StringComparer.OrdinalIgnoreCase).Take(5));
-  return new(0, 0m, [$"Import rejected because previously posted import reference(s) were found: {shown}. No rows were posted."]);
+            await transaction.RollbackAsync(cancellationToken);
+            var shown = string.Join(", ", existingReferences.Distinct(StringComparer.OrdinalIgnoreCase).Take(5));
+            return new(0, 0m, [$"Import rejected because previously posted import reference(s) were found: {shown}. No rows were posted."]);
         }
 
         dbContext.ActualTransactions.AddRange(pending);
