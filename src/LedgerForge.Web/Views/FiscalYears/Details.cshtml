@@ -2,6 +2,7 @@
 @using LedgerForge.Domain.Budgeting
 @{
     ViewData["Title"] = Model.FiscalYear.DisplayName;
+    var canManage = ViewData["CanManageFiscalYears"] as bool? == true;
     var saved = ViewData["Saved"] as bool? == true;
     var error = TempData["FiscalYearError"] as string;
     var isClosed = Model.FiscalYear.Status is FiscalYearStatus.Closed or FiscalYearStatus.Archived;
@@ -15,7 +16,7 @@
         <p class="lf-subtitle">@Model.FiscalYear.StartDate.ToString("MMMM d, yyyy") – @Model.FiscalYear.EndDate.ToString("MMMM d, yyyy") · @Model.FiscalYear.Status</p>
     </div>
     <div>
-        @if (!Model.FiscalYear.IsCurrent && !isClosed)
+        @if (canManage && !Model.FiscalYear.IsCurrent && !isClosed)
         {
             <form method="post" action="/fiscal-years/@Model.FiscalYear.Id/current">
                 @Html.AntiForgeryToken()
@@ -75,7 +76,7 @@
     }
 </section>
 
-@if (!isClosed)
+@if (canManage && !isClosed)
 {
     <section class="lf-card" aria-labelledby="close-title">
         <div class="lf-panel-header"><div><h2 id="close-title">Fiscal-year close</h2><p class="lf-muted">Close is blocked until operational and financial work is resolved.</p></div><span class="badge">@(Model.CloseReadiness.CanClose ? "Ready" : "Not ready")</span></div>
@@ -98,7 +99,7 @@
         }
     </section>
 }
-else if (Model.FiscalYear.Status == FiscalYearStatus.Closed)
+else if (canManage && Model.FiscalYear.Status == FiscalYearStatus.Closed)
 {
     <section class="lf-card" aria-labelledby="rollover-title">
         <div class="lf-panel-header"><div><h2 id="rollover-title">Roll forward to a new planning year</h2><p class="lf-muted">Carries the latest eligible budget baseline and allocations into a new editable planning version. Historical workflow decisions remain in this closed year.</p></div></div>
