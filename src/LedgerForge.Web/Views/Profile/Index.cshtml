@@ -1,0 +1,49 @@
+@model LedgerForge.Web.Models.Administration.ProfileViewModel
+@{
+    ViewData["Title"] = "Profile";
+}
+
+<div class="lf-page-header">
+    <div>
+        <h1 class="lf-page-title">Profile</h1>
+        <p class="lf-subtitle">Your Windows identity and effective LedgerForge module access.</p>
+    </div>
+</div>
+
+<div class="lf-settings-grid">
+    <section class="lf-card">
+        <div class="lf-panel-header"><h2>Account</h2><span class="badge">Windows</span></div>
+        <dl class="lf-detail-list">
+            <div><dt>Signed in as</dt><dd><code>@Model.Identity</code></dd></div>
+            <div><dt>Authentication</dt><dd>Integrated Windows authentication</dd></div>
+        </dl>
+        <p class="lf-muted">LedgerForge does not store your Windows password. Profile preferences can be added here as the product grows.</p>
+    </section>
+
+    <section class="lf-card">
+        <div class="lf-panel-header"><h2>Assigned configurable roles</h2><span class="badge">@Model.ConfigurableRoles.Count</span></div>
+        @if (Model.ConfigurableRoles.Count == 0)
+        {
+            <p class="lf-muted">No configurable role is directly resolved for this identity. Access may currently be coming from a legacy/bootstrap directory mapping.</p>
+        }
+        else
+        {
+            <div class="lf-chip-row">@foreach (var role in Model.ConfigurableRoles) { <span class="badge">@role</span> }</div>
+        }
+    </section>
+</div>
+
+<section class="lf-card">
+    <div class="lf-panel-header"><h2>Effective module access</h2><span class="badge">None → View → Edit → Manage → Admin</span></div>
+    <div class="lf-table-wrap">
+        <table class="lf-table">
+            <thead><tr><th>Module</th><th>Access</th></tr></thead>
+            <tbody>
+            @foreach (var row in Model.ModuleAccess)
+            {
+                <tr><td><strong>@row.Module</strong></td><td><span class="badge">@row.Access</span></td></tr>
+            }
+            </tbody>
+        </table>
+    </div>
+</section>
