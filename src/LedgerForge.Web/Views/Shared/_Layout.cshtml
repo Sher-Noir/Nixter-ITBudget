@@ -13,8 +13,17 @@
     var userName = User.Identity?.Name ?? "Signed-in user";
     var displayUserName = userName.Split('\\', StringSplitOptions.RemoveEmptyEntries).LastOrDefault() ?? userName;
     var userInitial = displayUserName.FirstOrDefault().ToString().ToUpperInvariant();
-    var canManageBudget = (await AuthorizationService.AuthorizeAsync(User, AuthorizationPolicies.ManageBudget)).Succeeded;
-    var canApprove = (await AuthorizationService.AuthorizeAsync(User, AuthorizationPolicies.Approve)).Succeeded;
+    async Task<bool> CanView(LedgerForgeModule module) => (await AuthorizationService.AuthorizeAsync(User, AuthorizationPolicies.ModulePolicy(module, ModuleAccessLevel.View))).Succeeded;
+    var canDashboard = await CanView(LedgerForgeModule.Dashboard);
+    var canBudget = await CanView(LedgerForgeModule.Budget);
+    var canProcurement = await CanView(LedgerForgeModule.Procurement);
+    var canVendors = await CanView(LedgerForgeModule.Vendors);
+    var canContracts = await CanView(LedgerForgeModule.Contracts);
+    var canRenewals = await CanView(LedgerForgeModule.Renewals);
+    var canDocuments = await CanView(LedgerForgeModule.Documents);
+    var canApprovals = await CanView(LedgerForgeModule.Approvals);
+    var canReports = await CanView(LedgerForgeModule.Reports);
+    var canFiscalYears = await CanView(LedgerForgeModule.FiscalYears);
     var canAdminister = (await AuthorizationService.AuthorizeAsync(User, AuthorizationPolicies.Administration)).Succeeded;
     var headerSearchQuery = Context.Request.Path.StartsWithSegments("/search") ? Context.Request.Query["q"].ToString() : string.Empty;
     bool IsActive(string prefix) => Context.Request.Path.StartsWithSegments(prefix, StringComparison.OrdinalIgnoreCase);
@@ -60,26 +69,35 @@
             <span class="lf-brand-copy">@branding.ProductName</span>
         </a>
         <nav class="lf-nav">
-            <a href="/" class="@(Context.Request.Path == "/" ? "active" : null)"><span class="lf-nav-icon" aria-hidden="true">⌂</span><span>Dashboard</span></a>
-            <a href="/budget" class="@(IsActive("/budget") ? "active" : null)"><span class="lf-nav-icon" aria-hidden="true">◔</span><span>Budget</span></a>
-            <a href="/actuals" class="@(IsActive("/actuals") ? "active" : null)"><span class="lf-nav-icon" aria-hidden="true">▥</span><span>Actuals</span></a>
-            <a href="/purchase-orders" class="@(IsActive("/purchase-orders") ? "active" : null)"><span class="lf-nav-icon" aria-hidden="true">◫</span><span>Purchase Orders</span></a>
-            <a href="/invoices" class="@(IsActive("/invoices") ? "active" : null)"><span class="lf-nav-icon" aria-hidden="true">▤</span><span>Invoices</span></a>
-            <a href="/vendors" class="@(IsActive("/vendors") ? "active" : null)"><span class="lf-nav-icon" aria-hidden="true">♧</span><span>Vendors</span></a>
-            <a href="/contracts" class="@(IsActive("/contracts") ? "active" : null)"><span class="lf-nav-icon" aria-hidden="true">▧</span><span>Contracts</span></a>
-            <a href="/renewals" class="@(IsActive("/renewals") ? "active" : null)"><span class="lf-nav-icon" aria-hidden="true">↻</span><span>Renewals</span></a>
-            <a href="/documents" class="@(IsActive("/documents") ? "active" : null)"><span class="lf-nav-icon" aria-hidden="true">□</span><span>Documents</span></a>
-            @if (canApprove)
+            @if (canDashboard || canBudget || canFiscalYears)
             {
-                <a href="/approvals" class="@(IsActive("/approvals") ? "active" : null)"><span class="lf-nav-icon" aria-hidden="true">✓</span><span>Approvals</span></a>
+                <div class="lf-nav-heading">Planning</div>
+                @if (canDashboard) { <a href="/" class="@(Context.Request.Path == "/" ? "active" : null)"><span class="lf-nav-icon" aria-hidden="true">⌂</span><span>Dashboard</span></a> }
+                @if (canBudget) { <a href="/budget" class="@(IsActive("/budget") || IsActive("/actuals") ? "active" : null)"><span class="lf-nav-icon" aria-hidden="true">◔</span><span>Budget</span></a> }
+                @if (canFiscalYears) { <a href="/fiscal-years" class="@(IsActive("/fiscal-years") ? "active" : null)"><span class="lf-nav-icon" aria-hidden="true">▣</span><span>Fiscal Years</span></a> }
             }
-            <a href="/reports" class="@(IsActive("/reports") ? "active" : null)"><span class="lf-nav-icon" aria-hidden="true">▥</span><span>Reports</span></a>
-            @if (canManageBudget)
+
+            @if (canProcurement || canVendors || canContracts || canRenewals)
             {
-                <a href="/fiscal-years" class="@(IsActive("/fiscal-years") ? "active" : null)"><span class="lf-nav-icon" aria-hidden="true">▣</span><span>Fiscal Years</span></a>
+                <div class="lf-nav-heading">Procurement</div>
+                @if (canProcurement) { <a href="/purchase-orders" class="@(IsActive("/purchase-orders") ? "active" : null)"><span class="lf-nav-icon" aria-hidden="true">◫</span><span>Purchase Orders</span></a> }
+                @if (canProcurement) { <a href="/invoices" class="@(IsActive("/invoices") ? "active" : null)"><span class="lf-nav-icon" aria-hidden="true">▤</span><span>Invoices</span></a> }
+                @if (canVendors) { <a href="/vendors" class="@(IsActive("/vendors") ? "active" : null)"><span class="lf-nav-icon" aria-hidden="true">♧</span><span>Vendors</span></a> }
+                @if (canContracts) { <a href="/contracts" class="@(IsActive("/contracts") ? "active" : null)"><span class="lf-nav-icon" aria-hidden="true">▧</span><span>Contracts</span></a> }
+                @if (canRenewals) { <a href="/renewals" class="@(IsActive("/renewals") ? "active" : null)"><span class="lf-nav-icon" aria-hidden="true">↻</span><span>Renewals</span></a> }
             }
+
+            @if (canDocuments || canApprovals || canReports)
+            {
+                <div class="lf-nav-heading">Workspace</div>
+                @if (canDocuments) { <a href="/documents" class="@(IsActive("/documents") ? "active" : null)"><span class="lf-nav-icon" aria-hidden="true">□</span><span>Documents</span></a> }
+                @if (canApprovals) { <a href="/approvals" class="@(IsActive("/approvals") ? "active" : null)"><span class="lf-nav-icon" aria-hidden="true">✓</span><span>Approvals</span></a> }
+                @if (canReports) { <a href="/reports" class="@(IsActive("/reports") ? "active" : null)"><span class="lf-nav-icon" aria-hidden="true">▥</span><span>Reports</span></a> }
+            }
+
             @if (canAdminister)
             {
+                <div class="lf-nav-heading">System</div>
                 <a href="/admin/organization" class="@(IsActive("/admin") ? "active" : null)"><span class="lf-nav-icon" aria-hidden="true">⚙</span><span>Administration</span></a>
             }
         </nav>
@@ -92,27 +110,23 @@
     <div class="lf-main">
         <header class="lf-topbar">
             <button class="lf-mobile-menu" type="button" data-mobile-menu aria-label="Open navigation">☰</button>
-            <a class="lf-fy-control" href="/fiscal-years" title="Open fiscal years">
-                <span aria-hidden="true">▣</span>
-                <strong>@branding.DefaultFiscalYearLabel</strong>
-                <span aria-hidden="true">⌄</span>
-            </a>
+            @if (canFiscalYears)
+            {
+                <a class="lf-fy-control" href="/fiscal-years" title="Open fiscal years"><span aria-hidden="true">▣</span><strong>@branding.DefaultFiscalYearLabel</strong><span aria-hidden="true">⌄</span></a>
+            }
             <form class="lf-search" method="get" action="/search" role="search">
                 <span aria-hidden="true">⌕</span>
                 <input type="search" name="q" value="@headerSearchQuery" minlength="2" maxlength="100" placeholder="Search budgets, vendors, POs, invoices, contracts..." aria-label="Search LedgerForge" />
             </form>
             <div class="lf-top-actions">
-                <a class="button lf-export-button" href="/exports"><span aria-hidden="true">⇩</span> Export <span aria-hidden="true">⌄</span></a>
-                @if (canApprove)
-                {
-                    <a class="lf-icon-button" href="/approvals" aria-label="Open approvals" title="Approvals"><span aria-hidden="true">♧</span></a>
-                }
+                @if (canReports) { <a class="button lf-export-button" href="/exports"><span aria-hidden="true">⇩</span> Export <span aria-hidden="true">⌄</span></a> }
+                @if (canApprovals) { <a class="lf-icon-button" href="/approvals" aria-label="Open approvals" title="Approvals"><span aria-hidden="true">♧</span></a> }
                 <button class="lf-theme-toggle lf-icon-button" type="button" data-theme-toggle aria-label="Toggle color theme" title="Toggle color theme"><span data-theme-icon aria-hidden="true">☾</span><span class="visually-hidden" data-theme-label>Dark mode</span></button>
-                <div class="lf-user">
+                <a class="lf-user" href="/profile" title="Open profile">
                     <span class="lf-avatar" aria-hidden="true">@userInitial</span>
                     <span class="lf-user-name">@displayUserName</span>
                     <span class="lf-user-caret" aria-hidden="true">⌄</span>
-                </div>
+                </a>
             </div>
         </header>
 
@@ -135,6 +149,7 @@
     </div>
 </div>
 <script src="~/js/ledgerforge-theme.js" asp-append-version="true"></script>
+<script src="~/js/ledgerforge-ui.js" asp-append-version="true"></script>
 @await RenderSectionAsync("Scripts", required: false)
 </body>
 </html>
