@@ -14,6 +14,7 @@
         <h1 class="lf-page-title">Actual Ledger</h1>
         <p class="lf-subtitle">Posted spend is append-only. Corrections create linked reversal transactions instead of modifying financial history.</p>
     </div>
+    <a class="button" href="/budget">Back to Budget</a>
 </div>
 
 @if (!string.IsNullOrWhiteSpace(errorMessage))
@@ -70,14 +71,14 @@
             <div class="lf-form-grid">
                 <div class="lf-span-all"><label for="actualImport"><strong>CSV file</strong></label><input id="actualImport" name="file" type="file" accept=".csv,text/csv" required /></div>
             </div>
-            <p class="lf-muted">Required columns: TransactionDate, Amount, Description. Optional codes: SourceReference, BudgetItem, FinanceAccount, Department, Location, FiscalPeriod. Header names can be overridden in deployment configuration.</p>
+            <p class="lf-muted">Required columns: TransactionDate, Amount, Description. Optional codes: SourceReference, BudgetItem, FinanceAccount, Department, Location. Header names can be overridden in deployment configuration.</p>
             <p><button class="primary" type="submit">Validate and import</button></p>
         </form>
     </section>
 
     <section class="lf-card" aria-labelledby="manual-actual-title">
         <h2 id="manual-actual-title">Post manual actual</h2>
-        <p class="lf-muted">Use manual entries for source transactions that are not posted through an invoice integration. Fiscal period is auto-resolved from the date when omitted.</p>
+        <p class="lf-muted">This compatibility ledger remains available for bulk/manual work, but normal entry now lives on the related Budget Item.</p>
         <form method="post" action="/actuals/manual">
             @Html.AntiForgeryToken()
             <input type="hidden" name="fiscalYearId" value="@Model.SelectedFiscalYearId" />
@@ -90,7 +91,6 @@
                 <div><label for="financeAccountId">Finance account</label><select id="financeAccountId" name="financeAccountId"><option value="">Unallocated</option>@foreach (var option in Model.FinanceAccounts) { <option value="@option.Id">@option.Label</option> }</select></div>
                 <div><label for="departmentId">Department</label><select id="departmentId" name="departmentId"><option value="">Unallocated</option>@foreach (var option in Model.Departments) { <option value="@option.Id">@option.Label</option> }</select></div>
                 <div><label for="locationId">Location</label><select id="locationId" name="locationId"><option value="">Unallocated</option>@foreach (var option in Model.Locations) { <option value="@option.Id">@option.Label</option> }</select></div>
-                <div><label for="fiscalPeriodId">Fiscal period override</label><select id="fiscalPeriodId" name="fiscalPeriodId"><option value="">Auto-resolve from date</option>@foreach (var option in Model.FiscalPeriods) { <option value="@option.Id">@option.Label</option> }</select></div>
             </div>
             <p><button class="primary" type="submit">Post actual transaction</button></p>
         </form>
@@ -107,14 +107,14 @@
     {
         <div class="lf-table-wrap">
             <table class="lf-table">
-                <thead><tr><th>Date</th><th>Description</th><th>Kind</th><th>Budget item</th><th>Account</th><th>Department</th><th>Location</th><th>Period</th><th class="lf-number">Amount</th><th>Correction</th></tr></thead>
+                <thead><tr><th>Date</th><th>Description</th><th>Kind</th><th>Budget item</th><th>Account</th><th>Department</th><th>Location</th><th class="lf-number">Amount</th><th>Correction</th></tr></thead>
                 <tbody>
                 @foreach (var transaction in Model.Transactions)
                 {
                     <tr>
                         <td>@transaction.TransactionDate.ToString("yyyy-MM-dd")</td>
                         <td><strong>@transaction.Description</strong>@if (!string.IsNullOrWhiteSpace(transaction.SourceReference)) { <br /><span class="lf-muted">@transaction.SourceReference</span> }</td>
-                        <td><span class="badge">@transaction.Kind</span></td><td>@(transaction.BudgetItem ?? "—")</td><td>@(transaction.FinanceAccount ?? "—")</td><td>@(transaction.Department ?? "—")</td><td>@(transaction.Location ?? "—")</td><td>@(transaction.FiscalPeriod ?? "—")</td><td class="lf-number">@transaction.Amount.ToString("C2")</td>
+                        <td><span class="badge">@transaction.Kind</span></td><td>@(transaction.BudgetItem ?? "—")</td><td>@(transaction.FinanceAccount ?? "—")</td><td>@(transaction.Department ?? "—")</td><td>@(transaction.Location ?? "—")</td><td class="lf-number">@transaction.Amount.ToString("C2")</td>
                         <td>
                             @if (transaction.Kind == ActualTransactionKind.Reversal)
                             { <span class="lf-muted">Reversal@if (!string.IsNullOrWhiteSpace(transaction.ReversalReason)) { <text>: @transaction.ReversalReason</text> }</span> }
