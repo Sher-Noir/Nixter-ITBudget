@@ -18,12 +18,22 @@ jobs:
         with:
           global-json-file: global.json
 
+      - name: Resolve release version
+        shell: pwsh
+        run: |
+          $version = $env:GITHUB_REF_NAME -replace '^v', ''
+          if ($version -notmatch '^\d+\.\d+\.\d+([-.+][0-9A-Za-z.-]+)?$') {
+            throw "Release tag '$env:GITHUB_REF_NAME' is not a supported LedgerForge version tag."
+          }
+          Add-Content -Path $env:GITHUB_ENV -Value "LEDGERFORGE_RELEASE_VERSION=$version"
+          Write-Host "LedgerForge application version: $version"
+
       - name: Restore, build, and test
         shell: pwsh
         run: |
           dotnet tool restore
           dotnet restore LedgerForge.slnx
-          dotnet build LedgerForge.slnx --configuration Release --no-restore
+          dotnet build LedgerForge.slnx --configuration Release --no-restore /p:Version=$env:LEDGERFORGE_RELEASE_VERSION
           dotnet test tests\LedgerForge.UnitTests\LedgerForge.UnitTests.csproj --configuration Release --no-build
           dotnet test tests\LedgerForge.IntegrationTests\LedgerForge.IntegrationTests.csproj --configuration Release --no-build
           dotnet test tests\LedgerForge.UiTests\LedgerForge.UiTests.csproj --configuration Release --no-build
@@ -39,10 +49,10 @@ jobs:
           New-Item -ItemType Directory -Force -Path artifacts\payload\bootstrap | Out-Null
           dotnet publish src\LedgerForge.Web\LedgerForge.Web.csproj `
             --configuration Release --runtime win-x64 --self-contained false `
-            --output artifacts\payload\web
+            --output artifacts\payload\web /p:Version=$env:LEDGERFORGE_RELEASE_VERSION
           dotnet publish src\LedgerForge.Bootstrap\LedgerForge.Bootstrap.csproj `
             --configuration Release --runtime win-x64 --self-contained false `
-            --output artifacts\payload\bootstrap
+            --output artifacts\payload\bootstrap /p:Version=$env:LEDGERFORGE_RELEASE_VERSION
           if (Test-Path artifacts\payload\web\appsettings.Production.json) {
             throw 'Production settings must not be embedded in the public payload.'
           }
@@ -56,7 +66,8 @@ jobs:
           dotnet publish src\LedgerForge.Setup\LedgerForge.Setup.csproj `
             --configuration Release --runtime win-x64 --self-contained true `
             --output artifacts\setup `
-            /p:PayloadZipPath="$payloadZip"
+            /p:PayloadZipPath="$payloadZip" `
+            /p:Version=$env:LEDGERFORGE_RELEASE_VERSION
           if (-not (Test-Path artifacts\setup\LedgerForge.Setup.exe)) {
             throw 'LedgerForge.Setup.exe was not produced.'
           }
@@ -96,6 +107,7 @@ jobs:
           @{
             product = 'LedgerForge'
             version = $env:GITHUB_REF_NAME
+            applicationVersion = $env:LEDGERFORGE_RELEASE_VERSION
             commit = $env:GITHUB_SHA
             runtime = 'win-x64'
             setupSha256 = $setupHash
