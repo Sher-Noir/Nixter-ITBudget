@@ -69,6 +69,7 @@ builder.Services.AddScoped<BudgetAmendmentService>();
 builder.Services.AddScoped<ForecastService>();
 builder.Services.AddScoped<ActualLedgerService>();
 builder.Services.AddScoped<ActualCsvImportService>();
+builder.Services.AddScoped<BudgetItemActualEntryService>();
 builder.Services.AddScoped<ProcurementService>();
 builder.Services.AddScoped<InvoiceQueryService>();
 builder.Services.AddScoped<InvoiceWorkflowService>();
