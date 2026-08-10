@@ -1,6 +1,7 @@
 @model LedgerForge.Web.Models.FiscalYears.FiscalYearIndexViewModel
 @{
     ViewData["Title"] = "Fiscal Years";
+    var canManage = ViewData["CanManageFiscalYears"] as bool? == true;
     var today = DateOnly.FromDateTime(DateTime.UtcNow);
     var defaultStart = new DateOnly(today.Year, 1, 1);
     var defaultEnd = new DateOnly(today.Year, 12, 31);
@@ -9,7 +10,7 @@
 <div class="lf-page-header">
     <div>
         <h1 class="lf-page-title">Fiscal Years</h1>
-        <p class="lf-subtitle">Create and manage planning years and their budget versions.</p>
+        <p class="lf-subtitle">Planning years and their budget versions.</p>
     </div>
 </div>
 
@@ -18,7 +19,7 @@
     <div class="card lf-alert lf-alert-danger" role="alert">@Model.ErrorMessage</div>
 }
 
-<div class="lf-settings-grid">
+<div class="@(canManage ? "lf-settings-grid" : string.Empty)">
     <section class="card" aria-labelledby="fiscal-list-title">
         <div class="lf-panel-header"><h2 id="fiscal-list-title">Configured fiscal years</h2></div>
         @if (Model.FiscalYears.Count == 0)
@@ -47,20 +48,23 @@
         }
     </section>
 
-    <aside class="card" aria-labelledby="create-fiscal-title">
-        <h2 id="create-fiscal-title">Create fiscal year</h2>
-        <form method="post" action="/fiscal-years">
-            @Html.AntiForgeryToken()
-            <p><label for="displayName"><strong>Display name</strong></label><input id="displayName" name="displayName" placeholder="FY2027" maxlength="32" required /></p>
-            <div class="lf-form-grid">
-                <div><label for="startDate"><strong>Start date</strong></label><input id="startDate" name="startDate" type="date" value="@defaultStart.ToString("yyyy-MM-dd")" required /></div>
-                <div><label for="endDate"><strong>End date</strong></label><input id="endDate" name="endDate" type="date" value="@defaultEnd.ToString("yyyy-MM-dd")" required /></div>
-            </div>
-            <p><label for="planningYear"><strong>Planning year</strong></label><input id="planningYear" name="planningYear" type="number" min="1900" max="9999" value="@today.Year" required /></p>
-            <p><label for="initialVersionName"><strong>Initial version</strong></label><input id="initialVersionName" name="initialVersionName" value="Initial Planning" maxlength="100" required /></p>
-            <p><label for="description">Description</label><textarea id="description" name="description" rows="3" maxlength="1000"></textarea></p>
-            <p><label class="lf-check"><input name="isCurrent" type="checkbox" value="true" /> Make this the current fiscal year</label></p>
-            <button class="primary" type="submit">Create fiscal year</button>
-        </form>
-    </aside>
+    @if (canManage)
+    {
+        <aside class="card" aria-labelledby="create-fiscal-title">
+            <h2 id="create-fiscal-title">Create fiscal year</h2>
+            <form method="post" action="/fiscal-years">
+                @Html.AntiForgeryToken()
+                <p><label for="displayName"><strong>Display name</strong></label><input id="displayName" name="displayName" placeholder="FY2027" maxlength="32" required /></p>
+                <div class="lf-form-grid">
+                    <div><label for="startDate"><strong>Start date</strong></label><input id="startDate" name="startDate" type="date" value="@defaultStart.ToString("yyyy-MM-dd")" required /></div>
+                    <div><label for="endDate"><strong>End date</strong></label><input id="endDate" name="endDate" type="date" value="@defaultEnd.ToString("yyyy-MM-dd")" required /></div>
+                </div>
+                <p><label for="planningYear"><strong>Planning year</strong></label><input id="planningYear" name="planningYear" type="number" min="1900" max="9999" value="@today.Year" required /></p>
+                <p><label for="initialVersionName"><strong>Initial version</strong></label><input id="initialVersionName" name="initialVersionName" value="Initial Planning" maxlength="100" required /></p>
+                <p><label for="description">Description</label><textarea id="description" name="description" rows="3" maxlength="1000"></textarea></p>
+                <p><label class="lf-check"><input name="isCurrent" type="checkbox" value="true" /> Make this the current fiscal year</label></p>
+                <button class="primary" type="submit">Create fiscal year</button>
+            </form>
+        </aside>
+    }
 </div>
