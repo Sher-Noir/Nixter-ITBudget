@@ -24,6 +24,8 @@
     var canApprovals = await CanView(LedgerForgeModule.Approvals);
     var canReports = await CanView(LedgerForgeModule.Reports);
     var canFiscalYears = await CanView(LedgerForgeModule.FiscalYears);
+    var canImports = await CanView(LedgerForgeModule.Imports);
+    var canAudit = await CanView(LedgerForgeModule.Audit);
     var canAdminister = (await AuthorizationService.AuthorizeAsync(User, AuthorizationPolicies.Administration)).Succeeded;
     var headerSearchQuery = Context.Request.Path.StartsWithSegments("/search") ? Context.Request.Query["q"].ToString() : string.Empty;
     bool IsActive(string prefix) => Context.Request.Path.StartsWithSegments(prefix, StringComparison.OrdinalIgnoreCase);
@@ -95,10 +97,12 @@
                 @if (canReports) { <a href="/reports" class="@(IsActive("/reports") ? "active" : null)"><span class="lf-nav-icon" aria-hidden="true">▥</span><span>Reports</span></a> }
             }
 
-            @if (canAdminister)
+            @if (canImports || canAudit || canAdminister)
             {
                 <div class="lf-nav-heading">System</div>
-                <a href="/admin/organization" class="@(IsActive("/admin") ? "active" : null)"><span class="lf-nav-icon" aria-hidden="true">⚙</span><span>Administration</span></a>
+                @if (canImports) { <a href="/imports" class="@(IsActive("/imports") ? "active" : null)"><span class="lf-nav-icon" aria-hidden="true">⇧</span><span>Imports</span></a> }
+                @if (canAudit) { <a href="/audit" class="@(IsActive("/audit") ? "active" : null)"><span class="lf-nav-icon" aria-hidden="true">◉</span><span>Audit</span></a> }
+                @if (canAdminister) { <a href="/admin/organization" class="@(IsActive("/admin") ? "active" : null)"><span class="lf-nav-icon" aria-hidden="true">⚙</span><span>Administration</span></a> }
             }
         </nav>
         <div class="lf-sidebar-footer">
