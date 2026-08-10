@@ -5,6 +5,7 @@ namespace LedgerForge.Web.Security;
 
 public static class AuthorizationPolicies
 {
+    public const string AuthenticationOnly = nameof(AuthenticationOnly);
     public const string ViewBudget = nameof(ViewBudget);
     public const string EditPlanningBudget = nameof(EditPlanningBudget);
     public const string ManageBudget = nameof(ManageBudget);
@@ -25,6 +26,7 @@ public static class AuthorizationPolicies
         var anyApplicationRole = new ApplicationRoleRequirement(Enum.GetValues<ApplicationRole>());
         options.DefaultPolicy = new AuthorizationPolicyBuilder().RequireAuthenticatedUser().AddRequirements(anyApplicationRole).Build();
         options.FallbackPolicy = options.DefaultPolicy;
+        options.AddPolicy(AuthenticationOnly, policy => policy.RequireAuthenticatedUser());
 
         // ViewBudget is retained as the broad authenticated-workspace compatibility policy.
         // Per-module view enforcement is added centrally by ModuleAccessMiddleware.
