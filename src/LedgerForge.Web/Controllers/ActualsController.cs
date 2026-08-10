@@ -37,7 +37,6 @@ public sealed class ActualsController(
         Guid? financeAccountId,
         Guid? departmentId,
         Guid? locationId,
-        Guid? fiscalPeriodId,
         CancellationToken cancellationToken)
     {
         try
@@ -52,7 +51,7 @@ public sealed class ActualsController(
                 financeAccountId,
                 departmentId,
                 locationId,
-                fiscalPeriodId,
+                fiscalPeriodId: null,
                 cancellationToken);
             return RedirectToAction(nameof(Index), new { fiscalYearId, saved = true });
         }
@@ -117,9 +116,9 @@ public sealed class ActualsController(
         {
             profile.TransactionDateHeader, profile.AmountHeader, profile.DescriptionHeader,
             profile.SourceReferenceHeader, profile.BudgetItemHeader, profile.FinanceAccountHeader,
-            profile.DepartmentHeader, profile.LocationHeader, profile.FiscalPeriodHeader
+            profile.DepartmentHeader, profile.LocationHeader
         }.Select(Csv));
-        var sample = string.Join(',', new[] { "2027-01-15", "1250.00", "Example imported transaction", "JRN-1001", "", "", "", "", "" }.Select(Csv));
+        var sample = string.Join(',', new[] { "2027-01-15", "1250.00", "Example imported transaction", "JRN-1001", "", "", "", "" }.Select(Csv));
         return File(new UTF8Encoding(encoderShouldEmitUTF8Identifier: true).GetBytes(header + "\r\n" + sample + "\r\n"), "text/csv; charset=utf-8", "ledgerforge-actuals-import-template.csv");
     }
 
