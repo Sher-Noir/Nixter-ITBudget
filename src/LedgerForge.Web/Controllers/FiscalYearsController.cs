@@ -8,11 +8,14 @@ namespace LedgerForge.Web.Controllers;
 
 [Authorize(Policy = AuthorizationPolicies.ViewBudget)]
 [Route("fiscal-years")]
-public sealed class FiscalYearsController(FiscalYearAdministrationService service) : Controller
+public sealed class FiscalYearsController(
+    FiscalYearAdministrationService service,
+    IAuthorizationService authorizationService) : Controller
 {
     [HttpGet("")]
     public async Task<IActionResult> Index(CancellationToken cancellationToken)
     {
+        ViewData["CanManageFiscalYears"] = (await authorizationService.AuthorizeAsync(User, AuthorizationPolicies.ManageFiscalYears)).Succeeded;
         var years = await service.ListAsync(cancellationToken);
         return View(new FiscalYearIndexViewModel(
             years,
@@ -47,6 +50,7 @@ public sealed class FiscalYearsController(FiscalYearAdministrationService servic
         }
         catch (Exception exception) when (exception is ArgumentException or InvalidOperationException)
         {
+            ViewData["CanManageFiscalYears"] = true;
             var years = await service.ListAsync(cancellationToken);
             return View("Index", new FiscalYearIndexViewModel(years, exception.Message));
         }
@@ -60,8 +64,7 @@ public sealed class FiscalYearsController(FiscalYearAdministrationService servic
 
         var versions = await service.ListVersionsAsync(id, cancellationToken);
         var closeReadiness = await service.GetCloseReadinessAsync(id, cancellationToken);
-        ViewData["CanManageFiscalYears"] = (await HttpContext.RequestServices.GetRequiredService<IAuthorizationService>()
-            .AuthorizeAsync(User, AuthorizationPolicies.ManageFiscalYears)).Succeeded;
+        ViewData["CanManageFiscalYears"] = (await authorizationService.AuthorizeAsync(User, AuthorizationPolicies.ManageFiscalYears)).Succeeded;
         ViewData["Saved"] = Request.Query.ContainsKey("saved");
         return View(new FiscalYearDetailViewModel(year, versions, closeReadiness));
     }
