@@ -189,7 +189,7 @@ public sealed class AdministrationSecurityController(
         var configurable = await accessConfigurationStore.GetAsync(cancellationToken);
         var mappings = await securityAdministrationService.ListMappingsAsync(cancellationToken);
         var userExceptions = await securityAdministrationService.ListUserExceptionsAsync(cancellationToken);
-        var successMessage = Request.Query.TryGetValue("saved", out var saved) && saved == "True" ? "Security configuration saved." : null;
+        var successMessage = Request.Query.ContainsKey("saved") ? "Security configuration saved." : null;
         return new(
             configurable.Roles.OrderBy(x => x.Name).ToArray(),
             configurable.Assignments.OrderBy(x => x.PrincipalName).ToArray(),
