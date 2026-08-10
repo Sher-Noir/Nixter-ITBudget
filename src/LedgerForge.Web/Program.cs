@@ -18,6 +18,7 @@ using LedgerForge.Web.Configuration;
 using LedgerForge.Web.Diagnostics;
 using LedgerForge.Web.Documents;
 using LedgerForge.Web.Security;
+using LedgerForge.Web.Updates;
 using Microsoft.AspNetCore.Authentication.Negotiate;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http.Features;
@@ -27,9 +28,18 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.Configure<BrandingOptions>(builder.Configuration.GetSection(BrandingOptions.SectionName));
 builder.Services.Configure<LegacyImportOptions>(builder.Configuration.GetSection(LegacyImportOptions.SectionName));
+builder.Services.Configure<UpdateOptions>(builder.Configuration.GetSection(UpdateOptions.SectionName));
 builder.Services.AddSingleton<OrganizationSettingsStore>();
 builder.Services.AddSingleton<SecurityAccessConfigurationStore>();
 builder.Services.AddSingleton<ModuleAccessResolver>();
+builder.Services.AddSingleton<UpdateStatusStore>();
+builder.Services.AddHttpClient("LedgerForgeUpdates", client =>
+{
+    client.Timeout = TimeSpan.FromSeconds(5);
+    client.DefaultRequestHeaders.UserAgent.ParseAdd("LedgerForge-UpdateChecker");
+    client.DefaultRequestHeaders.Accept.ParseAdd("application/vnd.github+json");
+});
+builder.Services.AddHostedService<GitHubReleaseUpdateService>();
 builder.Services.AddAuthentication(NegotiateDefaults.AuthenticationScheme).AddNegotiate();
 builder.Services.AddAuthorization(AuthorizationPolicies.Configure);
 builder.Services.AddScoped<IAuthorizationHandler, ApplicationRoleAuthorizationHandler>();
