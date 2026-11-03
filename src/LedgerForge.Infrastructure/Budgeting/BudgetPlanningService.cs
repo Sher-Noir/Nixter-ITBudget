@@ -34,7 +34,9 @@ public sealed record BudgetItemSummary(
     string? InternalCategoryName,
     Guid? FrequencyId,
     string? FrequencyName,
-    string? VendorName);
+    string? VendorName,
+    Guid? VendorId = null,
+    string? Notes = null);
 
 public sealed record BudgetPlanningSnapshot(
     IReadOnlyList<FiscalYearSummary> FiscalYears,
@@ -82,7 +84,9 @@ public sealed record BudgetItemEditSnapshot(
     IReadOnlyList<LookupOption> Locations,
     IReadOnlyList<LookupOption> NeedLevels,
     IReadOnlyList<LookupOption> InternalCategories,
-    IReadOnlyList<LookupOption> Frequencies);
+    IReadOnlyList<LookupOption> Frequencies,
+    Guid? VendorId = null,
+    string? Notes = null);
 
 public sealed record BudgetItemCreateOptions(
     IReadOnlyList<LookupOption> BudgetSections,
@@ -91,7 +95,8 @@ public sealed record BudgetItemCreateOptions(
     IReadOnlyList<LookupOption> Locations,
     IReadOnlyList<LookupOption> NeedLevels,
     IReadOnlyList<LookupOption> InternalCategories,
-    IReadOnlyList<LookupOption> Frequencies);
+    IReadOnlyList<LookupOption> Frequencies,
+    IReadOnlyList<LookupOption> Vendors);
 
 public sealed class BudgetPlanningService(
     LedgerForgeDbContext dbContext,
@@ -139,7 +144,9 @@ public sealed class BudgetPlanningService(
                 x.LocationId,
                 x.NeedLevelId,
                 x.InternalCategoryId,
-                x.FrequencyId
+                x.FrequencyId,
+                x.VendorId,
+                x.Notes
             })
             .ToListAsync(cancellationToken);
 
@@ -168,6 +175,12 @@ public sealed class BudgetPlanningService(
             .ToDictionary(
                 group => group.Key,
                 group => group.OrderByDescending(x => x.CreatedAtUtc).Select(x => x.VendorName).First());
+
+        var directVendorIds = itemRows.Where(x => x.VendorId.HasValue)
+            .Select(x => x.VendorId!.Value).Distinct().ToArray();
+        var directVendors = await dbContext.Vendors.AsNoTracking()
+            .Where(x => directVendorIds.Contains(x.Id))
+            .ToDictionaryAsync(x => x.Id, x => x.Name, cancellationToken);
 
         var items = itemRows.Select(x => new BudgetItemSummary(
             x.Id,
@@ -198,7 +211,10 @@ public sealed class BudgetPlanningService(
             NameFor(x.InternalCategoryId, categories),
             x.FrequencyId,
             NameFor(x.FrequencyId, frequencies),
-            vendorsByItem.GetValueOrDefault(x.Id)))
+            x.VendorId is Guid vendorId && directVendors.TryGetValue(vendorId, out var directName)
+                ? directName : vendorsByItem.GetValueOrDefault(x.Id),
+            x.VendorId,
+            x.Notes))
             .ToArray();
 
         return new(
@@ -272,7 +288,9 @@ public sealed class BudgetPlanningService(
             locations,
             needLevels,
             categories,
-            frequencies);
+            frequencies,
+            item.VendorId,
+            item.Notes);
     }
 
     public async Task<BudgetItemCreateOptions> GetCreateOptionsAsync(CancellationToken cancellationToken = default)
@@ -283,20 +301,23 @@ public sealed class BudgetPlanningService(
             await LoadOptionsAsync(dbContext.Locations, cancellationToken),
             await LoadOptionsAsync(dbContext.NeedLevels, cancellationToken),
             await LoadOptionsAsync(dbContext.InternalCategories, cancellationToken),
-            await LoadOptionsAsync(dbContext.Frequencies, cancellationToken));
+            await LoadOptionsAsync(dbContext.Frequencies, cancellationToken),
+            await dbContext.Vendors.AsNoTracking().Where(x => x.IsActive)
+                .OrderBy(x => x.Name).Select(x => new LookupOption(x.Id, x.Code, x.Name)).ToListAsync(cancellationToken));
 
     public async Task<Guid> CreateDetailedItemAsync(
         Guid fiscalYearId, Guid versionId, string itemNumber, string description,
         string? reasonPurpose, PurchaseType purchaseType, decimal quantity, decimal unitCost,
         Guid? budgetSectionId, Guid? financeTypeId, Guid? departmentId, Guid? locationId,
         Guid? needLevelId, Guid? internalCategoryId, Guid? frequencyId,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default, Guid? vendorId = null, string? notes = null)
     {
         await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
         var id = await AddItemAsync(fiscalYearId, versionId, itemNumber, description, quantity, unitCost, cancellationToken);
         await UpdateItemAsync(id, itemNumber, description, reasonPurpose, purchaseType,
             quantity, unitCost, null, null, budgetSectionId, financeTypeId,
-            departmentId, locationId, needLevelId, internalCategoryId, frequencyId, cancellationToken);
+            departmentId, locationId, needLevelId, internalCategoryId, frequencyId, cancellationToken,
+            vendorId: vendorId, notes: notes, updateVendorAndNotes: true);
         await transaction.CommitAsync(cancellationToken);
         return id;
     }
@@ -352,7 +373,10 @@ public sealed class BudgetPlanningService(
         Guid? needLevelId,
         Guid? internalCategoryId,
         Guid? frequencyId,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        Guid? vendorId = null,
+        string? notes = null,
+        bool updateVendorAndNotes = false)
     {
         var item = await dbContext.BudgetItems
             .SingleOrDefaultAsync(x => x.Id == itemId, cancellationToken)
@@ -393,6 +417,13 @@ public sealed class BudgetPlanningService(
             needLevelId,
             internalCategoryId,
             frequencyId);
+        if (updateVendorAndNotes)
+        {
+            if (vendorId is not null &&
+                !await dbContext.Vendors.AnyAsync(x => x.Id == vendorId && x.IsActive, cancellationToken))
+                throw new InvalidOperationException("Selected vendor is not active.");
+            item.UpdateVendorAndNotes(vendorId, notes);
+        }
 
         await dbContext.SaveChangesAsync(cancellationToken);
     }
