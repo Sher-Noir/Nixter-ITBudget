@@ -4,6 +4,8 @@
     ViewData["Title"] = "Budget";
     var snapshot = Model.Snapshot;
     var canManageImports = ViewData["CanManageImports"] as bool? == true;
+    var canPostActuals = ViewData["CanPostActuals"] as bool? == true;
+    var createOptions = ViewData["CreateOptions"] as LedgerForge.Infrastructure.Budgeting.BudgetItemCreateOptions;
     var sectionFilter = Context.Request.Query["section"].ToString();
     var categoryFilter = Context.Request.Query["category"].ToString();
     var locationFilter = Context.Request.Query["location"].ToString();
@@ -120,7 +122,11 @@
                 <div class="lf-budget-action-buttons">
                     @if (Model.CanEdit && !snapshot.SelectedVersionLocked && snapshot.SelectedVersionId is not null)
                     {
-                        <a class="button primary" href="#new-budget-item"><span aria-hidden="true">＋</span> New Item</a>
+                        <a class="button primary" href="#new-budget-item" data-open-budget-wizard><span aria-hidden="true">＋</span> New Item</a>
+                    }
+                    @if (snapshot.SelectedFiscalYearId is not null)
+                    {
+                        <button class="button" type="button" data-open-actuals-modal><span aria-hidden="true">▤</span> Actuals</button>
                     }
                     @if (canManageImports)
                     {
@@ -157,21 +163,56 @@
                     <article class="lf-card lf-budget-kpi"><span class="lf-budget-kpi-icon teal">✓</span><div><strong>@displayedApproved.ToString("C2")</strong><span>Approved</span></div></article>
                 </section>
 
-                @if (Model.CanEdit && !snapshot.SelectedVersionLocked)
+                @if (Model.CanEdit && !snapshot.SelectedVersionLocked && snapshot.SelectedVersionId is not null && createOptions is not null)
                 {
-                    <details id="new-budget-item" class="lf-card lf-new-item-panel" open="@(snapshot.Items.Count == 0)">
-                        <summary><strong>New budget item</strong><span>Add the basic line, then open it to assign all planning dimensions.</span></summary>
-                        <form method="post" action="/budget/quick-add" class="lf-quick-add-grid">
+                    <section id="new-budget-item" class="lf-card lf-new-item-panel" aria-labelledby="budget-wizard-title" hidden>
+                        <div class="lf-panel-header">
+                            <div><h2 id="budget-wizard-title">New budget item</h2><p class="muted">Complete the steps, check the calculated total, then save.</p></div>
+                            <button type="button" class="button" data-close-budget-wizard aria-label="Close budget item wizard">Close</button>
+                        </div>
+                        <form id="lf-budget-create-form" method="post" action="/budget/create">
                             @Html.AntiForgeryToken()
                             <input type="hidden" name="fiscalYearId" value="@snapshot.SelectedFiscalYearId" />
                             <input type="hidden" name="versionId" value="@snapshot.SelectedVersionId" />
-                            <div><label for="itemNumber"><strong>Item #</strong></label><input id="itemNumber" name="itemNumber" maxlength="64" required /></div>
-                            <div class="lf-quick-add-description"><label for="description"><strong>Description</strong></label><input id="description" name="description" maxlength="500" required /></div>
-                            <div><label for="quantity"><strong>Quantity</strong></label><input id="quantity" name="quantity" type="number" min="0" step="0.0001" value="1" required /></div>
-                            <div><label for="unitCost"><strong>Unit cost</strong></label><input id="unitCost" name="unitCost" type="number" min="0" step="0.0001" value="0" required /></div>
-                            <div class="lf-quick-add-action"><button class="primary" type="submit">Add item</button></div>
+                            <p class="muted" id="lf-budget-wizard-progress" aria-live="polite">Step 1 of 3</p>
+                            <fieldset data-budget-step>
+                                <legend><strong>Step 1 — Item details</strong></legend>
+                                <div class="lf-form-grid">
+                                    <div><label for="create-itemNumber">Item number</label><input id="create-itemNumber" name="itemNumber" maxlength="64" required /></div>
+                                    <div class="lf-span-all"><label for="create-description">Item Description</label><input id="create-description" name="description" maxlength="500" required /></div>
+                                    <div><label for="create-section">Section</label><select id="create-section" name="budgetSectionId"><option value="">Unassigned</option>@foreach(var option in createOptions.BudgetSections){<option value="@option.Id">@option.Code · @option.Name</option>}</select></div>
+                                    <div><label for="create-category">Category</label><select id="create-category" name="internalCategoryId"><option value="">Unassigned</option>@foreach(var option in createOptions.InternalCategories){<option value="@option.Id">@option.Name</option>}</select></div>
+                                    <div class="lf-span-all"><label for="create-purpose">Purpose</label><textarea id="create-purpose" name="reasonPurpose" rows="3" maxlength="2000"></textarea></div>
+                                </div>
+                            </fieldset>
+                            <fieldset data-budget-step hidden>
+                                <legend><strong>Step 2 — Classification</strong></legend>
+                                <div class="lf-form-grid">
+                                    <div><label for="create-type">Type</label><select id="create-type" name="purchaseType">@foreach(var option in Enum.GetValues<PurchaseType>()){<option value="@option">@option</option>}</select></div>
+                                    <div><label for="create-finance-type">Finance type</label><select id="create-finance-type" name="financeTypeId"><option value="">Unassigned</option>@foreach(var option in createOptions.FinanceTypes){<option value="@option.Id">@option.Name</option>}</select></div>
+                                    <div><label for="create-location">Location</label><select id="create-location" name="locationId"><option value="">Unassigned</option>@foreach(var option in createOptions.Locations){<option value="@option.Id">@option.Name</option>}</select></div>
+                                    <div><label for="create-department">Department</label><select id="create-department" name="departmentId"><option value="">Unassigned</option>@foreach(var option in createOptions.Departments){<option value="@option.Id">@option.Name</option>}</select></div>
+                                    <div><label for="create-need">Need Level</label><select id="create-need" name="needLevelId"><option value="">Unassigned</option>@foreach(var option in createOptions.NeedLevels){<option value="@option.Id">@option.Name</option>}</select></div>
+                                    <div><label for="create-frequency">Frequency</label><select id="create-frequency" name="frequencyId"><option value="">Unassigned</option>@foreach(var option in createOptions.Frequencies){<option value="@option.Id">@option.Name</option>}</select></div>
+                                </div>
+                                <p class="muted">Vendor association is currently derived from procurement records, rather than stored directly on the budget item. Direct vendor selection will require a database/model change.</p>
+                            </fieldset>
+                            <fieldset data-budget-step hidden>
+                                <legend><strong>Step 3 — Cost and review</strong></legend>
+                                <div class="lf-form-grid">
+                                    <div><label for="create-quantity"># of Units</label><input id="create-quantity" name="quantity" type="number" min="0" step="0.0001" value="1" required /></div>
+                                    <div><label for="create-unitCost">Cost per Unit</label><input id="create-unitCost" name="unitCost" type="number" min="0" step="0.0001" value="0" required /></div>
+                                    <div><label for="create-total">Total Cost (calculated)</label><output id="create-total" class="lf-budget-total">$0.00</output></div>
+                                </div>
+                                <p class="muted">Total cost is calculated and validated on the server. After saving, you can add actual transactions from Full Item.</p>
+                            </fieldset>
+                            <div class="lf-budget-wizard-actions">
+                                <button type="button" class="button" data-budget-back hidden>Back</button>
+                                <button type="button" class="button primary" data-budget-next>Next</button>
+                                <button type="submit" class="primary" data-budget-save hidden>Create Budget Item</button>
+                            </div>
                         </form>
-                    </details>
+                    </section>
                 }
 
                 <section class="lf-card lf-budget-grid-card" aria-labelledby="budget-grid-title">
@@ -276,3 +317,79 @@
         </aside>
     }
 </div>
+
+@if (snapshot.SelectedFiscalYearId is not null)
+{
+    <dialog id="lf-actuals-dialog" class="lf-budget-actuals-dialog" aria-label="Actuals ledger">
+        <div class="lf-actuals-dialog-header"><strong>Actuals</strong><button type="button" class="button" data-close-actuals-modal>Close</button></div>
+        <iframe title="Actuals ledger and transaction entry" loading="lazy" data-actuals-url="/actuals?fiscalYearId=@snapshot.SelectedFiscalYearId"></iframe>
+    </dialog>
+}
+<style>
+    .lf-budget-wizard-actions { display:flex; justify-content:flex-end; gap:.75rem; margin-top:1rem; }
+    .lf-budget-total { display:block; font-size:1.45rem; font-weight:700; padding:.65rem 0; }
+    [data-budget-step][hidden], #new-budget-item[hidden] { display:none !important; }
+    .lf-budget-actuals-dialog { width:min(1100px,96vw); height:min(850px,92vh); max-width:none; max-height:none; padding:0; border:1px solid var(--lf-border,#8795a7); border-radius:12px; color:inherit; background:var(--lf-surface,#fff); }
+    .lf-budget-actuals-dialog::backdrop { background:rgba(0,0,0,.6); }
+    .lf-actuals-dialog-header { display:flex; align-items:center; justify-content:space-between; padding:12px 20px; border-bottom:1px solid #8885; }
+    .lf-budget-actuals-dialog iframe { display:block; width:100%; height:calc(100% - 68px); border:0; background:#fff; }
+</style>
+<script>
+(() => {
+    const wizard = document.getElementById('new-budget-item');
+    const form = document.getElementById('lf-budget-create-form');
+    if (wizard && form) {
+        const steps = [...form.querySelectorAll('[data-budget-step]')];
+        const next = form.querySelector('[data-budget-next]');
+        const back = form.querySelector('[data-budget-back]');
+        const save = form.querySelector('[data-budget-save]');
+        const progress = document.getElementById('lf-budget-wizard-progress');
+        let step = 0;
+        function showStep() {
+            steps.forEach((panel, index) => { panel.hidden = index !== step; });
+            back.hidden = step === 0;
+            next.hidden = step === steps.length - 1;
+            save.hidden = step !== steps.length - 1;
+            progress.textContent = 'Step ' + (step + 1) + ' of ' + steps.length;
+        }
+        document.querySelectorAll('[data-open-budget-wizard]').forEach(button => button.addEventListener('click', event => {
+            event.preventDefault(); wizard.hidden = false; step = 0; showStep();
+            wizard.scrollIntoView({behavior:'smooth',block:'start'});
+            wizard.querySelector('input:not([type=hidden])')?.focus();
+        }));
+        wizard.querySelector('[data-close-budget-wizard]')?.addEventListener('click', () => { wizard.hidden = true; });
+        next.addEventListener('click', () => {
+            const controls = [...steps[step].querySelectorAll('input,select,textarea')];
+            const invalid = controls.find(control => !control.checkValidity());
+            if (invalid) { invalid.reportValidity(); return; }
+            step = Math.min(step + 1, steps.length - 1); showStep();
+        });
+        back.addEventListener('click', () => { step = Math.max(step - 1,0); showStep(); });
+        const quantity = document.getElementById('create-quantity');
+        const unitCost = document.getElementById('create-unitCost');
+        const total = document.getElementById('create-total');
+        function updateTotal() {
+            const value = Number(quantity.value || 0) * Number(unitCost.value || 0);
+            total.textContent = Number.isFinite(value) ? value.toLocaleString(undefined,{style:'currency',currency:'USD'}) : 'Invalid amount';
+        }
+        quantity?.addEventListener('input',updateTotal);
+        unitCost?.addEventListener('input',updateTotal);
+        form.addEventListener('submit',event => {
+            for(let i=0;i<steps.length;i++) {
+                const invalid = [...steps[i].querySelectorAll('input,select,textarea')].find(control => !control.checkValidity());
+                if(invalid) { event.preventDefault(); step=i; showStep(); invalid.reportValidity(); return; }
+            }
+        });
+        showStep(); updateTotal();
+    }
+    const dialog = document.getElementById('lf-actuals-dialog');
+    if(dialog) {
+        document.querySelectorAll('[data-open-actuals-modal]').forEach(button => button.addEventListener('click', () => {
+            const iframe = dialog.querySelector('iframe');
+            if(iframe && !iframe.src) iframe.src = iframe.dataset.actualsUrl;
+            dialog.showModal();
+        }));
+        dialog.querySelector('[data-close-actuals-modal]')?.addEventListener('click',()=>dialog.close());
+    }
+})();
+</script>
