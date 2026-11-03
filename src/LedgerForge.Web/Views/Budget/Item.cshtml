@@ -81,7 +81,7 @@
         }
         @if (Model.CanPostActuals)
         {
-            <a class="button" href="#actuals-invoices">＋ Record Actual</a>
+            <a class="button" href="#lf-actual-entry" data-open-actual-entry>＋ Record Actual</a>
         }
     </div>
     <div class="lf-item-meta">
@@ -174,7 +174,7 @@
                 <div class="lf-panel-header"><h2>Actuals &amp; Invoices</h2><a href="/invoices">View invoices</a></div>
                 @if (Model.CanPostActuals)
                 {
-                    <details class="lf-inline-entry" open="@actualSaved">
+                    <details id="lf-actual-entry" class="lf-inline-entry" open="@actualSaved">
                         <summary><strong>Add actual</strong><span>Record spending directly against this budget item.</span></summary>
                         <form method="post" action="/budget/items/@item.Id/actuals" class="lf-form-grid lf-form-grid-3">
                             @Html.AntiForgeryToken()
@@ -371,7 +371,7 @@
             <div class="lf-item-quick-actions">
                 <a class="button" href="/purchase-orders">Create / View Purchase Order</a>
                 <a class="button" href="/invoices">Record / View Invoice</a>
-                @if (Model.CanPostActuals){<a class="button" href="#actuals-invoices">Add Actual</a>}
+                @if (Model.CanPostActuals){<a class="button" href="#lf-actual-entry" data-open-actual-entry>Add Actual</a>}
                 <a class="button" href="@documentUploadUrl">Upload Document</a>
                 <a class="button" href="/budget/amendments?budgetItemId=@item.Id">Create Amendment</a>
                 <a class="button" href="/renewals">Open Renewal Center</a>
