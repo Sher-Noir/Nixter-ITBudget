@@ -36,6 +36,8 @@ public sealed class BudgetItem : AuditableEntity
     public string ItemNumber { get; private set; } = string.Empty;
     public string Description { get; private set; } = string.Empty;
     public string? ReasonPurpose { get; private set; }
+    public string? Notes { get; private set; }
+    public Guid? VendorId { get; private set; }
     public PurchaseType PurchaseType { get; private set; }
     public Guid? BudgetSectionId { get; private set; }
     public Guid? FinanceTypeId { get; private set; }
@@ -102,6 +104,16 @@ public sealed class BudgetItem : AuditableEntity
         NeedLevelId = NormalizeId(needLevelId, nameof(needLevelId));
         InternalCategoryId = NormalizeId(internalCategoryId, nameof(internalCategoryId));
         FrequencyId = NormalizeId(frequencyId, nameof(frequencyId));
+    }
+
+    public void UpdateVendorAndNotes(Guid? vendorId, string? notes)
+    {
+        EnsurePlanningEditable();
+        VendorId = NormalizeId(vendorId, nameof(vendorId));
+        var normalizedNotes = NormalizeOptional(notes);
+        if (normalizedNotes?.Length > 2000)
+            throw new ArgumentException("Notes cannot exceed 2000 characters.", nameof(notes));
+        Notes = normalizedNotes;
     }
 
     public void Submit(string actor, DateTimeOffset submittedAtUtc)
