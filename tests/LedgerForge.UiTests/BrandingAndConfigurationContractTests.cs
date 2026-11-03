@@ -34,7 +34,7 @@ public sealed class BrandingAndConfigurationContractTests
         Assert.Contains("File content does not match a PNG signature", store, StringComparison.Ordinal);
         Assert.Contains("File content does not match a JPEG signature", store, StringComparison.Ordinal);
         Assert.Contains("AuthorizationPolicies.EditPlanningBudget", controller, StringComparison.Ordinal);
-        Assert.Contains("AuthorizationPolicies.ManageProcurement", controller, StringComparison.Ordinal);
+        Assert.Contains("AuthorizationPolicies.ManageVendors", controller, StringComparison.Ordinal);
         Assert.Contains("AuthorizationPolicies.Administration", controller, StringComparison.Ordinal);
     }
 
@@ -96,8 +96,8 @@ public sealed class BrandingAndConfigurationContractTests
         var controller = Read("src", "LedgerForge.Web", "Controllers", "AdministrationSecurityController.cs");
         var service = Read("src", "LedgerForge.Infrastructure", "Security", "SecurityAdministrationService.cs");
 
-        Assert.Contains("Edit directory mappings", view, StringComparison.Ordinal);
-        Assert.Contains("Edit user exceptions", view, StringComparison.Ordinal);
+        Assert.Contains("Legacy bootstrap / recovery authorization", view, StringComparison.Ordinal);
+        Assert.Contains("Legacy per-user exceptions", view, StringComparison.Ordinal);
         Assert.Contains("Save changes", view, StringComparison.Ordinal);
         Assert.Contains("class=\"danger\"", view, StringComparison.Ordinal);
         Assert.Contains("DeleteMapping", controller, StringComparison.Ordinal);
