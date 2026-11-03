@@ -305,6 +305,15 @@ public sealed class BudgetPlanningService(
             await dbContext.Vendors.AsNoTracking().Where(x => x.IsActive)
                 .OrderBy(x => x.Name).Select(x => new LookupOption(x.Id, x.Code, x.Name)).ToListAsync(cancellationToken));
 
+    public async Task<IReadOnlyList<LookupOption>> GetEditVendorOptionsAsync(
+        Guid? selectedVendorId, CancellationToken cancellationToken = default)
+        => await dbContext.Vendors.AsNoTracking()
+            .Where(x => x.IsActive || x.Id == selectedVendorId)
+            .OrderBy(x => x.Name)
+            .Select(x => new LookupOption(
+                x.Id, x.Code, x.IsActive ? x.Name : x.Name + " (retired)"))
+            .ToListAsync(cancellationToken);
+
     public async Task<Guid> CreateDetailedItemAsync(
         Guid fiscalYearId, Guid versionId, string itemNumber, string description,
         string? reasonPurpose, PurchaseType purchaseType, decimal quantity, decimal unitCost,
@@ -419,7 +428,7 @@ public sealed class BudgetPlanningService(
             frequencyId);
         if (updateVendorAndNotes)
         {
-            if (vendorId is not null &&
+            if (vendorId is not null && vendorId != item.VendorId &&
                 !await dbContext.Vendors.AnyAsync(x => x.Id == vendorId && x.IsActive, cancellationToken))
                 throw new InvalidOperationException("Selected vendor is not active.");
             item.UpdateVendorAndNotes(vendorId, notes);
