@@ -6,7 +6,7 @@
 @inject Microsoft.AspNetCore.Authorization.IAuthorizationService AuthorizationService
 @{
     var workspace = Model.Workspace;
-    var vendorOptions = (ViewData["VendorOptions"] as LedgerForge.Infrastructure.Budgeting.BudgetItemCreateOptions)?.Vendors;
+    var vendorOptions = ViewData["VendorOptions"] as IReadOnlyList<LookupOption>;
     var item = workspace.Item;
     ViewData["Title"] = $"Budget Item {item.ItemNumber}";
     var canSubmit = ViewData["CanSubmit"] as bool? == true;
