@@ -388,6 +388,10 @@ namespace LedgerForge.Infrastructure.Persistence.Migrations
                         .HasMaxLength(2000)
                         .HasColumnType("nvarchar(2000)");
 
+                    b.Property<string>("Notes")
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)");
+
                     b.Property<DateOnly?>("RenewalDate")
                         .HasColumnType("date");
 
@@ -420,6 +424,9 @@ namespace LedgerForge.Infrastructure.Persistence.Migrations
                         .HasPrecision(19, 4)
                         .HasColumnType("decimal(19,4)");
 
+                    b.Property<Guid?>("VendorId")
+                        .HasColumnType("uniqueidentifier");
+
                     b.HasKey("Id");
 
                     b.HasIndex("BudgetSectionId");
@@ -437,6 +444,8 @@ namespace LedgerForge.Infrastructure.Persistence.Migrations
                     b.HasIndex("LocationId");
 
                     b.HasIndex("NeedLevelId");
+
+                    b.HasIndex("VendorId");
 
                     b.HasIndex("StableIdentifier");
 
@@ -2585,6 +2594,11 @@ namespace LedgerForge.Infrastructure.Persistence.Migrations
                     b.HasOne("LedgerForge.Domain.MasterData.NeedLevel", null)
                         .WithMany()
                         .HasForeignKey("NeedLevelId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("LedgerForge.Domain.Procurement.Vendor", null)
+                        .WithMany()
+                        .HasForeignKey("VendorId")
                         .OnDelete(DeleteBehavior.Restrict);
                 });
 
