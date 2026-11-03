@@ -98,7 +98,7 @@ public sealed class BrandingAndConfigurationContractTests
 
         Assert.Contains("Legacy bootstrap / recovery authorization", view, StringComparison.Ordinal);
         Assert.Contains("Legacy per-user exceptions", view, StringComparison.Ordinal);
-        Assert.Contains("Save changes", view, StringComparison.Ordinal);
+        Assert.Contains(">Save<", view, StringComparison.Ordinal);
         Assert.Contains("class=\"danger\"", view, StringComparison.Ordinal);
         Assert.Contains("DeleteMapping", controller, StringComparison.Ordinal);
         Assert.Contains("DeleteUserException", controller, StringComparison.Ordinal);
