@@ -179,7 +179,7 @@
 
                 @if (Model.CanEdit && !snapshot.SelectedVersionLocked && snapshot.SelectedVersionId is not null && createOptions is not null)
                 {
-                    <section id="new-budget-item" class="lf-card lf-new-item-panel" aria-labelledby="budget-wizard-title" hidden>
+                    <section id="new-budget-item" class="lf-card lf-new-item-panel" aria-labelledby="budget-wizard-title" data-open-on-error="@(string.IsNullOrWhiteSpace(Model.ErrorMessage) ? "false" : "true")" hidden>
                         <div class="lf-panel-header">
                             <div><h2 id="budget-wizard-title">New budget item</h2><p class="muted">Complete the steps, check the calculated total, then save.</p></div>
                             <button type="button" class="button" data-close-budget-wizard aria-label="Close budget item wizard">Close</button>
