@@ -195,7 +195,9 @@
                                     <div><label for="create-need">Need Level</label><select id="create-need" name="needLevelId"><option value="">Unassigned</option>@foreach(var option in createOptions.NeedLevels){<option value="@option.Id">@option.Name</option>}</select></div>
                                     <div><label for="create-frequency">Frequency</label><select id="create-frequency" name="frequencyId"><option value="">Unassigned</option>@foreach(var option in createOptions.Frequencies){<option value="@option.Id">@option.Name</option>}</select></div>
                                 </div>
-                                <p class="muted">Vendor association is currently derived from procurement records, rather than stored directly on the budget item. Direct vendor selection will require a database/model change.</p>
+                                <div class="lf-form-grid">
+                                    <div><label for="create-vendor">Vendor</label><select id="create-vendor" name="vendorId"><option value="">Unassigned</option>@foreach(var option in createOptions.Vendors){<option value="@option.Id">@option.Name</option>}</select></div>
+                                </div>
                             </fieldset>
                             <fieldset data-budget-step hidden>
                                 <legend><strong>Step 3 — Cost and review</strong></legend>
@@ -204,6 +206,7 @@
                                     <div><label for="create-unitCost">Cost per Unit</label><input id="create-unitCost" name="unitCost" type="number" min="0" step="0.0001" value="0" required /></div>
                                     <div><label for="create-total">Total Cost (calculated)</label><output id="create-total" class="lf-budget-total">$0.00</output></div>
                                 </div>
+                                <div class="lf-form-grid"><div class="lf-span-all"><label for="create-notes">Notes</label><textarea id="create-notes" name="notes" rows="3" maxlength="2000" placeholder="Additional planning notes"></textarea></div></div>
                                 <p class="muted">Total cost is calculated and validated on the server. After saving, you can add actual transactions from Full Item.</p>
                             </fieldset>
                             <div class="lf-budget-wizard-actions">
