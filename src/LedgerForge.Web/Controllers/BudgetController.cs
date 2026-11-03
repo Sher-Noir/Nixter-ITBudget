@@ -29,6 +29,9 @@ public sealed class BudgetController(
     {
         var snapshot = await planningService.GetSnapshotAsync(fiscalYearId, versionId, cancellationToken);
         var canEdit = (await authorizationService.AuthorizeAsync(User, AuthorizationPolicies.EditPlanningBudget)).Succeeded;
+        ViewData["CanPostActuals"] = (await authorizationService.AuthorizeAsync(User, AuthorizationPolicies.PostActuals)).Succeeded;
+        if (canEdit && !snapshot.SelectedVersionLocked && snapshot.SelectedVersionId is not null)
+            ViewData["CreateOptions"] = await planningService.GetCreateOptionsAsync(cancellationToken);
         ViewData["CanManageImports"] = (await authorizationService.AuthorizeAsync(User, AuthorizationPolicies.ManageImports)).Succeeded;
         var errorMessage = TempData["BudgetError"] as string;
 
@@ -37,6 +40,31 @@ public sealed class BudgetController(
             canEdit,
             errorMessage,
             Request.Query.ContainsKey("saved")));
+    }
+
+    [Authorize(Policy = AuthorizationPolicies.EditPlanningBudget)]
+    [HttpPost("create")]
+    public async Task<IActionResult> Create(
+        Guid fiscalYearId, Guid versionId, string itemNumber, string description,
+        string? reasonPurpose, PurchaseType purchaseType, decimal quantity, decimal unitCost,
+        Guid? budgetSectionId, Guid? financeTypeId, Guid? departmentId, Guid? locationId,
+        Guid? needLevelId, Guid? internalCategoryId, Guid? frequencyId,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var id = await planningService.CreateDetailedItemAsync(
+                fiscalYearId, versionId, itemNumber, description, reasonPurpose, purchaseType,
+                quantity, unitCost, budgetSectionId, financeTypeId, departmentId, locationId,
+                needLevelId, internalCategoryId, frequencyId, cancellationToken);
+            return RedirectToAction(nameof(Item), new { id, saved = true });
+        }
+        catch (KeyNotFoundException) { return NotFound(); }
+        catch (Exception exception) when (exception is ArgumentException or InvalidOperationException or OverflowException)
+        {
+            TempData["BudgetError"] = exception.Message;
+            return RedirectToAction(nameof(Index), new { fiscalYearId, versionId });
+        }
     }
 
     [Authorize(Policy = AuthorizationPolicies.EditPlanningBudget)]
