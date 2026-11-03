@@ -84,6 +84,15 @@ public sealed record BudgetItemEditSnapshot(
     IReadOnlyList<LookupOption> InternalCategories,
     IReadOnlyList<LookupOption> Frequencies);
 
+public sealed record BudgetItemCreateOptions(
+    IReadOnlyList<LookupOption> BudgetSections,
+    IReadOnlyList<LookupOption> FinanceTypes,
+    IReadOnlyList<LookupOption> Departments,
+    IReadOnlyList<LookupOption> Locations,
+    IReadOnlyList<LookupOption> NeedLevels,
+    IReadOnlyList<LookupOption> InternalCategories,
+    IReadOnlyList<LookupOption> Frequencies);
+
 public sealed class BudgetPlanningService(
     LedgerForgeDbContext dbContext,
     FiscalYearAdministrationService fiscalYearService)
@@ -264,6 +273,32 @@ public sealed class BudgetPlanningService(
             needLevels,
             categories,
             frequencies);
+    }
+
+    public async Task<BudgetItemCreateOptions> GetCreateOptionsAsync(CancellationToken cancellationToken = default)
+        => new(
+            await LoadOptionsAsync(dbContext.BudgetSections, cancellationToken),
+            await LoadOptionsAsync(dbContext.FinanceTypes, cancellationToken),
+            await LoadOptionsAsync(dbContext.Departments, cancellationToken),
+            await LoadOptionsAsync(dbContext.Locations, cancellationToken),
+            await LoadOptionsAsync(dbContext.NeedLevels, cancellationToken),
+            await LoadOptionsAsync(dbContext.InternalCategories, cancellationToken),
+            await LoadOptionsAsync(dbContext.Frequencies, cancellationToken));
+
+    public async Task<Guid> CreateDetailedItemAsync(
+        Guid fiscalYearId, Guid versionId, string itemNumber, string description,
+        string? reasonPurpose, PurchaseType purchaseType, decimal quantity, decimal unitCost,
+        Guid? budgetSectionId, Guid? financeTypeId, Guid? departmentId, Guid? locationId,
+        Guid? needLevelId, Guid? internalCategoryId, Guid? frequencyId,
+        CancellationToken cancellationToken = default)
+    {
+        await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
+        var id = await AddItemAsync(fiscalYearId, versionId, itemNumber, description, quantity, unitCost, cancellationToken);
+        await UpdateItemAsync(id, itemNumber, description, reasonPurpose, purchaseType,
+            quantity, unitCost, null, null, budgetSectionId, financeTypeId,
+            departmentId, locationId, needLevelId, internalCategoryId, frequencyId, cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+        return id;
     }
 
     public async Task<Guid> AddItemAsync(
