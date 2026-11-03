@@ -129,6 +129,7 @@ public sealed class LedgerForgeDbContext(DbContextOptions<LedgerForgeDbContext> 
             entity.Property(x => x.ItemNumber).HasMaxLength(64).IsRequired();
             entity.Property(x => x.Description).HasMaxLength(500).IsRequired();
             entity.Property(x => x.ReasonPurpose).HasMaxLength(2000);
+            entity.Property(x => x.Notes).HasMaxLength(2000);
             entity.Property(x => x.SubmittedBy).HasMaxLength(256);
             entity.Property(x => x.DecisionBy).HasMaxLength(256);
             entity.Property(x => x.DecisionNote).HasMaxLength(2000);
@@ -149,6 +150,7 @@ public sealed class LedgerForgeDbContext(DbContextOptions<LedgerForgeDbContext> 
             entity.HasIndex(x => x.NeedLevelId);
             entity.HasIndex(x => x.InternalCategoryId);
             entity.HasIndex(x => x.FrequencyId);
+            entity.HasIndex(x => x.VendorId);
             entity.HasOne<FiscalYear>().WithMany().HasForeignKey(x => x.FiscalYearId).OnDelete(DeleteBehavior.Restrict);
             entity.HasOne<BudgetVersion>().WithMany().HasForeignKey(x => x.BudgetVersionId).OnDelete(DeleteBehavior.Restrict);
             entity.HasOne<BudgetSection>().WithMany().HasForeignKey(x => x.BudgetSectionId).OnDelete(DeleteBehavior.Restrict);
@@ -158,6 +160,7 @@ public sealed class LedgerForgeDbContext(DbContextOptions<LedgerForgeDbContext> 
             entity.HasOne<NeedLevel>().WithMany().HasForeignKey(x => x.NeedLevelId).OnDelete(DeleteBehavior.Restrict);
             entity.HasOne<InternalCategory>().WithMany().HasForeignKey(x => x.InternalCategoryId).OnDelete(DeleteBehavior.Restrict);
             entity.HasOne<Frequency>().WithMany().HasForeignKey(x => x.FrequencyId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<Vendor>().WithMany().HasForeignKey(x => x.VendorId).OnDelete(DeleteBehavior.Restrict);
         });
 
         modelBuilder.Entity<BudgetItemAllocation>(entity =>
