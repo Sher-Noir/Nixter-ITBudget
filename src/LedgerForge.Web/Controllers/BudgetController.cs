@@ -49,6 +49,7 @@ public sealed class BudgetController(
         string? reasonPurpose, PurchaseType purchaseType, decimal quantity, decimal unitCost,
         Guid? budgetSectionId, Guid? financeTypeId, Guid? departmentId, Guid? locationId,
         Guid? needLevelId, Guid? internalCategoryId, Guid? frequencyId,
+        Guid? vendorId, string? notes,
         CancellationToken cancellationToken)
     {
         try
@@ -56,7 +57,7 @@ public sealed class BudgetController(
             var id = await planningService.CreateDetailedItemAsync(
                 fiscalYearId, versionId, itemNumber, description, reasonPurpose, purchaseType,
                 quantity, unitCost, budgetSectionId, financeTypeId, departmentId, locationId,
-                needLevelId, internalCategoryId, frequencyId, cancellationToken);
+                needLevelId, internalCategoryId, frequencyId, cancellationToken, vendorId, notes);
             return RedirectToAction(nameof(Item), new { id, saved = true });
         }
         catch (KeyNotFoundException) { return NotFound(); }
@@ -157,6 +158,8 @@ public sealed class BudgetController(
         Guid? needLevelId,
         Guid? internalCategoryId,
         Guid? frequencyId,
+        Guid? vendorId,
+        string? notes,
         CancellationToken cancellationToken)
     {
         try
@@ -178,7 +181,10 @@ public sealed class BudgetController(
                 needLevelId,
                 internalCategoryId,
                 frequencyId,
-                cancellationToken);
+                cancellationToken,
+                vendorId: vendorId,
+                notes: notes,
+                updateVendorAndNotes: true);
 
             return RedirectToAction(nameof(Item), new { id, saved = true });
         }
