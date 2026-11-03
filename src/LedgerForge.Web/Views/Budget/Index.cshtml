@@ -184,7 +184,7 @@
                             <div><h2 id="budget-wizard-title">New budget item</h2><p class="muted">Complete the steps, check the calculated total, then save.</p></div>
                             <button type="button" class="button" data-close-budget-wizard aria-label="Close budget item wizard">Close</button>
                         </div>
-                        <form id="lf-budget-create-form" method="post" action="/budget/create">
+                        <form id="lf-budget-create-form" method="post" action="/budget/create" novalidate>
                             @Html.AntiForgeryToken()
                             <input type="hidden" name="fiscalYearId" value="@snapshot.SelectedFiscalYearId" />
                             <input type="hidden" name="versionId" value="@snapshot.SelectedVersionId" />
