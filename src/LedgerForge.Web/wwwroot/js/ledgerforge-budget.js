@@ -89,6 +89,18 @@
         updateEditTotal();
     }
 
+    const actualEntry = document.getElementById("lf-actual-entry");
+    if (actualEntry) {
+        document.querySelectorAll("[data-open-actual-entry]").forEach(link =>
+            link.addEventListener("click", event => {
+                event.preventDefault();
+                actualEntry.open = true;
+                actualEntry.scrollIntoView({behavior: "smooth", block: "center"});
+                actualEntry.querySelector("#actual-amount")?.focus();
+            })
+        );
+    }
+
     const dialog = document.getElementById("lf-actuals-dialog");
     if (dialog) {
         const content = dialog.querySelector("[data-actuals-content]");
