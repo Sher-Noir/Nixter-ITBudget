@@ -25,6 +25,13 @@ public sealed class ActualsController(
         return View(await actualLedgerService.GetAsync(fiscalYearId, cancellationToken));
     }
 
+    [HttpGet("modal")]
+    public async Task<IActionResult> Modal(Guid? fiscalYearId, CancellationToken cancellationToken)
+    {
+        ViewData["CanPostActuals"] = (await authorizationService.AuthorizeAsync(User, AuthorizationPolicies.PostActuals)).Succeeded;
+        return PartialView("_Modal", await actualLedgerService.GetAsync(fiscalYearId, cancellationToken));
+    }
+
     [Authorize(Policy = AuthorizationPolicies.PostActuals)]
     [HttpPost("manual")]
     public async Task<IActionResult> PostManual(
@@ -37,6 +44,7 @@ public sealed class ActualsController(
         Guid? financeAccountId,
         Guid? departmentId,
         Guid? locationId,
+        bool returnToBudget,
         CancellationToken cancellationToken)
     {
         try
@@ -53,30 +61,30 @@ public sealed class ActualsController(
                 locationId,
                 fiscalPeriodId: null,
                 cancellationToken);
-            return RedirectToAction(nameof(Index), new { fiscalYearId, saved = true });
+            return ReturnAfterActual(fiscalYearId, returnToBudget, saved: true);
         }
         catch (KeyNotFoundException) { return NotFound(); }
         catch (Exception exception) when (exception is ArgumentException or InvalidOperationException or OverflowException)
         {
             TempData["ActualsError"] = exception.Message;
-            return RedirectToAction(nameof(Index), new { fiscalYearId });
+            return ReturnAfterActual(fiscalYearId, returnToBudget);
         }
     }
 
     [Authorize(Policy = AuthorizationPolicies.PostActuals)]
     [HttpPost("import")]
     [RequestFormLimits(MultipartBodyLengthLimit = 26L * 1024 * 1024)]
-    public async Task<IActionResult> Import(Guid fiscalYearId, IFormFile? file, CancellationToken cancellationToken)
+    public async Task<IActionResult> Import(Guid fiscalYearId, IFormFile? file, bool returnToBudget, CancellationToken cancellationToken)
     {
         if (file is null || file.Length == 0)
         {
             TempData["ActualsError"] = "Select a non-empty CSV file to import.";
-            return RedirectToAction(nameof(Index), new { fiscalYearId });
+            return ReturnAfterActual(fiscalYearId, returnToBudget);
         }
         if (!string.Equals(Path.GetExtension(file.FileName), ".csv", StringComparison.OrdinalIgnoreCase))
         {
             TempData["ActualsError"] = "Actuals import accepts CSV files only.";
-            return RedirectToAction(nameof(Index), new { fiscalYearId });
+            return ReturnAfterActual(fiscalYearId, returnToBudget);
         }
 
         try
@@ -93,17 +101,17 @@ public sealed class ActualsController(
                 var shown = result.Errors.Take(10).ToArray();
                 var suffix = result.Errors.Count > shown.Length ? $" (+{result.Errors.Count - shown.Length} more error(s))" : string.Empty;
                 TempData["ActualsError"] = "Import rejected; no rows were posted. " + string.Join(" ", shown) + suffix;
-                return RedirectToAction(nameof(Index), new { fiscalYearId });
+                return ReturnAfterActual(fiscalYearId, returnToBudget);
             }
 
             TempData["ActualsSuccess"] = $"Imported {result.ImportedRows:N0} actual row(s) totaling {result.ImportedTotal:C2}.";
-            return RedirectToAction(nameof(Index), new { fiscalYearId });
+            return ReturnAfterActual(fiscalYearId, returnToBudget);
         }
         catch (KeyNotFoundException) { return NotFound(); }
         catch (Exception exception) when (exception is ArgumentException or InvalidOperationException or InvalidDataException or IOException or DecoderFallbackException or OverflowException)
         {
             TempData["ActualsError"] = $"Import failed; no rows were posted. {exception.Message}";
-            return RedirectToAction(nameof(Index), new { fiscalYearId });
+            return ReturnAfterActual(fiscalYearId, returnToBudget);
         }
     }
 
@@ -129,20 +137,26 @@ public sealed class ActualsController(
         Guid fiscalYearId,
         DateOnly reversalDate,
         string reason,
+        bool returnToBudget,
         CancellationToken cancellationToken)
     {
         try
         {
             await actualLedgerService.ReverseAsync(id, reversalDate, reason, cancellationToken);
-            return RedirectToAction(nameof(Index), new { fiscalYearId, reversed = true });
+            return ReturnAfterActual(fiscalYearId, returnToBudget, reversed: true);
         }
         catch (KeyNotFoundException) { return NotFound(); }
         catch (Exception exception) when (exception is ArgumentException or InvalidOperationException or OverflowException)
         {
             TempData["ActualsError"] = exception.Message;
-            return RedirectToAction(nameof(Index), new { fiscalYearId });
+            return ReturnAfterActual(fiscalYearId, returnToBudget);
         }
     }
+
+    private IActionResult ReturnAfterActual(Guid fiscalYearId, bool returnToBudget, bool saved = false, bool reversed = false)
+        => returnToBudget
+            ? RedirectToAction("Index", "Budget", new { fiscalYearId, actualModal = true })
+            : RedirectToAction(nameof(Index), new { fiscalYearId, saved, reversed });
 
     private ActualImportProfile BuildImportProfile()
     {
