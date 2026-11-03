@@ -3,6 +3,8 @@
 @{
     ViewData["Title"] = "Budget";
     var snapshot = Model.Snapshot;
+    var actualError = TempData["ActualsError"] as string;
+    var actualSuccess = TempData["ActualsSuccess"] as string;
     var canManageImports = ViewData["CanManageImports"] as bool? == true;
     var canPostActuals = ViewData["CanPostActuals"] as bool? == true;
     var createOptions = ViewData["CreateOptions"] as LedgerForge.Infrastructure.Budgeting.BudgetItemCreateOptions;
@@ -92,6 +94,18 @@
         @if (Model.Saved)
         {
             <div class="card lf-alert lf-alert-success" role="status">Budget item added.</div>
+        }
+        @if (!string.IsNullOrWhiteSpace(actualError))
+        {
+            <div class="card lf-alert lf-alert-danger" role="alert">@actualError</div>
+        }
+        @if (!string.IsNullOrWhiteSpace(actualSuccess))
+        {
+            <div class="card lf-alert lf-alert-success" role="status">@actualSuccess</div>
+        }
+        @if (Context.Request.Query.ContainsKey("actualModal") && string.IsNullOrWhiteSpace(actualError) && string.IsNullOrWhiteSpace(actualSuccess))
+        {
+            <div class="card lf-alert lf-alert-success" role="status">Actuals updated. Review the ledger below.</div>
         }
 
         @if (snapshot.FiscalYears.Count == 0)
@@ -323,76 +337,15 @@
 
 @if (snapshot.SelectedFiscalYearId is not null)
 {
-    <dialog id="lf-actuals-dialog" class="lf-budget-actuals-dialog" aria-label="Actuals ledger">
-        <div class="lf-actuals-dialog-header"><strong>Actuals</strong><button type="button" class="button" data-close-actuals-modal>Close</button></div>
-        <iframe title="Actuals ledger and transaction entry" loading="lazy" data-actuals-url="/actuals?fiscalYearId=@snapshot.SelectedFiscalYearId"></iframe>
+    <dialog id="lf-actuals-dialog" class="lf-budget-actuals-dialog" aria-label="Actuals ledger"
+            data-actuals-url="/actuals/modal?fiscalYearId=@snapshot.SelectedFiscalYearId"
+            data-open-on-load="@(Context.Request.Query.ContainsKey("actualModal") ? "true" : "false")">
+        <div class="lf-actuals-dialog-header">
+            <strong>Actuals</strong>
+            <button type="button" class="button" data-close-actuals-modal aria-label="Close Actuals">Close</button>
+        </div>
+        <div class="lf-actuals-dialog-content" data-actuals-content>
+            <p role="status">Loading Actuals…</p>
+        </div>
     </dialog>
 }
-<style>
-    .lf-budget-wizard-actions { display:flex; justify-content:flex-end; gap:.75rem; margin-top:1rem; }
-    .lf-budget-total { display:block; font-size:1.45rem; font-weight:700; padding:.65rem 0; }
-    [data-budget-step][hidden], #new-budget-item[hidden] { display:none !important; }
-    .lf-budget-actuals-dialog { width:min(1100px,96vw); height:min(850px,92vh); max-width:none; max-height:none; padding:0; border:1px solid var(--lf-border,#8795a7); border-radius:12px; color:inherit; background:var(--lf-surface,#fff); }
-    .lf-budget-actuals-dialog::backdrop { background:rgba(0,0,0,.6); }
-    .lf-actuals-dialog-header { display:flex; align-items:center; justify-content:space-between; padding:12px 20px; border-bottom:1px solid #8885; }
-    .lf-budget-actuals-dialog iframe { display:block; width:100%; height:calc(100% - 68px); border:0; background:#fff; }
-</style>
-<script>
-(() => {
-    const wizard = document.getElementById('new-budget-item');
-    const form = document.getElementById('lf-budget-create-form');
-    if (wizard && form) {
-        const steps = [...form.querySelectorAll('[data-budget-step]')];
-        const next = form.querySelector('[data-budget-next]');
-        const back = form.querySelector('[data-budget-back]');
-        const save = form.querySelector('[data-budget-save]');
-        const progress = document.getElementById('lf-budget-wizard-progress');
-        let step = 0;
-        function showStep() {
-            steps.forEach((panel, index) => { panel.hidden = index !== step; });
-            back.hidden = step === 0;
-            next.hidden = step === steps.length - 1;
-            save.hidden = step !== steps.length - 1;
-            progress.textContent = 'Step ' + (step + 1) + ' of ' + steps.length;
-        }
-        document.querySelectorAll('[data-open-budget-wizard]').forEach(button => button.addEventListener('click', event => {
-            event.preventDefault(); wizard.hidden = false; step = 0; showStep();
-            wizard.scrollIntoView({behavior:'smooth',block:'start'});
-            wizard.querySelector('input:not([type=hidden])')?.focus();
-        }));
-        wizard.querySelector('[data-close-budget-wizard]')?.addEventListener('click', () => { wizard.hidden = true; });
-        next.addEventListener('click', () => {
-            const controls = [...steps[step].querySelectorAll('input,select,textarea')];
-            const invalid = controls.find(control => !control.checkValidity());
-            if (invalid) { invalid.reportValidity(); return; }
-            step = Math.min(step + 1, steps.length - 1); showStep();
-        });
-        back.addEventListener('click', () => { step = Math.max(step - 1,0); showStep(); });
-        const quantity = document.getElementById('create-quantity');
-        const unitCost = document.getElementById('create-unitCost');
-        const total = document.getElementById('create-total');
-        function updateTotal() {
-            const value = Number(quantity.value || 0) * Number(unitCost.value || 0);
-            total.textContent = Number.isFinite(value) ? value.toLocaleString(undefined,{style:'currency',currency:'USD'}) : 'Invalid amount';
-        }
-        quantity?.addEventListener('input',updateTotal);
-        unitCost?.addEventListener('input',updateTotal);
-        form.addEventListener('submit',event => {
-            for(let i=0;i<steps.length;i++) {
-                const invalid = [...steps[i].querySelectorAll('input,select,textarea')].find(control => !control.checkValidity());
-                if(invalid) { event.preventDefault(); step=i; showStep(); invalid.reportValidity(); return; }
-            }
-        });
-        showStep(); updateTotal();
-    }
-    const dialog = document.getElementById('lf-actuals-dialog');
-    if(dialog) {
-        document.querySelectorAll('[data-open-actuals-modal]').forEach(button => button.addEventListener('click', () => {
-            const iframe = dialog.querySelector('iframe');
-            if(iframe && !iframe.src) iframe.src = iframe.dataset.actualsUrl;
-            dialog.showModal();
-        }));
-        dialog.querySelector('[data-close-actuals-modal]')?.addEventListener('click',()=>dialog.close());
-    }
-})();
-</script>
