@@ -76,7 +76,11 @@
         </div>
         @if (Model.CanEdit)
         {
-            <a class="button" href="#edit-item">✎ Edit Item</a>
+            <a class="button primary" href="#edit-item">✎ Edit Item</a>
+        }
+        @if (Model.CanPostActuals)
+        {
+            <a class="button" href="#actuals-invoices">＋ Record Actual</a>
         }
     </div>
     <div class="lf-item-meta">
@@ -241,8 +245,8 @@
             </section>
         </div>
 
-        <details id="edit-item" class="lf-card lf-item-edit-panel" open="@(Model.CanEdit && (Model.Saved || !string.IsNullOrWhiteSpace(Model.ErrorMessage)))">
-            <summary><strong>Edit planning details</strong><span>Item dimensions, dates, quantity, unit cost, and business justification.</span></summary>
+        <details id="edit-item" class="lf-card lf-item-edit-panel" open="@Model.CanEdit">
+            <summary><strong>Edit item information</strong><span>Update description, section, category, purpose, type, location, department, units, cost, and need level.</span></summary>
             <div class="lf-item-edit-body">
                 @if (item.VersionLocked)
                 {
@@ -274,8 +278,9 @@
                             <div><label for="frequencyId"><strong>Frequency</strong></label><select id="frequencyId" name="frequencyId"><option value="">Unassigned</option>@foreach (var option in item.Frequencies){<option value="@option.Id" selected="@(option.Id == item.FrequencyId)">@option.Name</option>}</select></div>
                             <div><label for="estimatedPurchaseDate"><strong>Estimated purchase date</strong></label><input id="estimatedPurchaseDate" name="estimatedPurchaseDate" type="date" value="@(item.EstimatedPurchaseDate?.ToString("yyyy-MM-dd"))" /></div>
                             <div><label for="renewalDate"><strong>Renewal date</strong></label><input id="renewalDate" name="renewalDate" type="date" value="@(item.RenewalDate?.ToString("yyyy-MM-dd"))" /></div>
-                            <div><label for="quantity"><strong>Quantity</strong></label><input id="quantity" name="quantity" type="number" min="0" step="0.0001" value="@item.Quantity.ToString("0.####", System.Globalization.CultureInfo.InvariantCulture)" required /></div>
-                            <div><label for="unitCost"><strong>Unit cost</strong></label><input id="unitCost" name="unitCost" type="number" min="0" step="0.0001" value="@item.UnitCost.ToString("0.####", System.Globalization.CultureInfo.InvariantCulture)" required /></div>
+                            <div><label for="quantity"><strong># of Units</strong></label><input id="quantity" name="quantity" type="number" min="0" step="0.0001" value="@item.Quantity.ToString("0.####", System.Globalization.CultureInfo.InvariantCulture)" required /></div>
+                            <div><label for="unitCost"><strong>Cost per Unit</strong></label><input id="unitCost" name="unitCost" type="number" min="0" step="0.0001" value="@item.UnitCost.ToString("0.####", System.Globalization.CultureInfo.InvariantCulture)" required /></div>
+                            <div><label for="edit-total"><strong>Total Cost (calculated)</strong></label><output id="edit-total">@item.PlannedTotal.ToString("C2")</output></div>
                         </div>
                     </fieldset>
                     @if (Model.CanEdit){<p><button class="primary" type="submit">Save planning item</button></p>}
@@ -380,3 +385,19 @@
         </section>
     </aside>
 </div>
+<script>
+(() => {
+    const quantity = document.getElementById('quantity');
+    const unitCost = document.getElementById('unitCost');
+    const total = document.getElementById('edit-total');
+    if (!quantity || !unitCost || !total) return;
+    function calculate() {
+        const amount = Number(quantity.value || 0) * Number(unitCost.value || 0);
+        total.textContent = Number.isFinite(amount)
+            ? amount.toLocaleString(undefined, {style:'currency',currency:'USD'})
+            : 'Invalid amount';
+    }
+    quantity.addEventListener('input',calculate);
+    unitCost.addEventListener('input',calculate);
+})();
+</script>
