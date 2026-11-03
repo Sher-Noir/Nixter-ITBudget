@@ -1,0 +1,97 @@
+@model LedgerForge.Infrastructure.Actuals.ActualLedgerSnapshot
+@using LedgerForge.Domain.Actuals
+@{
+    var canPost = ViewData["CanPostActuals"] as bool? == true;
+    var fiscalYearId = Model.SelectedFiscalYearId;
+    var today = DateOnly.FromDateTime(DateTime.Today).ToString("yyyy-MM-dd");
+}
+<div class="lf-actuals-modal-body">
+    <div class="lf-panel-header">
+        <div>
+            <h2>Actual spending</h2>
+            <p class="lf-muted">Posted financial history is append-only. Use a reversal to correct an existing entry.</p>
+        </div>
+        <span class="badge">@Model.Transactions.Count transaction@(Model.Transactions.Count == 1 ? string.Empty : "s")</span>
+    </div>
+    <div class="lf-kpi-grid">
+        <article class="lf-card lf-kpi"><div><div class="lf-card-title">Net Actual</div><div class="lf-kpi-value">@Model.NetActualTotal.ToString("C2")</div></div></article>
+        <article class="lf-card lf-kpi"><div><div class="lf-card-title">Transactions</div><div class="lf-kpi-value">@Model.Transactions.Count</div></div></article>
+    </div>
+    @if (canPost && fiscalYearId is not null)
+    {
+        <details class="lf-inline-entry">
+            <summary><strong>+ Record an actual</strong><span>Add a posted expense to the selected fiscal year.</span></summary>
+            <form method="post" action="/actuals/manual" class="lf-form-grid lf-form-grid-3 lf-modal-form">
+                @Html.AntiForgeryToken()
+                <input type="hidden" name="returnToBudget" value="true" />
+                <input type="hidden" name="fiscalYearId" value="@fiscalYearId" />
+                <div><label for="modal-actual-date">Transaction date</label><input id="modal-actual-date" name="transactionDate" type="date" value="@today" required /></div>
+                <div><label for="modal-actual-amount">Amount</label><input id="modal-actual-amount" name="amount" type="number" min="0.0001" step="0.0001" required /></div>
+                <div><label for="modal-actual-reference">Reference</label><input id="modal-actual-reference" name="sourceReference" maxlength="200" placeholder="Invoice or receipt" /></div>
+                <div class="lf-span-all"><label for="modal-actual-description">Description</label><input id="modal-actual-description" name="description" maxlength="500" required /></div>
+                <div><label for="modal-actual-item">Budget item</label><select id="modal-actual-item" name="budgetItemId"><option value="">Unallocated</option>@foreach(var option in Model.BudgetItems){<option value="@option.Id">@option.Label</option>}</select></div>
+                <div><label for="modal-actual-account">Finance account</label><select id="modal-actual-account" name="financeAccountId"><option value="">Unallocated</option>@foreach(var option in Model.FinanceAccounts){<option value="@option.Id">@option.Label</option>}</select></div>
+                <div><label for="modal-actual-dept">Department</label><select id="modal-actual-dept" name="departmentId"><option value="">Unallocated</option>@foreach(var option in Model.Departments){<option value="@option.Id">@option.Label</option>}</select></div>
+                <div><label for="modal-actual-location">Location</label><select id="modal-actual-location" name="locationId"><option value="">Unallocated</option>@foreach(var option in Model.Locations){<option value="@option.Id">@option.Label</option>}</select></div>
+                <div class="lf-span-all"><button type="submit" class="primary">Post actual transaction</button></div>
+            </form>
+        </details>
+        <details class="lf-inline-entry">
+            <summary><strong>Import actuals CSV</strong><span>Validate and post a CSV file as a single transaction.</span></summary>
+            <form method="post" action="/actuals/import" enctype="multipart/form-data" class="lf-modal-form">
+                @Html.AntiForgeryToken()
+                <input type="hidden" name="returnToBudget" value="true" />
+                <input type="hidden" name="fiscalYearId" value="@fiscalYearId" />
+                <p><a class="button" href="/actuals/import-template.csv">Download CSV template</a></p>
+                <label for="modal-import-file">CSV file</label>
+                <input id="modal-import-file" type="file" name="file" accept=".csv,text/csv" required />
+                <p><button type="submit" class="primary">Validate and import</button></p>
+            </form>
+        </details>
+    }
+    <section class="lf-card">
+        <div class="lf-panel-header"><h3>Transaction history</h3><span class="lf-muted">Positive amounts are spend, negative amounts are reversals.</span></div>
+        @if (Model.Transactions.Count == 0)
+        {
+            <div class="lf-empty-state">No actual transactions recorded for this fiscal year.</div>
+        }
+        else
+        {
+            <div class="lf-table-wrap">
+                <table class="lf-table">
+                    <thead><tr><th>Date</th><th>Description / Reference</th><th>Budget item</th><th>Account</th><th class="lf-number">Amount</th><th>Correction</th></tr></thead>
+                    <tbody>
+                    @foreach (var transaction in Model.Transactions)
+                    {
+                        <tr>
+                            <td>@transaction.TransactionDate.ToString("yyyy-MM-dd")</td>
+                            <td><strong>@transaction.Description</strong>@if (!string.IsNullOrWhiteSpace(transaction.SourceReference)){<div class="lf-muted">@transaction.SourceReference</div>}</td>
+                            <td>@(transaction.BudgetItem ?? "—")</td>
+                            <td>@(transaction.FinanceAccount ?? "—")</td>
+                            <td class="lf-number">@transaction.Amount.ToString("C2")</td>
+                            <td>
+                            @if(transaction.Kind == ActualTransactionKind.Reversal){<span class="lf-muted">Reversal</span>}
+                            else if(canPost && transaction.CanReverse && fiscalYearId is not null)
+                            {
+                                <details><summary>Reverse</summary>
+                                    <form method="post" action="/actuals/@transaction.Id/reverse" class="lf-modal-form">
+                                        @Html.AntiForgeryToken()
+                                        <input type="hidden" name="returnToBudget" value="true" />
+                                        <input type="hidden" name="fiscalYearId" value="@fiscalYearId" />
+                                        <label for="revdate-@transaction.Id">Date</label><input id="revdate-@transaction.Id" name="reversalDate" type="date" value="@today" required />
+                                        <label for="revreason-@transaction.Id">Reason</label><input id="revreason-@transaction.Id" name="reason" maxlength="1000" required />
+                                        <button type="submit" class="danger">Post reversal</button>
+                                    </form>
+                                </details>
+                            }
+                            else if(!transaction.CanReverse){<span class="lf-muted">Reversed</span>}
+                            else{<span class="lf-muted">—</span>}
+                            </td>
+                        </tr>
+                    }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </section>
+</div>
