@@ -6,6 +6,7 @@
 @inject Microsoft.AspNetCore.Authorization.IAuthorizationService AuthorizationService
 @{
     var workspace = Model.Workspace;
+    var vendorOptions = (ViewData["VendorOptions"] as LedgerForge.Infrastructure.Budgeting.BudgetItemCreateOptions)?.Vendors;
     var item = workspace.Item;
     ViewData["Title"] = $"Budget Item {item.ItemNumber}";
     var canSubmit = ViewData["CanSubmit"] as bool? == true;
@@ -25,7 +26,7 @@
     var needLevel = OptionName(item.NeedLevels, item.NeedLevelId);
     var category = OptionName(item.InternalCategories, item.InternalCategoryId);
     var frequency = OptionName(item.Frequencies, item.FrequencyId);
-    var vendor = workspace.PurchaseOrders.FirstOrDefault()?.Vendor;
+    var vendor = vendorOptions?.FirstOrDefault(x => x.Id == item.VendorId)?.Name ?? workspace.PurchaseOrders.FirstOrDefault()?.Vendor;
     var variance = workspace.CurrentBudget - workspace.Actual;
     var itemMark = item.ItemNumber.Length >= 2 ? item.ItemNumber[..2].ToUpperInvariant() : "BI";
     var documentUploadUrl = $"/documents?linkedEntityType=BudgetItem&linkedEntityId={item.Id}";
@@ -127,6 +128,8 @@
                 <p>@item.Description</p>
                 <h3>Business Justification / Reason &amp; Purpose</h3>
                 <p>@(string.IsNullOrWhiteSpace(item.ReasonPurpose) ? "No business justification has been entered yet." : item.ReasonPurpose)</p>
+                <h3>Notes</h3>
+                <p>@(string.IsNullOrWhiteSpace(item.Notes) ? "No notes added." : item.Notes)</p>
                 <div class="lf-item-facts">
                     <div><span>Purchase Date</span><strong>@(item.EstimatedPurchaseDate?.ToString("MMM d, yyyy") ?? "—")</strong></div>
                     <div><span>Renewal Date</span><strong>@(item.RenewalDate?.ToString("MMM d, yyyy") ?? "—")</strong></div>
@@ -270,6 +273,8 @@
                             <div><label for="budgetSectionId"><strong>Budget section</strong></label><select id="budgetSectionId" name="budgetSectionId"><option value="">Unassigned</option>@foreach (var option in item.BudgetSections){<option value="@option.Id" selected="@(option.Id == item.BudgetSectionId)">@option.Code · @option.Name</option>}</select></div>
                             <div class="lf-span-all"><label for="description"><strong>Description</strong></label><input id="description" name="description" value="@item.Description" maxlength="500" required /></div>
                             <div class="lf-span-all"><label for="reasonPurpose"><strong>Reason / purpose</strong></label><textarea id="reasonPurpose" name="reasonPurpose" rows="4" maxlength="2000">@item.ReasonPurpose</textarea></div>
+                            <div class="lf-span-all"><label for="notes"><strong>Notes</strong></label><textarea id="notes" name="notes" rows="3" maxlength="2000">@item.Notes</textarea></div>
+                            <div><label for="vendorId"><strong>Vendor</strong></label><select id="vendorId" name="vendorId"><option value="">Unassigned</option>@if(vendorOptions is not null){foreach(var option in vendorOptions){<option value="@option.Id" selected="@(option.Id == item.VendorId)">@option.Name</option>}}</select></div>
                             <div><label for="financeTypeId"><strong>Finance type</strong></label><select id="financeTypeId" name="financeTypeId"><option value="">Unassigned</option>@foreach (var option in item.FinanceTypes){<option value="@option.Id" selected="@(option.Id == item.FinanceTypeId)">@option.Name</option>}</select></div>
                             <div><label for="departmentId"><strong>Department</strong></label><select id="departmentId" name="departmentId"><option value="">Unassigned</option>@foreach (var option in item.Departments){<option value="@option.Id" selected="@(option.Id == item.DepartmentId)">@option.Code · @option.Name</option>}</select></div>
                             <div><label for="locationId"><strong>Location</strong></label><select id="locationId" name="locationId"><option value="">Unassigned</option>@foreach (var option in item.Locations){<option value="@option.Id" selected="@(option.Id == item.LocationId)">@option.Code · @option.Name</option>}</select></div>
