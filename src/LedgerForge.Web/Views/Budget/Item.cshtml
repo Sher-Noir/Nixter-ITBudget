@@ -390,19 +390,3 @@
         </section>
     </aside>
 </div>
-<script>
-(() => {
-    const quantity = document.getElementById('quantity');
-    const unitCost = document.getElementById('unitCost');
-    const total = document.getElementById('edit-total');
-    if (!quantity || !unitCost || !total) return;
-    function calculate() {
-        const amount = Number(quantity.value || 0) * Number(unitCost.value || 0);
-        total.textContent = Number.isFinite(amount)
-            ? amount.toLocaleString(undefined, {style:'currency',currency:'USD'})
-            : 'Invalid amount';
-    }
-    quantity.addEventListener('input',calculate);
-    unitCost.addEventListener('input',calculate);
-})();
-</script>
