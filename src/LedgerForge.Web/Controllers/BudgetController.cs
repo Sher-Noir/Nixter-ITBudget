@@ -128,6 +128,7 @@ public sealed class BudgetController(
             .OrderByDescending(x => x.CreatedAtUtc)
             .ToArray();
         var actualOptions = await actualEntryService.GetOptionsAsync(cancellationToken);
+        ViewData["VendorOptions"] = await planningService.GetCreateOptionsAsync(cancellationToken);
 
         return View("Item", new BudgetItemEditViewModel(
             workspace,
