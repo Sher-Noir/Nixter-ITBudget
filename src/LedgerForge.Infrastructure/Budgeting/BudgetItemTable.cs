@@ -46,6 +46,7 @@ public static class BudgetItemTable
             "quantity" => SortValue(rows, x => x.Quantity, descending),
             "unitCost" => SortValue(rows, x => x.UnitCost, descending),
             "total" => SortValue(rows, x => x.PlannedTotal, descending),
+            "actual" => SortValue(rows, x => x.Actual, descending),
             "needLevel" => SortText(rows, x => x.NeedLevelName, descending),
             "frequency" => SortText(rows, x => x.FrequencyName, descending),
             "renewal" => SortValue(rows, x => x.RenewalDate, descending),
@@ -78,7 +79,7 @@ public static class BudgetItemTable
     private static string NormalizeSort(string? key) => key switch
     {
         "itemNumber" or "description" or "section" or "category" or "vendor" or
-        "location" or "quantity" or "unitCost" or "total" or "needLevel" or
+        "location" or "quantity" or "unitCost" or "total" or "actual" or "needLevel" or
         "frequency" or "renewal" or "status" or "approval" => key,
         _ => "itemNumber"
     };
