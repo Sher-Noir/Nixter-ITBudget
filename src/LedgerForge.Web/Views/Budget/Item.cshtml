@@ -11,6 +11,9 @@
     ViewData["Title"] = $"Budget Item {item.ItemNumber}";
     var canSubmit = ViewData["CanSubmit"] as bool? == true;
     var canReopen = ViewData["CanReopen"] as bool? == true;
+    var canMarkPurchased = ViewData["CanMarkPurchased"] as bool? == true;
+    var canUndoPurchased = ViewData["CanUndoPurchased"] as bool? == true;
+    var purchasedChanged = ViewData["PurchasedChanged"] as bool? == true;
     var revisionOpened = ViewData["RevisionOpened"] as bool? == true;
     var submitted = ViewData["Submitted"] as bool? == true;
     var actualSaved = ViewData["ActualSaved"] as bool? == true;
@@ -58,6 +61,10 @@
 {
     <div class="card lf-alert lf-alert-success" role="status">Actual transaction added to this budget item.</div>
 }
+@if (purchasedChanged)
+{
+    <div class="card lf-alert lf-alert-success" role="status">Purchase tracking status updated. Budget approval, POs, invoices and actual amounts were not changed.</div>
+}
 @if (submitted)
 {
     <div class="card lf-alert lf-alert-success" role="status">Budget item submitted for approval. To make another change, select Reopen for editing and resubmit it.</div>
@@ -78,7 +85,7 @@
             <div class="lf-item-mark" aria-hidden="true">@itemMark</div>
         }
         <div class="lf-item-title">
-            <h1>@item.Description <span class="badge @(item.Status == BudgetItemStatus.Approved ? "lf-badge-success" : "")">@item.Status</span></h1>
+            <h1>@item.Description <span class="badge @(item.Status is BudgetItemStatus.Approved or BudgetItemStatus.Purchased ? "lf-badge-success" : "")">@item.Status</span></h1>
             <p>@item.ItemNumber · <code>@item.StableIdentifier</code></p>
         </div>
         @if (Model.CanEdit)
@@ -88,6 +95,20 @@
         @if (canReopen)
         {
             <a class="button primary" href="#edit-item">✎ Revise Item</a>
+        }
+        @if (canMarkPurchased)
+        {
+            <form method="post" action="/budget/items/@item.Id/purchased">
+                @Html.AntiForgeryToken()
+                <button class="button" type="submit" title="Tracking status only; does not create a PO, invoice, or actual transaction.">✓ Mark Purchased</button>
+            </form>
+        }
+        @if (canUndoPurchased)
+        {
+            <form method="post" action="/budget/items/@item.Id/undo-purchased">
+                @Html.AntiForgeryToken()
+                <button class="button" type="submit">Undo Purchased</button>
+            </form>
         }
         @if (Model.CanPostActuals)
         {
