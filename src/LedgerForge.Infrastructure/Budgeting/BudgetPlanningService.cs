@@ -1,3 +1,4 @@
+using System.Data;
 using LedgerForge.Domain.Budgeting;
 using LedgerForge.Domain.MasterData;
 using LedgerForge.Infrastructure.Persistence;
@@ -315,13 +316,30 @@ public sealed class BudgetPlanningService(
             .ToListAsync(cancellationToken);
 
     public async Task<Guid> CreateDetailedItemAsync(
-        Guid fiscalYearId, Guid versionId, string itemNumber, string description,
+        Guid fiscalYearId, Guid versionId, string description,
         string? reasonPurpose, PurchaseType purchaseType, decimal quantity, decimal unitCost,
         Guid? budgetSectionId, Guid? financeTypeId, Guid? departmentId, Guid? locationId,
         Guid? needLevelId, Guid? internalCategoryId, Guid? frequencyId,
         CancellationToken cancellationToken = default, Guid? vendorId = null, string? notes = null)
     {
-        await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
+        // Serializable isolation prevents concurrent wizard requests from allocating
+        // the same item number. The database's unique index is the final safeguard.
+        await using var transaction = await dbContext.Database.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken);
+        var existingNumbers = await dbContext.BudgetItems.AsNoTracking()
+            .Where(x => x.FiscalYearId == fiscalYearId && x.BudgetVersionId == versionId)
+            .Select(x => x.ItemNumber)
+            .ToListAsync(cancellationToken);
+        var highestNumber = 0L;
+        foreach (var number in existingNumbers)
+        {
+            if (long.TryParse(number, System.Globalization.NumberStyles.None,
+                    System.Globalization.CultureInfo.InvariantCulture, out var parsed) &&
+                parsed > highestNumber)
+                highestNumber = parsed;
+        }
+        if (highestNumber == long.MaxValue)
+            throw new InvalidOperationException("No more automatic item numbers are available.");
+        var itemNumber = (highestNumber + 1).ToString(System.Globalization.CultureInfo.InvariantCulture);
         var id = await AddItemAsync(fiscalYearId, versionId, itemNumber, description, quantity, unitCost, cancellationToken);
         await UpdateItemAsync(id, itemNumber, description, reasonPurpose, purchaseType,
             quantity, unitCost, null, null, budgetSectionId, financeTypeId,
