@@ -158,3 +158,42 @@
   .lf-actuals-dialog-content { padding:.65rem; }
   .lf-budget-wizard-actions { flex-wrap:wrap; }
 }
+
+/* Explicit hidden-state rule: shared .primary/.button styling must not override [hidden]. */
+#lf-budget-create-form [hidden], .lf-select-options[hidden] { display: none !important; }
+
+/* Searchable Budget wizard and Full Item select controls. Native select remains
+   usable if JavaScript does not load; enhanced mode posts the original field. */
+.lf-searchable-native { display: none !important; }
+.lf-select-combobox { position:relative; width:100%; min-width:0; }
+.lf-select-search {
+  width:100%; min-width:0; box-sizing:border-box;
+  padding-right:2rem;
+  background:var(--lf-surface);
+  color:var(--lf-text);
+  border:1px solid var(--lf-border);
+  border-radius:8px;
+}
+.lf-select-search:focus-visible {
+  outline:2px solid var(--lf-primary);
+  outline-offset:2px;
+}
+.lf-select-options {
+  position:absolute;
+  top:calc(100% + 3px);
+  left:0; right:0; z-index:80;
+  max-height:235px; overflow-y:auto; overscroll-behavior:contain;
+  background:var(--lf-surface);
+  color:var(--lf-text);
+  border:1px solid var(--lf-border);
+  border-radius:8px;
+  box-shadow:0 10px 24px rgba(0,0,0,.20);
+}
+.lf-select-option {
+  display:block; width:100%; text-align:left;
+  padding:.65rem .8rem; border:0; border-radius:0;
+  background:transparent; color:inherit; cursor:pointer;
+}
+.lf-select-option:hover, .lf-select-option:focus-visible,
+.lf-select-option.is-highlighted { background:var(--lf-surface-2); outline:none; }
+.lf-select-no-results { padding:.65rem .8rem; color:var(--lf-muted); }
