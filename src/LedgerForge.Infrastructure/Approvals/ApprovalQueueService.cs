@@ -1,3 +1,4 @@
+using LedgerForge.Domain.Auditing;
 using LedgerForge.Domain.Budgeting;
 using LedgerForge.Domain.Procurement;
 using LedgerForge.Infrastructure.Budgeting;
@@ -186,6 +187,30 @@ public sealed class ApprovalQueueService(
         var version = await dbContext.BudgetVersions.AsNoTracking().SingleAsync(x => x.Id == item.BudgetVersionId, cancellationToken);
         if (version.IsLocked) throw new InvalidOperationException("Items in a locked budget version cannot be submitted.");
         item.Submit(actor, DateTimeOffset.UtcNow);
+        await dbContext.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task ReopenBudgetItemForRevisionAsync(
+        Guid itemId, string actor, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(actor)) throw new ArgumentException("An authenticated actor is required.", nameof(actor));
+        var item = await RequireBudgetItemAsync(itemId, cancellationToken);
+        var version = await dbContext.BudgetVersions.AsNoTracking()
+            .SingleAsync(x => x.Id == item.BudgetVersionId, cancellationToken);
+        if (version.IsLocked)
+            throw new InvalidOperationException("This budget version is locked and cannot be revised.");
+
+        var previousStatus = item.Status;
+        item.ReopenForRevision();
+        dbContext.AuditEvents.Add(new AuditEvent(
+            actor,
+            nameof(BudgetItem),
+            item.Id,
+            AuditAction.Explicit,
+            System.Text.Json.JsonSerializer.Serialize(new { Status = previousStatus.ToString(), item.ApprovedTotal }),
+            System.Text.Json.JsonSerializer.Serialize(new { Status = item.Status.ToString(), item.ApprovedTotal, RevisionRequiresApproval = true }),
+            Guid.NewGuid().ToString("N"),
+            DateTimeOffset.UtcNow));
         await dbContext.SaveChangesAsync(cancellationToken);
     }
 
