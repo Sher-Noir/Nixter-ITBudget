@@ -1,5 +1,6 @@
 using LedgerForge.Infrastructure.Budgeting;
 using LedgerForge.Infrastructure.Reporting;
+using LedgerForge.Web.Exporting;
 using LedgerForge.Web.Security;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -33,6 +34,35 @@ public sealed class RenewalsController(
         return View(await planningService.GetAsync(
             sourceFiscalYearId, targetFiscalYearId, targetVersionId,
             upliftPercent, cancellationToken));
+    }
+
+    [HttpGet("plan/export.csv")]
+    public async Task<IActionResult> ExportPlan(
+        Guid? sourceFiscalYearId, Guid? targetFiscalYearId,
+        Guid? targetVersionId, decimal upliftPercent,
+        CancellationToken cancellationToken)
+    {
+        var forecast = await planningService.GetAsync(
+            sourceFiscalYearId, targetFiscalYearId, targetVersionId,
+            upliftPercent, cancellationToken);
+        if (forecast.TargetFiscalYearId is null)
+            return BadRequest("Choose a target fiscal year before exporting.");
+        var bytes = CsvExportWriter.Write(
+            ["Source FY", "Target FY", "Target Version", "Source", "Reference",
+             "Description", "Vendor", "Renewal Date", "Notice Date", "Quantity",
+             "Current Estimate", "Estimated Price Change (%)", "Projected Unit Cost",
+             "Next FY Projection", "Status", "Date Needs Review"],
+            forecast.Candidates.Select(x => (IReadOnlyList<object?>)new object?[]
+            {
+                forecast.Years.First(y => y.Id == forecast.SourceFiscalYearId).Name,
+                forecast.Years.First(y => y.Id == forecast.TargetFiscalYearId).Name,
+                forecast.Versions.First(v => v.Id == forecast.TargetVersionId).Name,
+                x.Source, x.Reference, x.Description, x.Vendor, x.RenewalDate,
+                x.NoticeDate, x.Quantity, x.SourceEstimate, forecast.UpliftPercent,
+                x.ProjectedUnitCost, x.ProjectedTotal,
+                x.AlreadyPlanned ? "Already planned" : "New candidate", x.DateNeedsReview
+            }));
+        return File(bytes, "text/csv; charset=utf-8", "ledgerforge-next-fy-renewal-forecast.csv");
     }
 
     [Authorize(Policy = AuthorizationPolicies.ManageFiscalYears)]
