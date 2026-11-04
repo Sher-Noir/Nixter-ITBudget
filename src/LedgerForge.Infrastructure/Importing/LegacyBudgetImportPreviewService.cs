@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using System.Text.Json;
+using LedgerForge.Domain.Budgeting;
 using LedgerForge.Domain.Importing;
 using LedgerForge.Domain.MasterData;
 using LedgerForge.ImportExport.Spreadsheets;
@@ -60,6 +61,8 @@ public sealed class LegacyBudgetImportPreviewService(
             var acceptedRowCount = 0;
             var rejectedRowCount = 0;
             var exceptionCount = 0;
+            var missingVendorCount = 0;
+            var missingGenericFrequencyCount = 0;
 
             foreach (var sourceRow in workbook.BudgetRows)
             {
@@ -72,6 +75,10 @@ public sealed class LegacyBudgetImportPreviewService(
                 dbContext.ImportRows.Add(importRow);
 
                 var rowIssues = ValidateRow(sourceRow, importRow.Id, batch.Id, lookups, aliases);
+                if (string.IsNullOrWhiteSpace(sourceRow.Vendor)) missingVendorCount++;
+                if (string.Equals(sourceRow.Frequency?.Trim(), "Other", StringComparison.OrdinalIgnoreCase) &&
+                    !TryResolveLookup("Frequency", sourceRow.Frequency, lookups.Frequencies, false, aliases, out _))
+                    missingGenericFrequencyCount++;
                 foreach (var issue in rowIssues)
                 {
                     dbContext.ImportExceptions.Add(issue);
@@ -90,6 +97,27 @@ public sealed class LegacyBudgetImportPreviewService(
                     importRow.Accept(rowIssues.Count > 0);
                     acceptedRowCount++;
                 }
+            }
+
+            // These fields are optional dimensions. Present a single actionable
+            // batch warning rather than 60+ identical review exceptions.
+            if (missingVendorCount > 0)
+            {
+                dbContext.ImportExceptions.Add(new ImportException(batch.Id, null,
+                    "UNASSIGNED_VENDOR_SUMMARY",
+                    $"{missingVendorCount} source rows do not specify a vendor; they will import without a vendor assignment. Review and assign vendors after import.",
+                    ImportExceptionSeverity.Warning));
+                warningCount++;
+                exceptionCount++;
+            }
+            if (missingGenericFrequencyCount > 0)
+            {
+                dbContext.ImportExceptions.Add(new ImportException(batch.Id, null,
+                    "OPTIONAL_FREQUENCY_SUMMARY",
+                    $"{missingGenericFrequencyCount} rows use the generic Frequency 'Other', which is not active in Managed Lookups. These items will import with Frequency unassigned; source values remain in the import record.",
+                    ImportExceptionSeverity.Warning));
+                warningCount++;
+                exceptionCount++;
             }
 
             foreach (var warning in workbook.Warnings)
@@ -142,12 +170,18 @@ public sealed class LegacyBudgetImportPreviewService(
         IReadOnlyCollection<LookupValueAlias> aliases)
     {
         var issues = new List<ImportException>();
-        ValidateLookup("FinanceType", row.FinanceType, lookups.FinanceTypes, false, aliases, importBatchId, importRowId, issues);
+        // In the source schema, column E is labelled 'Type'. New/Replacement are
+        // purchase types, not finance accounts. Legacy workbooks that actually
+        // supply a FinanceType retain the old lookup-resolution path.
+        if (!Enum.TryParse<PurchaseType>(row.FinanceType, true, out var purchaseType) ||
+            !Enum.IsDefined(purchaseType))
+            ValidateLookup("FinanceType", row.FinanceType, lookups.FinanceTypes, false, aliases, importBatchId, importRowId, issues);
         ValidateLookup("Department", row.Department, lookups.Departments, true, aliases, importBatchId, importRowId, issues);
         ValidateLookup("Location", row.Location, lookups.Locations, true, aliases, importBatchId, importRowId, issues);
         ValidateLookup("NeedLevel", row.NeedLevel, lookups.NeedLevels, true, aliases, importBatchId, importRowId, issues);
         ValidateLookup("InternalCategory", row.InternalCategory, lookups.InternalCategories, false, aliases, importBatchId, importRowId, issues);
-        ValidateLookup("Frequency", row.Frequency, lookups.Frequencies, false, aliases, importBatchId, importRowId, issues);
+        if (!string.Equals(row.Frequency?.Trim(), "Other", StringComparison.OrdinalIgnoreCase))
+            ValidateLookup("Frequency", row.Frequency, lookups.Frequencies, false, aliases, importBatchId, importRowId, issues);
 
         var workflowFlags = (row.Approval ? 1 : 0) + (row.Denial ? 1 : 0) + (row.Proposed ? 1 : 0);
         if (workflowFlags > 1)
@@ -155,9 +189,6 @@ public sealed class LegacyBudgetImportPreviewService(
 
         if (Math.Abs(row.RecalculatedPlannedTotal - row.SourcePlannedTotal) > PlannedTotalTolerance)
             issues.Add(new ImportException(importBatchId, importRowId, "SOURCE_TOTAL_MISMATCH", $"Item {row.ItemNumber} source total {row.SourcePlannedTotal:0.####} recalculates to {row.RecalculatedPlannedTotal:0.####}; the recalculated value will be authoritative.", ImportExceptionSeverity.Warning));
-
-        if (string.IsNullOrWhiteSpace(row.Vendor))
-            issues.Add(new ImportException(importBatchId, importRowId, "MISSING_VENDOR", $"Item {row.ItemNumber} does not identify a vendor. Vendor assignment should be reviewed.", ImportExceptionSeverity.Warning));
 
         return issues;
     }
