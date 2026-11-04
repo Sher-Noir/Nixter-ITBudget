@@ -12,7 +12,7 @@ public sealed class BudgetItemTableTests
         var result = BudgetItemTable.Create(
             [Row("10"), Row("2"), Row("1")], null, null, 1, 25);
 
-        Assert.Equal(["1", "2", "10"], result.Rows.Select(x => x.ItemNumber).ToArray());
+        Assert.Equal(new[] { "1", "2", "10" }, result.Rows.Select(x => x.ItemNumber).ToArray());
         Assert.Equal("itemNumber", result.SortKey);
         Assert.Equal("asc", result.Direction);
     }
@@ -24,7 +24,7 @@ public sealed class BudgetItemTableTests
             [Row("1", total: 9m), Row("2", total: 100m), Row("3", total: 25m)],
             "total", "desc", 1, 25);
 
-        Assert.Equal([100m, 25m, 9m], result.Rows.Select(x => x.PlannedTotal).ToArray());
+        Assert.Equal(new[] { 100m, 25m, 9m }, result.Rows.Select(x => x.PlannedTotal).ToArray());
         Assert.Equal("desc", result.Direction);
     }
 
@@ -90,7 +90,7 @@ public sealed class BudgetItemTableTests
         var result = BudgetItemTable.Create(filtered, "itemNumber", "desc", 1, 25);
 
         Assert.Equal(2, result.TotalCount);
-        Assert.Equal(["3", "1"], result.Rows.Select(x => x.ItemNumber).ToArray());
+        Assert.Equal(new[] { "3", "1" }, result.Rows.Select(x => x.ItemNumber).ToArray());
     }
 
     [Theory]
