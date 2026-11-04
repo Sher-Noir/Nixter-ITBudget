@@ -58,7 +58,7 @@ public sealed class BudgetController(
                 fiscalYearId, versionId, description, reasonPurpose, purchaseType,
                 quantity, unitCost, budgetSectionId, financeTypeId, departmentId, locationId,
                 needLevelId, internalCategoryId, frequencyId, cancellationToken, vendorId, notes);
-            return RedirectToAction(nameof(Item), new { id, saved = true });
+            return RedirectToAction(nameof(Index), new { fiscalYearId, versionId, saved = true });
         }
         catch (KeyNotFoundException) { return NotFound(); }
         catch (Exception exception) when (exception is ArgumentException or InvalidOperationException or OverflowException)
