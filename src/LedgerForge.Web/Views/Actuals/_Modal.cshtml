@@ -73,14 +73,36 @@
                             @if(transaction.Kind == ActualTransactionKind.Reversal){<span class="lf-muted">Reversal</span>}
                             else if(canPost && transaction.CanReverse && fiscalYearId is not null)
                             {
-                                <details><summary>Reverse</summary>
+                                @if (transaction.Kind == ActualTransactionKind.Manual)
+                                {
+                                    <details>
+                                        <summary>Edit / correct</summary>
+                                        <form method="post" action="/actuals/@transaction.Id/correct" class="lf-modal-form">
+                                            @Html.AntiForgeryToken()
+                                            <input type="hidden" name="returnToBudget" value="true" />
+                                            <input type="hidden" name="fiscalYearId" value="@fiscalYearId" />
+                                            <p><label>Transaction date<input name="transactionDate" type="date" value="@transaction.TransactionDate.ToString("yyyy-MM-dd")" required /></label></p>
+                                            <p><label>Description<input name="description" maxlength="500" required value="@transaction.Description" /></label></p>
+                                            <p><label>Amount<input name="amount" type="number" min="0.0001" step="0.0001" required value="@transaction.Amount.ToString("0.####", System.Globalization.CultureInfo.InvariantCulture)" /></label></p>
+                                            <p><label>Reference<input name="sourceReference" maxlength="200" value="@transaction.SourceReference" /></label></p>
+                                            <p><label>Budget item<select name="budgetItemId"><option value="">Keep current</option>@foreach (var option in Model.BudgetItems) { <option value="@option.Id">@option.Label</option> }</select></label></p>
+                                            <p><label>Finance account<select name="financeAccountId"><option value="">Keep current</option>@foreach (var option in Model.FinanceAccounts) { <option value="@option.Id">@option.Label</option> }</select></label></p>
+                                            <p><label>Department<select name="departmentId"><option value="">Keep current</option>@foreach (var option in Model.Departments) { <option value="@option.Id">@option.Label</option> }</select></label></p>
+                                            <p><label>Location<select name="locationId"><option value="">Keep current</option>@foreach (var option in Model.Locations) { <option value="@option.Id">@option.Label</option> }</select></label></p>
+                                            <p><label>Correction reason<input name="reason" maxlength="1000" required /></label></p>
+                                            <p class="lf-muted">Reverses the original and posts its corrected replacement atomically.</p>
+                                            <button type="submit" class="primary">Save correction</button>
+                                        </form>
+                                    </details>
+                                }
+                                <details><summary>Delete / void</summary>
                                     <form method="post" action="/actuals/@transaction.Id/reverse" class="lf-modal-form">
                                         @Html.AntiForgeryToken()
                                         <input type="hidden" name="returnToBudget" value="true" />
                                         <input type="hidden" name="fiscalYearId" value="@fiscalYearId" />
-                                        <label for="revdate-@transaction.Id">Date</label><input id="revdate-@transaction.Id" name="reversalDate" type="date" value="@today" required />
+                                        <label for="revdate-@transaction.Id">Date</label><input id="revdate-@transaction.Id" name="reversalDate" type="date" value="@transaction.TransactionDate.ToString("yyyy-MM-dd")" required />
                                         <label for="revreason-@transaction.Id">Reason</label><input id="revreason-@transaction.Id" name="reason" maxlength="1000" required />
-                                        <button type="submit" class="danger">Post reversal</button>
+                                        <button type="submit" class="danger">Void with reversal</button>
                                     </form>
                                 </details>
                             }
