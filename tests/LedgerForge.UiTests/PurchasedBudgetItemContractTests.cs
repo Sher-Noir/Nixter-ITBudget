@@ -32,7 +32,7 @@ public sealed class PurchasedBudgetItemContractTests
         Assert.Contains("public void MarkPurchased()", domain, StringComparison.Ordinal);
         Assert.Contains("public void UndoPurchased()", domain, StringComparison.Ordinal);
         Assert.Contains("item.MarkPurchased();", service, StringComparison.Ordinal);
-        Assert.Contains("item.UndoPurchased();", service, StringComparison.Ordinal);
+        Assert.Contains("item.UndoPurchased(restoreStatus);", service, StringComparison.Ordinal);
         Assert.Contains("ApprovalAndActualsUnchanged = true", service, StringComparison.Ordinal);
     }
 
