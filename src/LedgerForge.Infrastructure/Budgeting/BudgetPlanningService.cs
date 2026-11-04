@@ -413,7 +413,8 @@ public sealed class BudgetPlanningService(
         CancellationToken cancellationToken = default,
         Guid? vendorId = null,
         string? notes = null,
-        bool updateVendorAndNotes = false)
+        bool updateVendorAndNotes = false,
+        bool allowDirectApprovedEdits = false)
     {
         var item = await dbContext.BudgetItems
             .SingleOrDefaultAsync(x => x.Id == itemId, cancellationToken)
@@ -439,7 +440,7 @@ public sealed class BudgetPlanningService(
         await ValidateLookupAsync(dbContext.InternalCategories, internalCategoryId, "Internal category", cancellationToken);
         await ValidateLookupAsync(dbContext.Frequencies, frequencyId, "Frequency", cancellationToken);
 
-        item.ChangeCost(quantity, unitCost);
+        item.ChangeCost(quantity, unitCost, allowDirectApprovedEdits);
         item.UpdatePlanningDetails(
             normalizedNumber,
             description,
@@ -453,13 +454,14 @@ public sealed class BudgetPlanningService(
             locationId,
             needLevelId,
             internalCategoryId,
-            frequencyId);
+            frequencyId,
+            allowDirectApprovedEdits);
         if (updateVendorAndNotes)
         {
             if (vendorId is not null && vendorId != item.VendorId &&
                 !await dbContext.Vendors.AnyAsync(x => x.Id == vendorId && x.IsActive, cancellationToken))
                 throw new InvalidOperationException("Selected vendor is not active.");
-            item.UpdateVendorAndNotes(vendorId, notes);
+            item.UpdateVendorAndNotes(vendorId, notes, allowDirectApprovedEdits);
         }
 
         await dbContext.SaveChangesAsync(cancellationToken);
