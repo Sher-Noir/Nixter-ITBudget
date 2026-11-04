@@ -45,6 +45,30 @@ public sealed class BudgetController(
     }
 
     [Authorize(Policy = AuthorizationPolicies.EditPlanningBudget)]
+    [HttpPost("bulk-submit")]
+    public async Task<IActionResult> BulkSubmit(
+        Guid fiscalYearId, Guid versionId, Guid[] selectedItemIds, bool confirmSelection,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            if (!confirmSelection)
+                throw new ArgumentException("Review the selected items and confirm before submitting.");
+            await approvalQueueService.SubmitBudgetItemsAsync(
+                fiscalYearId, versionId, selectedItemIds, RequireActor(), cancellationToken);
+            return RedirectToAction(nameof(Index), new
+            {
+                fiscalYearId, versionId, bulkSubmitted = selectedItemIds.Length
+            });
+        }
+        catch (Exception exception) when (exception is ArgumentException or InvalidOperationException or KeyNotFoundException)
+        {
+            TempData["BudgetError"] = exception.Message;
+            return RedirectToAction(nameof(Index), new { fiscalYearId, versionId });
+        }
+    }
+
+    [Authorize(Policy = AuthorizationPolicies.EditPlanningBudget)]
     [HttpPost("create")]
     public async Task<IActionResult> Create(
         Guid fiscalYearId, Guid versionId, string description,
