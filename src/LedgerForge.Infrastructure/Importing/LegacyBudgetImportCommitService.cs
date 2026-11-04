@@ -27,7 +27,10 @@ public sealed class LegacyBudgetImportCommitService(LedgerForgeDbContext dbConte
     public async Task<IReadOnlyList<ImportCommitTarget>> ListTargetsAsync(
         CancellationToken cancellationToken = default)
     {
-        return await dbContext.BudgetVersions
+        // Keep the SQL-translated query in terms of primitive columns. EF Core
+        // need not interpret ordering across a user-defined record constructor
+        // when returning here immediately after an import has been accepted.
+        var targets = await dbContext.BudgetVersions
             .AsNoTracking()
             .Where(version => !version.IsLocked)
             .Join(
@@ -37,15 +40,24 @@ public sealed class LegacyBudgetImportCommitService(LedgerForgeDbContext dbConte
                     year.Status != FiscalYearStatus.Archived),
                 version => version.FiscalYearId,
                 year => year.Id,
-                (version, year) => new ImportCommitTarget(
-                    year.Id,
-                    year.DisplayName,
-                    version.Id,
-                    version.Name,
-                    version.VersionNumber))
+                (version, year) => new
+                {
+                    FiscalYearId = year.Id,
+                    FiscalYearName = year.DisplayName,
+                    BudgetVersionId = version.Id,
+                    BudgetVersionName = version.Name,
+                    VersionNumber = version.VersionNumber
+                })
             .OrderByDescending(x => x.FiscalYearName)
             .ThenByDescending(x => x.VersionNumber)
             .ToListAsync(cancellationToken);
+
+        return targets.Select(x => new ImportCommitTarget(
+            x.FiscalYearId,
+            x.FiscalYearName,
+            x.BudgetVersionId,
+            x.BudgetVersionName,
+            x.VersionNumber)).ToArray();
     }
 
     public async Task<ImportCommitResult> CommitAsync(
