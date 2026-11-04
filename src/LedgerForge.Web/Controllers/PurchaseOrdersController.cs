@@ -54,6 +54,43 @@ public sealed class PurchaseOrdersController(
     }
 
     [Authorize(Policy = AuthorizationPolicies.ManageProcurement)]
+    [HttpPost("{id:guid}/edit")]
+    public Task<IActionResult> Edit(Guid id, string number, string description, CancellationToken cancellationToken)
+        => RunTransition(id, () => procurementService.UpdateDraftAsync(id, number, description, cancellationToken));
+
+    [Authorize(Policy = AuthorizationPolicies.ManageProcurement)]
+    [HttpPost("{id:guid}/delete")]
+    public async Task<IActionResult> Delete(Guid id, string reason, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await procurementService.ArchiveDraftAsync(id, RequireActor(), reason, cancellationToken);
+            return RedirectToAction(nameof(Index), new { saved = true });
+        }
+        catch (KeyNotFoundException) { return NotFound(); }
+        catch (Exception exception) when (exception is ArgumentException or InvalidOperationException)
+        {
+            TempData["PurchaseOrderError"] = exception.Message;
+            return RedirectToAction(nameof(Details), new { id });
+        }
+    }
+
+    [Authorize(Policy = AuthorizationPolicies.ManageProcurement)]
+    [HttpPost("{id:guid}/lines/{lineId:guid}/update")]
+    public Task<IActionResult> UpdateLine(
+        Guid id, Guid lineId, string description, decimal quantity, decimal unitCost,
+        Guid? budgetItemId, Guid? financeAccountId, Guid? departmentId, Guid? locationId,
+        CancellationToken cancellationToken)
+        => RunTransition(id, () => procurementService.UpdateLineAsync(
+            id, lineId, description, quantity, unitCost, budgetItemId, financeAccountId,
+            departmentId, locationId, cancellationToken));
+
+    [Authorize(Policy = AuthorizationPolicies.ManageProcurement)]
+    [HttpPost("{id:guid}/lines/{lineId:guid}/delete")]
+    public Task<IActionResult> DeleteLine(Guid id, Guid lineId, CancellationToken cancellationToken)
+        => RunTransition(id, () => procurementService.DeleteLineAsync(id, lineId, cancellationToken));
+
+    [Authorize(Policy = AuthorizationPolicies.ManageProcurement)]
     [HttpPost("{id:guid}/change-orders")]
     public async Task<IActionResult> CreateChangeOrder(
         Guid id,
