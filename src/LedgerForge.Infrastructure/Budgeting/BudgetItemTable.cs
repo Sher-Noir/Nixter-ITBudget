@@ -51,7 +51,7 @@ public static class BudgetItemTable
             "frequency" => SortText(rows, x => x.FrequencyName, descending),
             "renewal" => SortValue(rows, x => x.RenewalDate, descending),
             "status" => SortText(rows, x => x.Status.ToString(), descending),
-            "approval" => SortText(rows, x => ApprovalLabel(x.Status), descending),
+            "approval" => SortText(rows, ApprovalLabel, descending),
             _ => SortValue(rows, x => NumericItemNumberKey(x.ItemNumber), descending)
         };
 
@@ -92,10 +92,11 @@ public static class BudgetItemTable
         return (1, 0, normalized.ToUpperInvariant());
     }
 
-    private static string ApprovalLabel(BudgetItemStatus status) => status switch
+    private static string ApprovalLabel(BudgetItemSummary item) => item.Status switch
     {
         BudgetItemStatus.Submitted => "Pending",
         BudgetItemStatus.Approved => "Approved",
+        BudgetItemStatus.Purchased when item.ApprovedTotal is not null => "Approved",
         BudgetItemStatus.Denied => "Denied",
         BudgetItemStatus.Deferred => "Deferred",
         _ => "Not Started"
