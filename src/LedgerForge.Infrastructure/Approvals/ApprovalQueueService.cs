@@ -214,6 +214,42 @@ public sealed class ApprovalQueueService(
         await dbContext.SaveChangesAsync(cancellationToken);
     }
 
+    public async Task SetBudgetItemPurchasedAsync(
+        Guid itemId, string actor, bool purchased, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(actor))
+            throw new ArgumentException("An authenticated actor is required.", nameof(actor));
+        var item = await RequireBudgetItemAsync(itemId, cancellationToken);
+        var fiscalYear = await dbContext.FiscalYears.AsNoTracking()
+            .SingleAsync(x => x.Id == item.FiscalYearId, cancellationToken);
+        if (fiscalYear.Status is FiscalYearStatus.Closed or FiscalYearStatus.Archived ||
+            fiscalYear.LockedAtUtc is not null)
+            throw new InvalidOperationException("A closed, archived, or locked fiscal year cannot change purchase status.");
+
+        // Purchase status is operational tracking, not an alteration to the
+        // budget version's financial approval/baseline or the actual ledger.
+        // Purchases must still be recordable after a budget version is locked.
+        var previousStatus = item.Status;
+        if (purchased) item.MarkPurchased();
+        else item.UndoPurchased();
+
+        dbContext.AuditEvents.Add(new AuditEvent(
+            actor,
+            nameof(BudgetItem),
+            item.Id,
+            AuditAction.Explicit,
+            System.Text.Json.JsonSerializer.Serialize(new { Status = previousStatus.ToString() }),
+            System.Text.Json.JsonSerializer.Serialize(new
+            {
+                Status = item.Status.ToString(),
+                TrackingOnly = true,
+                ApprovalAndActualsUnchanged = true
+            }),
+            Guid.NewGuid().ToString("N"),
+            DateTimeOffset.UtcNow));
+        await dbContext.SaveChangesAsync(cancellationToken);
+    }
+
     public async Task ApproveBudgetItemAsync(Guid itemId, string actor, string? note, CancellationToken cancellationToken = default)
     {
         var item = await RequireBudgetItemAsync(itemId, cancellationToken);
