@@ -63,13 +63,21 @@ public sealed class BudgetItem : AuditableEntity
 
     public bool IsPlanningEditable => Status is BudgetItemStatus.Draft or BudgetItemStatus.Proposed or BudgetItemStatus.Deferred;
 
-    public void ChangeCost(decimal quantity, decimal unitCost)
+    public void ChangeCost(decimal quantity, decimal unitCost, bool allowDirectApprovedEdits = false)
     {
-        EnsurePlanningEditable();
+        EnsurePlanningEditable(allowDirectApprovedEdits);
         ValidateCost(quantity, unitCost);
+        var newTotal = DomainBudgetCalculator.Multiply(quantity, unitCost);
+        var changed = newTotal != PlannedTotal;
         Quantity = quantity;
         UnitCost = unitCost;
-        PlannedTotal = DomainBudgetCalculator.Multiply(quantity, unitCost);
+        PlannedTotal = newTotal;
+
+        // When editing an already approved/operational item without another
+        // approval cycle, use the new cost as the current revised budget while
+        // retaining ApprovedTotal as the historical decision amount.
+        if (changed && allowDirectApprovedEdits && IsApprovedOrOperational)
+            RevisedTotal = newTotal;
     }
 
     public void UpdatePlanningDetails(
@@ -85,9 +93,10 @@ public sealed class BudgetItem : AuditableEntity
         Guid? locationId,
         Guid? needLevelId,
         Guid? internalCategoryId,
-        Guid? frequencyId)
+        Guid? frequencyId,
+        bool allowDirectApprovedEdits = false)
     {
-        EnsurePlanningEditable();
+        EnsurePlanningEditable(allowDirectApprovedEdits);
         ValidateItemNumber(itemNumber);
         ValidateDescription(description);
         if (!Enum.IsDefined(purchaseType)) throw new ArgumentOutOfRangeException(nameof(purchaseType));
@@ -107,9 +116,9 @@ public sealed class BudgetItem : AuditableEntity
         FrequencyId = NormalizeId(frequencyId, nameof(frequencyId));
     }
 
-    public void UpdateVendorAndNotes(Guid? vendorId, string? notes)
+    public void UpdateVendorAndNotes(Guid? vendorId, string? notes, bool allowDirectApprovedEdits = false)
     {
-        EnsurePlanningEditable();
+        EnsurePlanningEditable(allowDirectApprovedEdits);
         VendorId = NormalizeId(vendorId, nameof(vendorId));
         var normalizedNotes = NormalizeOptional(notes);
         if (normalizedNotes?.Length > 2000)
@@ -217,9 +226,12 @@ public sealed class BudgetItem : AuditableEntity
         RevisedTotal = revisedTotal;
     }
 
-    private void EnsurePlanningEditable()
+    private bool IsApprovedOrOperational =>
+        Status is BudgetItemStatus.Approved or BudgetItemStatus.Active or BudgetItemStatus.Purchased;
+
+    private void EnsurePlanningEditable(bool allowDirectApprovedEdits = false)
     {
-        if (!IsPlanningEditable)
+        if (!IsPlanningEditable && !(allowDirectApprovedEdits && IsApprovedOrOperational && !IsArchived))
             throw new InvalidOperationException($"Budget item cannot be edited from status {Status}.");
     }
 
