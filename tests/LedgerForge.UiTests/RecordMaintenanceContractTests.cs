@@ -44,6 +44,7 @@ public sealed class RecordMaintenanceContractTests
         var ledger = Read("src", "LedgerForge.Infrastructure", "Actuals", "ActualLedgerService.cs");
         var controller = Read("src", "LedgerForge.Web", "Controllers", "ActualsController.cs");
         var view = Read("src", "LedgerForge.Web", "Views", "Actuals", "Index.cshtml");
+        var modal = Read("src", "LedgerForge.Web", "Views", "Actuals", "_Modal.cshtml");
         var budget = Read("src", "LedgerForge.Web", "Views", "Budget", "Index.cshtml");
         var planning = Read("src", "LedgerForge.Infrastructure", "Budgeting", "BudgetPlanningService.cs");
         var table = Read("src", "LedgerForge.Infrastructure", "Budgeting", "BudgetItemTable.cs");
@@ -53,6 +54,8 @@ public sealed class RecordMaintenanceContractTests
         Assert.Contains("var replacementId = await PostManualAsync(", ledger, StringComparison.Ordinal);
         Assert.Contains("[HttpPost(\"{id:guid}/correct\")]", controller, StringComparison.Ordinal);
         Assert.Contains("/actuals/@transaction.Id/correct", view, StringComparison.Ordinal);
+        Assert.Contains("/actuals/@transaction.Id/correct", modal, StringComparison.Ordinal);
+        Assert.Contains("Void with reversal", modal, StringComparison.Ordinal);
         Assert.Contains("Void with reversal", view, StringComparison.Ordinal);
         Assert.Contains("href=\"@SortUrl(\"actual\")\"", budget, StringComparison.Ordinal);
         Assert.Contains("x.Actual", table, StringComparison.Ordinal);
