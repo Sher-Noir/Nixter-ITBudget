@@ -82,7 +82,7 @@ public sealed class BulkApprovalAndRenewalPlanningTests
 
         var planner = new NextFiscalYearRenewalPlanningService(db, new RenewalProjectionService(db));
         var preview = await planner.GetAsync(source.Id, target.Id, targetVersion.Id, 5m);
-        var item = Assert.Single(preview.Candidates.Where(x => x.Reference == contract.ContractNumber));
+        var item = Assert.Single(preview.Candidates, x => x.Reference == contract.ContractNumber);
         Assert.Equal("Auto-renew forecast", item.Source);
         Assert.Equal(new DateOnly(2044, 11, 15), item.RenewalDate);
         Assert.Equal(new DateOnly(2044, 10, 1), item.NoticeDate);
