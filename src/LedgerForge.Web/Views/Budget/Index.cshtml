@@ -92,10 +92,11 @@
         _ => status.ToString()
     };
 
-    string ApprovalLabel(BudgetItemStatus status) => status switch
+    string ApprovalLabel(BudgetItemSummary item) => item.Status switch
     {
         BudgetItemStatus.Submitted => "Pending",
         BudgetItemStatus.Approved => "Approved",
+        BudgetItemStatus.Purchased when item.ApprovedTotal is not null => "Approved",
         BudgetItemStatus.Denied => "Denied",
         BudgetItemStatus.Deferred => "Deferred",
         _ => "Not Started"
@@ -325,7 +326,7 @@
                                         <td>@(item.FrequencyName ?? "—")</td>
                                         <td>@(item.RenewalDate?.ToString("MM/dd/yyyy") ?? "—")</td>
                                         <td><span class="lf-status-dot"></span>@FriendlyStatus(item.Status)</td>
-                                        <td><span class="badge @(item.Status == BudgetItemStatus.Approved ? "lf-badge-success" : item.Status == BudgetItemStatus.Submitted ? "lf-badge-warning" : item.Status == BudgetItemStatus.Denied ? "lf-badge-danger" : "lf-badge-muted")">@ApprovalLabel(item.Status)</span></td>
+                                        <td><span class="badge @((item.Status == BudgetItemStatus.Approved || (item.Status == BudgetItemStatus.Purchased && item.ApprovedTotal is not null)) ? "lf-badge-success" : item.Status == BudgetItemStatus.Submitted ? "lf-badge-warning" : item.Status == BudgetItemStatus.Denied ? "lf-badge-danger" : "lf-badge-muted")">@ApprovalLabel(item)</span></td>
                                     </tr>
                                 }
                                 </tbody>
