@@ -52,6 +52,52 @@ public sealed class BulkApprovalAndRenewalPlanningTests
     }
 
     [Fact]
+    public async Task ActiveAutoRenewContract_ProjectsNextYearNoticeAndVendor_WhenSqlGateIsAvailable()
+    {
+        var connection = Environment.GetEnvironmentVariable("ConnectionStrings__LedgerForge");
+        if (string.IsNullOrWhiteSpace(connection)) return;
+
+        var options = new DbContextOptionsBuilder<LedgerForgeDbContext>()
+            .UseSqlServer(connection).Options;
+        await using var db = new LedgerForgeDbContext(options);
+        var suffix = Guid.NewGuid().ToString("N")[..8];
+        var source = new FiscalYear("Renew src " + suffix, new DateOnly(2043, 1, 1), new DateOnly(2043, 12, 31), 2043);
+        var target = new FiscalYear("Renew nxt " + suffix, new DateOnly(2044, 1, 1), new DateOnly(2044, 12, 31), 2044);
+        source.SetStatus(FiscalYearStatus.Active);
+        target.SetStatus(FiscalYearStatus.Planning);
+        var sourceVersion = new BudgetVersion(source.Id, "Source", BudgetVersionType.InitialPlanning, 1);
+        var targetVersion = new BudgetVersion(target.Id, "Next FY", BudgetVersionType.InitialPlanning, 1);
+        var vendor = new LedgerForge.Domain.Procurement.Vendor("RENEW-" + suffix, "Vendor " + suffix);
+        var contract = new LedgerForge.Domain.Procurement.Contract(
+            vendor.Id, "CONTRACT-" + suffix, "Auto-renew license",
+            new DateOnly(2043, 1, 1), new DateOnly(2043, 11, 15),
+            240m, autoRenew: true, renewalNoticeDays: 45);
+        contract.Activate("test-actor", DateTimeOffset.UtcNow);
+
+        db.FiscalYears.AddRange(source, target);
+        db.BudgetVersions.AddRange(sourceVersion, targetVersion);
+        db.Vendors.Add(vendor);
+        db.Contracts.Add(contract);
+        await db.SaveChangesAsync();
+
+        var planner = new NextFiscalYearRenewalPlanningService(db, new RenewalProjectionService(db));
+        var preview = await planner.GetAsync(source.Id, target.Id, targetVersion.Id, 5m);
+        var item = Assert.Single(preview.Candidates.Where(x => x.Reference == contract.ContractNumber));
+        Assert.Equal("Auto-renew forecast", item.Source);
+        Assert.Equal(new DateOnly(2044, 11, 15), item.RenewalDate);
+        Assert.Equal(new DateOnly(2044, 10, 1), item.NoticeDate);
+        Assert.Equal(252m, item.ProjectedTotal);
+        Assert.Equal(vendor.Id, item.VendorId);
+
+        Assert.Equal(1, await planner.CreateDraftsAsync(
+            source.Id, target.Id, targetVersion.Id, 5m, [item.Key]));
+        var draft = await db.BudgetItems.AsNoTracking()
+            .SingleAsync(x => x.BudgetVersionId == targetVersion.Id);
+        Assert.Equal(vendor.Id, draft.VendorId);
+        Assert.Equal(BudgetItemStatus.Draft, draft.Status);
+    }
+
+    [Fact]
     public async Task NextYearRenewalCarryForward_OnlyCreatesDraftsOnce_WhenSqlGateIsAvailable()
     {
         var connection = Environment.GetEnvironmentVariable("ConnectionStrings__LedgerForge");
