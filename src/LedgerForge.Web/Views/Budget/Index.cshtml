@@ -86,6 +86,7 @@
         BudgetItemStatus.Denied => "Denied",
         BudgetItemStatus.Deferred => "Deferred",
         BudgetItemStatus.Active => "Active",
+        BudgetItemStatus.Purchased => "Purchased",
         BudgetItemStatus.Cancelled => "Cancelled",
         BudgetItemStatus.Archived => "Archived",
         _ => status.ToString()
@@ -128,6 +129,10 @@
         @if (Model.Saved)
         {
             <div class="card lf-alert lf-alert-success" role="status">Budget item added.</div>
+        }
+        @if (Context.Request.Query.ContainsKey("purchasedChanged"))
+        {
+            <div class="card lf-alert lf-alert-success" role="status">Budget item purchase tracking status updated. Financial records were not changed.</div>
         }
         @if (!string.IsNullOrWhiteSpace(actualError))
         {
@@ -428,6 +433,26 @@
                 <section class="lf-drawer-card">
                     <h3>Quick Actions</h3>
                     <a class="button primary" href="/budget/items/@selectedItem.Id">Open Full Item</a>
+                    @if (Model.CanEdit && (selectedItem.Status is BudgetItemStatus.Draft or BudgetItemStatus.Proposed or BudgetItemStatus.Deferred or BudgetItemStatus.Approved or BudgetItemStatus.Active))
+                    {
+                        <form method="post" action="/budget/items/@selectedItem.Id/purchased">
+                            @Html.AntiForgeryToken()
+                            <input type="hidden" name="returnToBudget" value="true" />
+                            <input type="hidden" name="fiscalYearId" value="@snapshot.SelectedFiscalYearId" />
+                            <input type="hidden" name="versionId" value="@snapshot.SelectedVersionId" />
+                            <button class="button" type="submit">✓ Mark Purchased</button>
+                        </form>
+                    }
+                    @if (Model.CanEdit && selectedItem.Status == BudgetItemStatus.Purchased)
+                    {
+                        <form method="post" action="/budget/items/@selectedItem.Id/undo-purchased">
+                            @Html.AntiForgeryToken()
+                            <input type="hidden" name="returnToBudget" value="true" />
+                            <input type="hidden" name="fiscalYearId" value="@snapshot.SelectedFiscalYearId" />
+                            <input type="hidden" name="versionId" value="@snapshot.SelectedVersionId" />
+                            <button class="button" type="submit">Undo Purchased</button>
+                        </form>
+                    }
                     <a class="button" href="/purchase-orders">Purchase Orders</a>
                     <a class="button" href="/documents">Documents</a>
                 </section>
