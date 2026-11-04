@@ -3,7 +3,8 @@ using LedgerForge.Domain.Common;
 namespace LedgerForge.Domain.Budgeting;
 
 public enum PurchaseType { New, Replacement, Renewal, Expansion, Project, Other }
-public enum BudgetItemStatus { Draft, Proposed, Submitted, Approved, Denied, Deferred, Active, Cancelled, Archived }
+// Add new status values at the end to preserve existing database enum integer values.
+public enum BudgetItemStatus { Draft, Proposed, Submitted, Approved, Denied, Deferred, Active, Cancelled, Archived, Purchased }
 
 public sealed class BudgetItem : AuditableEntity
 {
@@ -165,6 +166,30 @@ public sealed class BudgetItem : AuditableEntity
         DecisionAtUtc = decidedAtUtc;
         DecisionNote = NormalizeNote(reason, required: true);
         Status = BudgetItemStatus.Deferred;
+    }
+
+    /// <summary>
+    /// Records that procurement has happened. This is an operational tracking
+    /// status, not an approval decision, purchase order, invoice, or actual
+    /// ledger posting. The financial amounts and approval history are unchanged.
+    /// </summary>
+    public void MarkPurchased()
+    {
+        if (IsArchived || Status is BudgetItemStatus.Submitted or BudgetItemStatus.Denied or
+            BudgetItemStatus.Cancelled or BudgetItemStatus.Archived or BudgetItemStatus.Purchased)
+            throw new InvalidOperationException($"Budget item in status {Status} cannot be marked Purchased.");
+        Status = BudgetItemStatus.Purchased;
+    }
+
+    /// <summary>
+    /// Corrects an accidental Purchased flag. Does not alter financial entries.
+    /// Items with prior approved totals return to Approved; others to Draft.
+    /// </summary>
+    public void UndoPurchased()
+    {
+        if (Status != BudgetItemStatus.Purchased || IsArchived)
+            throw new InvalidOperationException("Only a Purchased budget item can have its purchase flag removed.");
+        Status = ApprovedTotal is not null ? BudgetItemStatus.Approved : BudgetItemStatus.Draft;
     }
 
     public void SetStatus(BudgetItemStatus status)
