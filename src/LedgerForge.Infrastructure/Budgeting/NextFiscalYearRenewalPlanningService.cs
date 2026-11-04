@@ -101,14 +101,41 @@ public sealed class NextFiscalYearRenewalPlanningService(
         var frequencies = await dbContext.Frequencies.AsNoTracking()
             .ToDictionaryAsync(x => x.Id, x => x.Code, cancellationToken);
 
-        // Contracts scheduled in the target year provide authoritative dates,
-        // notice deadlines and estimates for linked source budget items.
-        var projection = (await renewalProjectionService
-            .GetForFiscalYearAsync(target.Id, cancellationToken))
+        // Explicit target-year contract decisions take precedence. Auto-renew
+        // agreements expiring in the source fiscal year are also projected one
+        // fiscal year forward when no target-year renewal has been recorded.
+        // These are estimates, not signed commitments.
+        var targetProjection = await renewalProjectionService.GetForFiscalYearAsync(
+            target.Id, cancellationToken);
+        var explicitContractIds = targetProjection
+            .Where(x => x.ContractId is not null)
+            .Select(x => x.ContractId!.Value).ToHashSet();
+        var projection = targetProjection
             .Where(x => x.ContractId is not null &&
                 !string.Equals(x.Status, ContractRenewalStatus.Terminate.ToString(), StringComparison.OrdinalIgnoreCase))
-            .OrderBy(x => x.RenewalDate)
-            .ToArray();
+            .ToList();
+        var autoRenewContracts = await dbContext.Contracts.AsNoTracking()
+            .Where(x => x.AutoRenew && x.State == ContractState.Active &&
+                x.EndDate >= source.StartDate && x.EndDate <= source.EndDate)
+            .ToListAsync(cancellationToken);
+        var autoRenewVendorIds = autoRenewContracts.Select(x => x.VendorId).Distinct().ToArray();
+        var autoRenewVendors = autoRenewVendorIds.Length == 0
+            ? new Dictionary<Guid, string>()
+            : await dbContext.Vendors.AsNoTracking()
+                .Where(x => autoRenewVendorIds.Contains(x.Id))
+                .ToDictionaryAsync(x => x.Id, x => x.Name, cancellationToken);
+        foreach (var contract in autoRenewContracts.Where(x => !explicitContractIds.Contains(x.Id)))
+        {
+            var date = contract.EndDate.AddYears(target.StartDate.Year - source.StartDate.Year);
+            if (date < target.StartDate || date > target.EndDate) continue;
+            projection.Add(new RenewalProjectionItem(
+                contract.Id, "Auto-renew forecast", contract.BudgetItemId,
+                contract.Id, contract.ContractNumber, contract.Name,
+                autoRenewVendors.GetValueOrDefault(contract.VendorId),
+                date, date.AddDays(-contract.RenewalNoticeDays),
+                contract.EstimatedAnnualAmount, "Projected auto-renew"));
+        }
+        projection = projection.OrderBy(x => x.RenewalDate).ToList();
         var contractIds = projection.Select(x => x.ContractId!.Value).Distinct().ToArray();
         var contractVendorIds = contractIds.Length == 0
             ? new Dictionary<Guid, Guid>()
@@ -148,7 +175,8 @@ public sealed class NextFiscalYearRenewalPlanningService(
             var stableIdentifier = item.StableIdentifier;
             results.Add(new RenewalPlanningCandidate(
                 "B:" + item.Id.ToString("N"),
-                contract is null ? "Recurring budget item" : "Linked contract renewal",
+                contract is null ? "Recurring budget item" :
+                    contract.Source == "Auto-renew forecast" ? "Linked auto-renew forecast" : "Linked contract renewal",
                 item.ItemNumber, item.Description,
                 contract?.Vendor ?? (item.VendorId is Guid vendorId ? vendors.GetValueOrDefault(vendorId) : null),
                 date, contract?.NoticeDate, qty, baseline, unitCost, checked(qty * unitCost),
@@ -171,7 +199,8 @@ public sealed class NextFiscalYearRenewalPlanningService(
             // re-running the planner idempotent even when item numbers change.
             results.Add(new RenewalPlanningCandidate(
                 "C:" + contract.ContractId.Value.ToString("N"),
-                "Contract renewal", contract.Reference, contract.Description, contract.Vendor,
+                contract.Source == "Auto-renew forecast" ? "Auto-renew forecast" : "Contract renewal",
+                contract.Reference, contract.Description, contract.Vendor,
                 contract.RenewalDate, contract.NoticeDate, 1m,
                 contract.EstimatedAmount, unitCost, unitCost,
                 alreadyPlannedIds.Contains(stableIdentifier), false,
