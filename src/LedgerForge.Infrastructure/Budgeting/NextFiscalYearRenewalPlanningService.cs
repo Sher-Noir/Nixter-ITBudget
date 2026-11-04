@@ -109,6 +109,12 @@ public sealed class NextFiscalYearRenewalPlanningService(
                 !string.Equals(x.Status, ContractRenewalStatus.Terminate.ToString(), StringComparison.OrdinalIgnoreCase))
             .OrderBy(x => x.RenewalDate)
             .ToArray();
+        var contractIds = projection.Select(x => x.ContractId!.Value).Distinct().ToArray();
+        var contractVendorIds = contractIds.Length == 0
+            ? new Dictionary<Guid, Guid>()
+            : await dbContext.Contracts.AsNoTracking()
+                .Where(x => contractIds.Contains(x.Id))
+                .ToDictionaryAsync(x => x.Id, x => x.VendorId, cancellationToken);
         var linked = projection.Where(x => x.BudgetItemId is not null)
             .GroupBy(x => x.BudgetItemId!.Value)
             .ToDictionary(x => x.Key, x => x.First());
@@ -125,6 +131,10 @@ public sealed class NextFiscalYearRenewalPlanningService(
                 continue;
 
             linked.TryGetValue(item.Id, out var contract);
+            Guid? renewalVendorId = item.VendorId;
+            if (renewalVendorId is null && contract?.ContractId is Guid linkedContractId &&
+                contractVendorIds.TryGetValue(linkedContractId, out var linkedVendorId))
+                renewalVendorId = linkedVendorId;
             var fallbackDate = item.RenewalDate ?? item.EstimatedPurchaseDate;
             var (date, needsReview) = contract is not null
                 ? (contract.RenewalDate, false)
@@ -144,7 +154,7 @@ public sealed class NextFiscalYearRenewalPlanningService(
                 date, contract?.NoticeDate, qty, baseline, unitCost, checked(qty * unitCost),
                 alreadyPlannedIds.Contains(stableIdentifier), needsReview,
                 stableIdentifier, item.ItemNumber, item.ReasonPurpose, item.Notes,
-                item.VendorId, item.BudgetSectionId, item.FinanceTypeId,
+                renewalVendorId, item.BudgetSectionId, item.FinanceTypeId,
                 item.DepartmentId, item.LocationId, item.NeedLevelId,
                 item.InternalCategoryId, item.FrequencyId));
         }
@@ -167,7 +177,9 @@ public sealed class NextFiscalYearRenewalPlanningService(
                 alreadyPlannedIds.Contains(stableIdentifier), false,
                 stableIdentifier, "", "Review renewal terms and notice deadline before commitment.",
                 "Source contract: " + contract.Reference,
-                null, null, null, null, null, null, null, null));
+                contractVendorIds.TryGetValue(contract.ContractId.Value, out var contractVendorId)
+                    ? contractVendorId : null,
+                null, null, null, null, null, null, null));
         }
 
         return new(years, source.Id, target.Id, versions, selectedVersion.Id,
