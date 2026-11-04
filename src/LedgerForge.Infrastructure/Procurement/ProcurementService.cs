@@ -361,7 +361,7 @@ public sealed class ProcurementService(LedgerForgeDbContext dbContext)
             throw new InvalidOperationException($"Purchase order number '{newNumber}' already exists in the selected fiscal year.");
 
         var sourceLines = await dbContext.PurchaseOrderLines.AsNoTracking()
-            .Where(x => x.PurchaseOrderId == source.Id)
+            .Where(x => x.PurchaseOrderId == source.Id && !x.IsArchived)
             .OrderBy(x => x.LineNumber)
             .ToListAsync(cancellationToken);
         if (sourceLines.Count == 0) throw new InvalidOperationException("Issued purchase order has no lines to revise.");
@@ -456,7 +456,7 @@ public sealed class ProcurementService(LedgerForgeDbContext dbContext)
         if (await dbContext.Set<PurchaseReceipt>().AnyAsync(x => x.PurchaseOrderId == purchaseOrderId && x.ReceiptNumber == receiptNumber.Trim(), cancellationToken))
             throw new InvalidOperationException($"Receipt number '{receiptNumber.Trim()}' already exists for this purchase order.");
 
-        var lines = await dbContext.PurchaseOrderLines.Where(x => x.PurchaseOrderId == purchaseOrderId).ToListAsync(cancellationToken);
+        var lines = await dbContext.PurchaseOrderLines.Where(x => x.PurchaseOrderId == purchaseOrderId && !x.IsArchived).ToListAsync(cancellationToken);
         var lineById = lines.ToDictionary(x => x.Id);
         var selectedLineIds = quantities.Where(x => x.Value > 0m).Select(x => x.Key).ToArray();
         if (selectedLineIds.Any(id => !lineById.ContainsKey(id)))
