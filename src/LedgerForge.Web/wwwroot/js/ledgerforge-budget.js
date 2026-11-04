@@ -94,7 +94,10 @@
             search.setAttribute("aria-activedescendant", active.id);
             active.scrollIntoView({block: "nearest"});
         };
-        search.addEventListener("focus", () => render(""));
+        search.addEventListener("focus", () => {
+            search.select(); // Typing immediately replaces the current selection.
+            render("");
+        });
         search.addEventListener("input", () => render(search.value));
         search.addEventListener("keydown", event => {
             if (event.key === "Escape") { event.preventDefault(); close(); }
