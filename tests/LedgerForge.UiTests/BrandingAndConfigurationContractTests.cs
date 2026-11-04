@@ -13,6 +13,9 @@ public sealed class BrandingAndConfigurationContractTests
         Assert.Contains("ResolveBudgetItemLogoAsync", service, StringComparison.Ordinal);
         Assert.Contains("BrandingLogoSource.BudgetItem", service, StringComparison.Ordinal);
         Assert.Contains("BrandingLogoSource.Vendor", service, StringComparison.Ordinal);
+        Assert.Contains("x.VendorId", service, StringComparison.Ordinal);
+        Assert.Contains("assignedVendorId", service, StringComparison.Ordinal);
+        Assert.Contains("LegacyBudgetItemVendorMatcher.MatchDescriptionPrefix", service, StringComparison.Ordinal);
         Assert.Contains("orderby order.CreatedAtUtc descending", service, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("/branding-assets/budget-items/@item.Id/logo", itemView, StringComparison.Ordinal);
         Assert.Contains("Vendor logo fallback", itemView, StringComparison.Ordinal);
