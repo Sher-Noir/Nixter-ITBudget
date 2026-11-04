@@ -127,6 +127,18 @@ public sealed class BudgetItem : AuditableEntity
         Status = BudgetItemStatus.Submitted;
     }
 
+    /// <summary>
+    /// Withdraws a submitted item, or opens an approved item for a new planning revision.
+    /// The prior approved monetary total and approval metadata are deliberately preserved
+    /// until a new approval is issued; changes must be resubmitted for approval.
+    /// </summary>
+    public void ReopenForRevision()
+    {
+        if (Status is not BudgetItemStatus.Submitted and not BudgetItemStatus.Approved)
+            throw new InvalidOperationException($"Budget item in status {Status} cannot be reopened for editing.");
+        Status = BudgetItemStatus.Draft;
+    }
+
     public void Approve(string actor, DateTimeOffset decidedAtUtc, string? note = null)
     {
         EnsureSubmitted();
