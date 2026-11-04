@@ -56,6 +56,9 @@ public sealed class BulkApprovalAndRenewalPlannerContractTests
         Assert.Contains("[HttpPost(\"plan/create-fiscal-year\")]", controller, StringComparison.Ordinal);
         Assert.Contains("AuthorizationPolicies.ManageFiscalYears", controller, StringComparison.Ordinal);
         Assert.Contains("Create next fiscal year and open planner", view, StringComparison.Ordinal);
+        Assert.Contains("plan/export.csv", controller, StringComparison.Ordinal);
+        Assert.Contains("ledgerforge-next-fy-renewal-forecast.csv", controller, StringComparison.Ordinal);
+        Assert.Contains("Export forecast CSV", view, StringComparison.Ordinal);
         Assert.Contains("AuthorizationPolicies.EditPlanningBudget", controller, StringComparison.Ordinal);
         Assert.Contains("href=\"/renewals/plan\"", calendar, StringComparison.Ordinal);
         Assert.Contains("data-bulk-select-all=\"renewal-carry-form\"", view, StringComparison.Ordinal);
