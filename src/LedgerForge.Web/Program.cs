@@ -117,6 +117,7 @@ builder.Services.AddScoped<RenewalProjectionService>();
 builder.Services.AddScoped<ReportingService>();
 builder.Services.AddScoped<FinanceExportService>();
 builder.Services.AddScoped<RenewalCalendarService>();
+builder.Services.AddScoped<NextFiscalYearRenewalPlanningService>();
 builder.Services.AddScoped<DashboardService>();
 builder.Services.AddScoped<WorkQueueService>();
 builder.Services.AddScoped<DeploymentDiagnosticsService>();
