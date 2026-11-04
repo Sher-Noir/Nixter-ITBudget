@@ -69,6 +69,19 @@ public sealed class PurchasedBudgetItemTests
         Assert.Throws<InvalidOperationException>(() => item.UndoPurchased());
     }
 
+    [Fact]
+    public void UndoPurchased_CanRestoreAnActiveOrProposedPriorStatus()
+    {
+        foreach (var priorStatus in new[] { BudgetItemStatus.Active, BudgetItemStatus.Proposed })
+        {
+            var item = NewItem();
+            item.SetStatus(priorStatus);
+            item.MarkPurchased();
+            item.UndoPurchased(priorStatus);
+            Assert.Equal(priorStatus, item.Status);
+        }
+    }
+
     private static BudgetItem NewItem() =>
         new(Guid.NewGuid(), Guid.NewGuid(), "TEST-ITEM", "1", "Test purchase", 2m, 25m);
 }
