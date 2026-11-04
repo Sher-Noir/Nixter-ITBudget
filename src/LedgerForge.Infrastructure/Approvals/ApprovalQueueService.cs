@@ -230,8 +230,35 @@ public sealed class ApprovalQueueService(
         // budget version's financial approval/baseline or the actual ledger.
         // Purchases must still be recordable after a budget version is locked.
         var previousStatus = item.Status;
-        if (purchased) item.MarkPurchased();
-        else item.UndoPurchased();
+        if (purchased)
+        {
+            item.MarkPurchased();
+        }
+        else
+        {
+            // The last explicit Purchased event includes the original status;
+            // restore it exactly so an Active item does not become Draft by
+            // accident when the purchase flag is undone.
+            var previousStatusJson = await dbContext.AuditEvents.AsNoTracking()
+                .Where(x => x.EntityType == nameof(BudgetItem) && x.EntityId == item.Id &&
+                    x.Action == AuditAction.Explicit && x.AfterJson != null &&
+                    x.AfterJson.Contains("\"TrackingOnly\":true") &&
+                    x.AfterJson.Contains("\"Status\":\"Purchased\""))
+                .OrderByDescending(x => x.OccurredAtUtc)
+                .Select(x => x.BeforeJson)
+                .FirstOrDefaultAsync(cancellationToken);
+
+            BudgetItemStatus? restoreStatus = null;
+            if (!string.IsNullOrWhiteSpace(previousStatusJson))
+            {
+                using var prior = System.Text.Json.JsonDocument.Parse(previousStatusJson);
+                if (prior.RootElement.TryGetProperty("Status", out var previousValue) &&
+                    Enum.TryParse<BudgetItemStatus>(previousValue.GetString(), out var parsed) &&
+                    Enum.IsDefined(parsed))
+                    restoreStatus = parsed;
+            }
+            item.UndoPurchased(restoreStatus);
+        }
 
         dbContext.AuditEvents.Add(new AuditEvent(
             actor,
