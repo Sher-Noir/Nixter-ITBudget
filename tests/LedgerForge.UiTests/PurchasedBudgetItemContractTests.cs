@@ -30,7 +30,7 @@ public sealed class PurchasedBudgetItemContractTests
         var service = Read("src", "LedgerForge.Infrastructure", "Approvals", "ApprovalQueueService.cs");
 
         Assert.Contains("public void MarkPurchased()", domain, StringComparison.Ordinal);
-        Assert.Contains("public void UndoPurchased()", domain, StringComparison.Ordinal);
+        Assert.Contains("public void UndoPurchased(BudgetItemStatus? previousStatus = null)", domain, StringComparison.Ordinal);
         Assert.Contains("item.MarkPurchased();", service, StringComparison.Ordinal);
         Assert.Contains("item.UndoPurchased(restoreStatus);", service, StringComparison.Ordinal);
         Assert.Contains("ApprovalAndActualsUnchanged = true", service, StringComparison.Ordinal);
