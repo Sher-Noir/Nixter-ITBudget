@@ -61,7 +61,7 @@ public sealed class BudgetItemWorkspaceService(
             from line in dbContext.PurchaseOrderLines.AsNoTracking()
             join order in dbContext.PurchaseOrders.AsNoTracking() on line.PurchaseOrderId equals order.Id
             join vendor in dbContext.Vendors.AsNoTracking() on order.VendorId equals vendor.Id
-            where line.BudgetItemId == itemId
+            where line.BudgetItemId == itemId && !line.IsArchived && !order.IsArchived
             select new
             {
                 order.Id,
@@ -88,7 +88,7 @@ public sealed class BudgetItemWorkspaceService(
             from allocation in dbContext.InvoiceAllocations.AsNoTracking()
             join invoice in dbContext.Invoices.AsNoTracking() on allocation.InvoiceId equals invoice.Id
             join vendor in dbContext.Vendors.AsNoTracking() on invoice.VendorId equals vendor.Id
-            where allocation.BudgetItemId == itemId
+            where allocation.BudgetItemId == itemId && !allocation.IsArchived && !invoice.IsArchived
             select new
             {
                 invoice.Id,
