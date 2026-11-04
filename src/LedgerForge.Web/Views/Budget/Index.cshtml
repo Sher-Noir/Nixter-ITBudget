@@ -1,5 +1,6 @@
 @model LedgerForge.Web.Models.Budgeting.BudgetPlanningViewModel
 @using LedgerForge.Domain.Budgeting
+@using LedgerForge.Infrastructure.Budgeting
 @{
     ViewData["Title"] = "Budget";
     var snapshot = Model.Snapshot;
@@ -28,6 +29,38 @@
             x.Description.Contains(searchFilter, StringComparison.OrdinalIgnoreCase) ||
             (x.ReasonPurpose?.Contains(searchFilter, StringComparison.OrdinalIgnoreCase) ?? false))
         .ToArray();
+
+    var requestedPage = int.TryParse(Context.Request.Query["page"].ToString(), out var parsedPage) ? parsedPage : 1;
+    var requestedSize = int.TryParse(Context.Request.Query["pageSize"].ToString(), out var parsedSize) ? parsedSize : BudgetItemTable.DefaultPageSize;
+    var table = BudgetItemTable.Create(
+        filteredItems,
+        Context.Request.Query["sort"].ToString(),
+        Context.Request.Query["dir"].ToString(),
+        requestedPage,
+        requestedSize);
+    var firstPageLink = Math.Max(1, table.PageNumber - 2);
+    var lastPageLink = Math.Min(table.TotalPages, firstPageLink + 4);
+    firstPageLink = Math.Max(1, lastPageLink - 4);
+
+    string TableUrl(int page, string? sort = null, string? direction = null, int? pageSize = null, Guid? itemId = null)
+        => Url.Action("Index", "Budget", new
+        {
+            fiscalYearId = snapshot.SelectedFiscalYearId,
+            versionId = snapshot.SelectedVersionId,
+            section = sectionFilter, category = categoryFilter, location = locationFilter,
+            vendor = vendorFilter, need = needFilter, status = statusFilter, q = searchFilter,
+            sort = sort ?? table.SortKey,
+            dir = direction ?? table.Direction,
+            page = page,
+            pageSize = pageSize ?? table.PageSize,
+            itemId
+        }) ?? "/budget";
+
+    string SortUrl(string key) => TableUrl(
+        1, key, key == table.SortKey && table.Direction == "asc" ? "desc" : "asc");
+    string SortGlyph(string key) => key == table.SortKey ? (table.Direction == "asc" ? "↑" : "↓") : "↕";
+    string SortAria(string key) => key != table.SortKey ? "none" :
+        (table.Direction == "asc" ? "ascending" : "descending");
 
     Guid.TryParse(Context.Request.Query["itemId"].ToString(), out var selectedItemId);
     var selectedItem = selectedItemId == Guid.Empty ? null : snapshot.Items.FirstOrDefault(x => x.Id == selectedItemId);
@@ -159,6 +192,9 @@
                 <form method="get" action="/budget" class="lf-budget-filters" aria-label="Budget filters">
                     <input type="hidden" name="fiscalYearId" value="@snapshot.SelectedFiscalYearId" />
                     <input type="hidden" name="versionId" value="@snapshot.SelectedVersionId" />
+                    <input type="hidden" name="sort" value="@table.SortKey" />
+                    <input type="hidden" name="dir" value="@table.Direction" />
+                    <input type="hidden" name="pageSize" value="@table.PageSize" />
                     <div class="lf-filter-search"><label for="q">Search</label><input id="q" name="q" value="@searchFilter" placeholder="Item # or description" /></div>
                     <div><label for="section">Section</label><select id="section" name="section"><option value="">All</option>@foreach (var value in sections){<option value="@value" selected="@(value == sectionFilter)">@value</option>}</select></div>
                     <div><label for="category">Category</label><select id="category" name="category"><option value="">All</option>@foreach (var value in categories){<option value="@value" selected="@(value == categoryFilter)">@value</option>}</select></div>
@@ -246,29 +282,29 @@
                             <table class="lf-table lf-budget-grid">
                                 <thead>
                                 <tr>
-                                    <th>Item #</th>
-                                    <th>Description</th>
-                                    <th>Section</th>
-                                    <th>Category</th>
-                                    <th>Vendor</th>
-                                    <th>Location</th>
-                                    <th class="lf-number">Qty</th>
-                                    <th class="lf-number">Unit Cost</th>
-                                    <th class="lf-number">Total</th>
-                                    <th>Need Level</th>
-                                    <th>Frequency</th>
-                                    <th>Renewal</th>
-                                    <th>Status</th>
-                                    <th>Approval</th>
+                                    <th aria-sort="@SortAria("itemNumber")"><a class="lf-budget-sort-link" href="@SortUrl("itemNumber")">Item # <span aria-hidden="true">@SortGlyph("itemNumber")</span></a></th>
+                                    <th aria-sort="@SortAria("description")"><a class="lf-budget-sort-link" href="@SortUrl("description")">Description <span aria-hidden="true">@SortGlyph("description")</span></a></th>
+                                    <th aria-sort="@SortAria("section")"><a class="lf-budget-sort-link" href="@SortUrl("section")">Section <span aria-hidden="true">@SortGlyph("section")</span></a></th>
+                                    <th aria-sort="@SortAria("category")"><a class="lf-budget-sort-link" href="@SortUrl("category")">Category <span aria-hidden="true">@SortGlyph("category")</span></a></th>
+                                    <th aria-sort="@SortAria("vendor")"><a class="lf-budget-sort-link" href="@SortUrl("vendor")">Vendor <span aria-hidden="true">@SortGlyph("vendor")</span></a></th>
+                                    <th aria-sort="@SortAria("location")"><a class="lf-budget-sort-link" href="@SortUrl("location")">Location <span aria-hidden="true">@SortGlyph("location")</span></a></th>
+                                    <th class="lf-number" aria-sort="@SortAria("quantity")"><a class="lf-budget-sort-link" href="@SortUrl("quantity")">Qty <span aria-hidden="true">@SortGlyph("quantity")</span></a></th>
+                                    <th class="lf-number" aria-sort="@SortAria("unitCost")"><a class="lf-budget-sort-link" href="@SortUrl("unitCost")">Unit Cost <span aria-hidden="true">@SortGlyph("unitCost")</span></a></th>
+                                    <th class="lf-number" aria-sort="@SortAria("total")"><a class="lf-budget-sort-link" href="@SortUrl("total")">Total <span aria-hidden="true">@SortGlyph("total")</span></a></th>
+                                    <th aria-sort="@SortAria("needLevel")"><a class="lf-budget-sort-link" href="@SortUrl("needLevel")">Need Level <span aria-hidden="true">@SortGlyph("needLevel")</span></a></th>
+                                    <th aria-sort="@SortAria("frequency")"><a class="lf-budget-sort-link" href="@SortUrl("frequency")">Frequency <span aria-hidden="true">@SortGlyph("frequency")</span></a></th>
+                                    <th aria-sort="@SortAria("renewal")"><a class="lf-budget-sort-link" href="@SortUrl("renewal")">Renewal <span aria-hidden="true">@SortGlyph("renewal")</span></a></th>
+                                    <th aria-sort="@SortAria("status")"><a class="lf-budget-sort-link" href="@SortUrl("status")">Status <span aria-hidden="true">@SortGlyph("status")</span></a></th>
+                                    <th aria-sort="@SortAria("approval")"><a class="lf-budget-sort-link" href="@SortUrl("approval")">Approval <span aria-hidden="true">@SortGlyph("approval")</span></a></th>
                                 </tr>
                                 </thead>
                                 <tbody>
-                                @foreach (var item in filteredItems)
+                                @foreach (var item in table.Rows)
                                 {
                                     var selected = selectedItem?.Id == item.Id;
                                     <tr class="@(selected ? "is-selected" : null)">
-                                        <td><a href="@Url.Action("Index", "Budget", new { fiscalYearId = snapshot.SelectedFiscalYearId, versionId = snapshot.SelectedVersionId, section = sectionFilter, category = categoryFilter, location = locationFilter, vendor = vendorFilter, need = needFilter, status = statusFilter, q = searchFilter, itemId = item.Id })"><strong>@item.ItemNumber</strong></a></td>
-                                        <td><a class="lf-budget-description" href="@Url.Action("Index", "Budget", new { fiscalYearId = snapshot.SelectedFiscalYearId, versionId = snapshot.SelectedVersionId, section = sectionFilter, category = categoryFilter, location = locationFilter, vendor = vendorFilter, need = needFilter, status = statusFilter, q = searchFilter, itemId = item.Id })">@item.Description</a></td>
+                                        <td><a href="@TableUrl(table.PageNumber, itemId: item.Id)"><strong>@item.ItemNumber</strong></a></td>
+                                        <td><a class="lf-budget-description" href="@TableUrl(table.PageNumber, itemId: item.Id)">@item.Description</a></td>
                                         <td>@(item.BudgetSectionName ?? "—")</td>
                                         <td>@(item.InternalCategoryName ?? item.FinanceTypeName ?? "—")</td>
                                         <td>@(item.VendorName ?? "—")</td>
@@ -286,6 +322,67 @@
                                 </tbody>
                             </table>
                         </div>
+                        <div class="lf-budget-pagination">
+                            <p class="lf-budget-page-summary" role="status">
+                                Showing <strong>@table.FirstRow–@table.LastRow</strong> of
+                                <strong>@table.TotalCount</strong> matching items
+                            </p>
+                            <form method="get" action="/budget" class="lf-budget-page-size" aria-label="Rows per page">
+                                <input type="hidden" name="fiscalYearId" value="@snapshot.SelectedFiscalYearId" />
+                                <input type="hidden" name="versionId" value="@snapshot.SelectedVersionId" />
+                                <input type="hidden" name="section" value="@sectionFilter" />
+                                <input type="hidden" name="category" value="@categoryFilter" />
+                                <input type="hidden" name="location" value="@locationFilter" />
+                                <input type="hidden" name="vendor" value="@vendorFilter" />
+                                <input type="hidden" name="need" value="@needFilter" />
+                                <input type="hidden" name="status" value="@statusFilter" />
+                                <input type="hidden" name="q" value="@searchFilter" />
+                                <input type="hidden" name="sort" value="@table.SortKey" />
+                                <input type="hidden" name="dir" value="@table.Direction" />
+                                <input type="hidden" name="page" value="1" />
+                                <label for="budget-page-size">Rows per page</label>
+                                <select id="budget-page-size" name="pageSize" data-budget-page-size>
+                                    @foreach (var size in new[] { 10, 25, 50, 100 })
+                                    {
+                                        <option value="@size" selected="@(size == table.PageSize)">@size</option>
+                                    }
+                                </select>
+                                <button type="submit">Apply</button>
+                            </form>
+                            <nav class="lf-budget-page-links" aria-label="Budget item pagination">
+                                @if (table.PageNumber > 1)
+                                {
+                                    <a href="@TableUrl(1)" aria-label="First page">« First</a>
+                                    <a href="@TableUrl(table.PageNumber - 1)" aria-label="Previous page">‹ Previous</a>
+                                }
+                                else
+                                {
+                                    <span class="is-disabled">« First</span>
+                                    <span class="is-disabled">‹ Previous</span>
+                                }
+                                @for (var pageNum = firstPageLink; pageNum <= lastPageLink; pageNum++)
+                                {
+                                    if (pageNum == table.PageNumber)
+                                    {
+                                        <span class="is-current" aria-current="page">@pageNum</span>
+                                    }
+                                    else
+                                    {
+                                        <a href="@TableUrl(pageNum)" aria-label="Page @pageNum">@pageNum</a>
+                                    }
+                                }
+                                @if (table.PageNumber < table.TotalPages)
+                                {
+                                    <a href="@TableUrl(table.PageNumber + 1)" aria-label="Next page">Next ›</a>
+                                    <a href="@TableUrl(table.TotalPages)" aria-label="Last page">Last »</a>
+                                }
+                                else
+                                {
+                                    <span class="is-disabled">Next ›</span>
+                                    <span class="is-disabled">Last »</span>
+                                }
+                            </nav>
+                        </div>
                     }
                 </section>
             }
@@ -297,7 +394,7 @@
         <aside class="lf-budget-drawer" aria-label="Selected budget item">
             <div class="lf-drawer-header">
                 <div><h2>@selectedItem.ItemNumber</h2><p>@selectedItem.Description</p></div>
-                <a class="lf-drawer-close" href="@Url.Action("Index", "Budget", new { fiscalYearId = snapshot.SelectedFiscalYearId, versionId = snapshot.SelectedVersionId, section = sectionFilter, category = categoryFilter, location = locationFilter, vendor = vendorFilter, need = needFilter, status = statusFilter, q = searchFilter })" aria-label="Close item details">×</a>
+                <a class="lf-drawer-close" href="@TableUrl(table.PageNumber)" aria-label="Close item details">×</a>
             </div>
             <nav class="lf-drawer-tabs" aria-label="Budget item sections"><a class="active" href="/budget/items/@selectedItem.Id">Details</a><a href="/budget/items/@selectedItem.Id">Financials</a><a href="/budget/items/@selectedItem.Id">Approvals</a><a href="/documents">Documents</a></nav>
             <div class="lf-drawer-body">
