@@ -3,7 +3,8 @@ using LedgerForge.Domain.Common;
 namespace LedgerForge.Domain.Budgeting;
 
 public enum PurchaseType { New, Replacement, Renewal, Expansion, Project, Other }
-public enum BudgetItemStatus { Draft, Proposed, Submitted, Approved, Denied, Deferred, Active, Cancelled, Archived }
+// Add new status values at the end to preserve existing database enum integer values.
+public enum BudgetItemStatus { Draft, Proposed, Submitted, Approved, Denied, Deferred, Active, Cancelled, Archived, Purchased }
 
 public sealed class BudgetItem : AuditableEntity
 {
@@ -36,6 +37,8 @@ public sealed class BudgetItem : AuditableEntity
     public string ItemNumber { get; private set; } = string.Empty;
     public string Description { get; private set; } = string.Empty;
     public string? ReasonPurpose { get; private set; }
+    public string? Notes { get; private set; }
+    public Guid? VendorId { get; private set; }
     public PurchaseType PurchaseType { get; private set; }
     public Guid? BudgetSectionId { get; private set; }
     public Guid? FinanceTypeId { get; private set; }
@@ -60,13 +63,21 @@ public sealed class BudgetItem : AuditableEntity
 
     public bool IsPlanningEditable => Status is BudgetItemStatus.Draft or BudgetItemStatus.Proposed or BudgetItemStatus.Deferred;
 
-    public void ChangeCost(decimal quantity, decimal unitCost)
+    public void ChangeCost(decimal quantity, decimal unitCost, bool allowDirectApprovedEdits = false)
     {
-        EnsurePlanningEditable();
+        EnsurePlanningEditable(allowDirectApprovedEdits);
         ValidateCost(quantity, unitCost);
+        var newTotal = DomainBudgetCalculator.Multiply(quantity, unitCost);
+        var changed = newTotal != PlannedTotal;
         Quantity = quantity;
         UnitCost = unitCost;
-        PlannedTotal = DomainBudgetCalculator.Multiply(quantity, unitCost);
+        PlannedTotal = newTotal;
+
+        // When editing an already approved/operational item without another
+        // approval cycle, use the new cost as the current revised budget while
+        // retaining ApprovedTotal as the historical decision amount.
+        if (changed && allowDirectApprovedEdits && IsApprovedOrOperational)
+            RevisedTotal = newTotal;
     }
 
     public void UpdatePlanningDetails(
@@ -82,9 +93,10 @@ public sealed class BudgetItem : AuditableEntity
         Guid? locationId,
         Guid? needLevelId,
         Guid? internalCategoryId,
-        Guid? frequencyId)
+        Guid? frequencyId,
+        bool allowDirectApprovedEdits = false)
     {
-        EnsurePlanningEditable();
+        EnsurePlanningEditable(allowDirectApprovedEdits);
         ValidateItemNumber(itemNumber);
         ValidateDescription(description);
         if (!Enum.IsDefined(purchaseType)) throw new ArgumentOutOfRangeException(nameof(purchaseType));
@@ -104,6 +116,16 @@ public sealed class BudgetItem : AuditableEntity
         FrequencyId = NormalizeId(frequencyId, nameof(frequencyId));
     }
 
+    public void UpdateVendorAndNotes(Guid? vendorId, string? notes, bool allowDirectApprovedEdits = false)
+    {
+        EnsurePlanningEditable(allowDirectApprovedEdits);
+        VendorId = NormalizeId(vendorId, nameof(vendorId));
+        var normalizedNotes = NormalizeOptional(notes);
+        if (normalizedNotes?.Length > 2000)
+            throw new ArgumentException("Notes cannot exceed 2000 characters.", nameof(notes));
+        Notes = normalizedNotes;
+    }
+
     public void Submit(string actor, DateTimeOffset submittedAtUtc)
     {
         EnsurePlanningEditable();
@@ -113,6 +135,18 @@ public sealed class BudgetItem : AuditableEntity
         DecisionAtUtc = null;
         DecisionNote = null;
         Status = BudgetItemStatus.Submitted;
+    }
+
+    /// <summary>
+    /// Withdraws a submitted item, or opens an approved item for a new planning revision.
+    /// The prior approved monetary total and approval metadata are deliberately preserved
+    /// until a new approval is issued; changes must be resubmitted for approval.
+    /// </summary>
+    public void ReopenForRevision()
+    {
+        if (Status is not BudgetItemStatus.Submitted and not BudgetItemStatus.Approved)
+            throw new InvalidOperationException($"Budget item in status {Status} cannot be reopened for editing.");
+        Status = BudgetItemStatus.Draft;
     }
 
     public void Approve(string actor, DateTimeOffset decidedAtUtc, string? note = null)
@@ -143,6 +177,37 @@ public sealed class BudgetItem : AuditableEntity
         Status = BudgetItemStatus.Deferred;
     }
 
+    /// <summary>
+    /// Records that procurement has happened. This is an operational tracking
+    /// status, not an approval decision, purchase order, invoice, or actual
+    /// ledger posting. The financial amounts and approval history are unchanged.
+    /// </summary>
+    public void MarkPurchased()
+    {
+        if (IsArchived || Status is BudgetItemStatus.Submitted or BudgetItemStatus.Denied or
+            BudgetItemStatus.Cancelled or BudgetItemStatus.Archived or BudgetItemStatus.Purchased)
+            throw new InvalidOperationException($"Budget item in status {Status} cannot be marked Purchased.");
+        Status = BudgetItemStatus.Purchased;
+    }
+
+    /// <summary>
+    /// Corrects an accidental Purchased flag. Does not alter financial entries.
+    /// If the prior status is unavailable, restore Approved when an approved
+    /// total exists and Draft otherwise.
+    /// </summary>
+    public void UndoPurchased(BudgetItemStatus? previousStatus = null)
+    {
+        if (Status != BudgetItemStatus.Purchased || IsArchived)
+            throw new InvalidOperationException("Only a Purchased budget item can have its purchase flag removed.");
+        if (previousStatus.HasValue &&
+            previousStatus.Value is not (BudgetItemStatus.Draft or BudgetItemStatus.Proposed or
+                BudgetItemStatus.Deferred or BudgetItemStatus.Approved or BudgetItemStatus.Active))
+            throw new ArgumentOutOfRangeException(nameof(previousStatus));
+        // When available, restore the exact status captured by the explicit
+        // Purchased audit event, rather than guessing from the approval amount.
+        Status = previousStatus ?? (ApprovedTotal is not null ? BudgetItemStatus.Approved : BudgetItemStatus.Draft);
+    }
+
     public void SetStatus(BudgetItemStatus status)
     {
         if (!Enum.IsDefined(status)) throw new ArgumentOutOfRangeException(nameof(status));
@@ -161,9 +226,12 @@ public sealed class BudgetItem : AuditableEntity
         RevisedTotal = revisedTotal;
     }
 
-    private void EnsurePlanningEditable()
+    private bool IsApprovedOrOperational =>
+        Status is BudgetItemStatus.Approved or BudgetItemStatus.Active or BudgetItemStatus.Purchased;
+
+    private void EnsurePlanningEditable(bool allowDirectApprovedEdits = false)
     {
-        if (!IsPlanningEditable)
+        if (!IsPlanningEditable && !(allowDirectApprovedEdits && IsApprovedOrOperational && !IsArchived))
             throw new InvalidOperationException($"Budget item cannot be edited from status {Status}.");
     }
 

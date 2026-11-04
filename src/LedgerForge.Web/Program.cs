@@ -19,6 +19,7 @@ using LedgerForge.Web.Diagnostics;
 using LedgerForge.Web.Documents;
 using LedgerForge.Web.Security;
 using LedgerForge.Web.Updates;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Authentication.Negotiate;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http.Features;
@@ -29,6 +30,32 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.Configure<BrandingOptions>(builder.Configuration.GetSection(BrandingOptions.SectionName));
 builder.Services.Configure<LegacyImportOptions>(builder.Configuration.GetSection(LegacyImportOptions.SectionName));
 builder.Services.Configure<UpdateOptions>(builder.Configuration.GetSection(UpdateOptions.SectionName));
+// IIS app pools can run without a loaded user profile or registry key store.
+// Persist antiforgery/TempData protection keys alongside other host-specific data,
+// outside the deployed Web directory so Setup upgrades preserve them. The
+// Windows machine DPAPI protects keys at rest; folder ACLs further restrict access.
+var documentDataRoot = builder.Configuration["Documents:StoragePath"];
+if (OperatingSystem.IsWindows() && !string.IsNullOrWhiteSpace(documentDataRoot))
+{
+    var keyRoot = Path.Combine(
+        Path.GetFullPath(Environment.ExpandEnvironmentVariables(documentDataRoot.Trim())),
+        ".ledgerforge", "data-protection-keys");
+    var publicWebRoot = builder.Environment.WebRootPath;
+    if (!string.IsNullOrWhiteSpace(publicWebRoot))
+    {
+        var publicRoot = Path.GetFullPath(publicWebRoot)
+            .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
+            + Path.DirectorySeparatorChar;
+        if (keyRoot.StartsWith(publicRoot, StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException("Data Protection keys must not be stored under the public web root.");
+    }
+    Directory.CreateDirectory(keyRoot);
+    builder.Services.AddDataProtection()
+        .SetApplicationName("LedgerForge")
+        .PersistKeysToFileSystem(new DirectoryInfo(keyRoot))
+        .ProtectKeysWithDpapi(protectToLocalMachine: true);
+}
+
 builder.Services.AddSingleton<OrganizationSettingsStore>();
 builder.Services.AddSingleton<SecurityAccessConfigurationStore>();
 builder.Services.AddSingleton<ModuleAccessResolver>();
@@ -90,6 +117,7 @@ builder.Services.AddScoped<RenewalProjectionService>();
 builder.Services.AddScoped<ReportingService>();
 builder.Services.AddScoped<FinanceExportService>();
 builder.Services.AddScoped<RenewalCalendarService>();
+builder.Services.AddScoped<NextFiscalYearRenewalPlanningService>();
 builder.Services.AddScoped<DashboardService>();
 builder.Services.AddScoped<WorkQueueService>();
 builder.Services.AddScoped<DeploymentDiagnosticsService>();

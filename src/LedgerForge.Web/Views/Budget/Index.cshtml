@@ -1,9 +1,14 @@
 @model LedgerForge.Web.Models.Budgeting.BudgetPlanningViewModel
 @using LedgerForge.Domain.Budgeting
+@using LedgerForge.Infrastructure.Budgeting
 @{
     ViewData["Title"] = "Budget";
     var snapshot = Model.Snapshot;
+    var actualError = TempData["ActualsError"] as string;
+    var actualSuccess = TempData["ActualsSuccess"] as string;
     var canManageImports = ViewData["CanManageImports"] as bool? == true;
+    var canPostActuals = ViewData["CanPostActuals"] as bool? == true;
+    var createOptions = ViewData["CreateOptions"] as LedgerForge.Infrastructure.Budgeting.BudgetItemCreateOptions;
     var sectionFilter = Context.Request.Query["section"].ToString();
     var categoryFilter = Context.Request.Query["category"].ToString();
     var locationFilter = Context.Request.Query["location"].ToString();
@@ -25,6 +30,38 @@
             (x.ReasonPurpose?.Contains(searchFilter, StringComparison.OrdinalIgnoreCase) ?? false))
         .ToArray();
 
+    var requestedPage = int.TryParse(Context.Request.Query["page"].ToString(), out var parsedPage) ? parsedPage : 1;
+    var requestedSize = int.TryParse(Context.Request.Query["pageSize"].ToString(), out var parsedSize) ? parsedSize : BudgetItemTable.DefaultPageSize;
+    var table = BudgetItemTable.Create(
+        filteredItems,
+        Context.Request.Query["sort"].ToString(),
+        Context.Request.Query["dir"].ToString(),
+        requestedPage,
+        requestedSize);
+    var firstPageLink = Math.Max(1, table.PageNumber - 2);
+    var lastPageLink = Math.Min(table.TotalPages, firstPageLink + 4);
+    firstPageLink = Math.Max(1, lastPageLink - 4);
+
+    string TableUrl(int page, string? sort = null, string? direction = null, int? pageSize = null, Guid? itemId = null)
+        => Url.Action("Index", "Budget", new
+        {
+            fiscalYearId = snapshot.SelectedFiscalYearId,
+            versionId = snapshot.SelectedVersionId,
+            section = sectionFilter, category = categoryFilter, location = locationFilter,
+            vendor = vendorFilter, need = needFilter, status = statusFilter, q = searchFilter,
+            sort = sort ?? table.SortKey,
+            dir = direction ?? table.Direction,
+            page = page,
+            pageSize = pageSize ?? table.PageSize,
+            itemId
+        }) ?? "/budget";
+
+    string SortUrl(string key) => TableUrl(
+        1, key, key == table.SortKey && table.Direction == "asc" ? "desc" : "asc");
+    string SortGlyph(string key) => key == table.SortKey ? (table.Direction == "asc" ? "↑" : "↓") : "↕";
+    string SortAria(string key) => key != table.SortKey ? "none" :
+        (table.Direction == "asc" ? "ascending" : "descending");
+
     Guid.TryParse(Context.Request.Query["itemId"].ToString(), out var selectedItemId);
     var selectedItem = selectedItemId == Guid.Empty ? null : snapshot.Items.FirstOrDefault(x => x.Id == selectedItemId);
 
@@ -35,6 +72,7 @@
     var needs = snapshot.Items.Select(x => x.NeedLevelName).OfType<string>().Where(x => !string.IsNullOrWhiteSpace(x)).Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(x => x).ToArray();
 
     var displayedPlanned = filteredItems.Sum(x => x.PlannedTotal);
+    var displayedActual = filteredItems.Sum(x => x.Actual);
     var displayedApproved = filteredItems.Sum(x => x.ApprovedTotal ?? 0m);
     var displayedProposed = filteredItems.Where(x => x.Status is BudgetItemStatus.Draft or BudgetItemStatus.Proposed or BudgetItemStatus.Submitted or BudgetItemStatus.Deferred).Sum(x => x.PlannedTotal);
     var mustHave = filteredItems.Count(x => string.Equals(x.NeedLevelName, "Must Have", StringComparison.OrdinalIgnoreCase));
@@ -48,15 +86,17 @@
         BudgetItemStatus.Denied => "Denied",
         BudgetItemStatus.Deferred => "Deferred",
         BudgetItemStatus.Active => "Active",
+        BudgetItemStatus.Purchased => "Purchased",
         BudgetItemStatus.Cancelled => "Cancelled",
         BudgetItemStatus.Archived => "Archived",
         _ => status.ToString()
     };
 
-    string ApprovalLabel(BudgetItemStatus status) => status switch
+    string ApprovalLabel(BudgetItemSummary item) => item.Status switch
     {
         BudgetItemStatus.Submitted => "Pending",
         BudgetItemStatus.Approved => "Approved",
+        BudgetItemStatus.Purchased when item.ApprovedTotal is not null => "Approved",
         BudgetItemStatus.Denied => "Denied",
         BudgetItemStatus.Deferred => "Deferred",
         _ => "Not Started"
@@ -91,6 +131,26 @@
         {
             <div class="card lf-alert lf-alert-success" role="status">Budget item added.</div>
         }
+        @if (Context.Request.Query.ContainsKey("bulkSubmitted"))
+        {
+            <div class="card lf-alert lf-alert-success" role="status">@Context.Request.Query["bulkSubmitted"] budget item(s) sent to the approval queue.</div>
+        }
+        @if (Context.Request.Query.ContainsKey("purchasedChanged"))
+        {
+            <div class="card lf-alert lf-alert-success" role="status">Budget item purchase tracking status updated. Financial records were not changed.</div>
+        }
+        @if (!string.IsNullOrWhiteSpace(actualError))
+        {
+            <div class="card lf-alert lf-alert-danger" role="alert">@actualError</div>
+        }
+        @if (!string.IsNullOrWhiteSpace(actualSuccess))
+        {
+            <div class="card lf-alert lf-alert-success" role="status">@actualSuccess</div>
+        }
+        @if (Context.Request.Query.ContainsKey("actualModal") && string.IsNullOrWhiteSpace(actualError) && string.IsNullOrWhiteSpace(actualSuccess))
+        {
+            <div class="card lf-alert lf-alert-success" role="status">Actuals updated. Review the ledger below.</div>
+        }
 
         @if (snapshot.FiscalYears.Count == 0)
         {
@@ -120,7 +180,11 @@
                 <div class="lf-budget-action-buttons">
                     @if (Model.CanEdit && !snapshot.SelectedVersionLocked && snapshot.SelectedVersionId is not null)
                     {
-                        <a class="button primary" href="#new-budget-item"><span aria-hidden="true">＋</span> New Item</a>
+                        <a class="button primary" href="#new-budget-item" data-open-budget-wizard><span aria-hidden="true">＋</span> New Item</a>
+                    }
+                    @if (snapshot.SelectedFiscalYearId is not null)
+                    {
+                        <button class="button" type="button" data-open-actuals-modal><span aria-hidden="true">▤</span> Actuals</button>
                     }
                     @if (canManageImports)
                     {
@@ -139,6 +203,9 @@
                 <form method="get" action="/budget" class="lf-budget-filters" aria-label="Budget filters">
                     <input type="hidden" name="fiscalYearId" value="@snapshot.SelectedFiscalYearId" />
                     <input type="hidden" name="versionId" value="@snapshot.SelectedVersionId" />
+                    <input type="hidden" name="sort" value="@table.SortKey" />
+                    <input type="hidden" name="dir" value="@table.Direction" />
+                    <input type="hidden" name="pageSize" value="@table.PageSize" />
                     <div class="lf-filter-search"><label for="q">Search</label><input id="q" name="q" value="@searchFilter" placeholder="Item # or description" /></div>
                     <div><label for="section">Section</label><select id="section" name="section"><option value="">All</option>@foreach (var value in sections){<option value="@value" selected="@(value == sectionFilter)">@value</option>}</select></div>
                     <div><label for="category">Category</label><select id="category" name="category"><option value="">All</option>@foreach (var value in categories){<option value="@value" selected="@(value == categoryFilter)">@value</option>}</select></div>
@@ -153,28 +220,79 @@
                     <article class="lf-card lf-budget-kpi"><span class="lf-budget-kpi-icon blue">▥</span><div><strong>@filteredItems.Length</strong><span>Total Items</span></div></article>
                     <article class="lf-card lf-budget-kpi"><span class="lf-budget-kpi-icon gold">★</span><div><strong>@mustHave</strong><span>Must Have</span></div></article>
                     <article class="lf-card lf-budget-kpi"><span class="lf-budget-kpi-icon green">▤</span><div><strong>@displayedPlanned.ToString("C2")</strong><span>Planned Total</span></div></article>
+                    <article class="lf-card lf-budget-kpi"><span class="lf-budget-kpi-icon teal">▥</span><div><strong>@displayedActual.ToString("C2")</strong><span>Actual</span></div></article>
                     <article class="lf-card lf-budget-kpi"><span class="lf-budget-kpi-icon purple">▧</span><div><strong>@displayedProposed.ToString("C2")</strong><span>Open / Proposed</span></div></article>
                     <article class="lf-card lf-budget-kpi"><span class="lf-budget-kpi-icon teal">✓</span><div><strong>@displayedApproved.ToString("C2")</strong><span>Approved</span></div></article>
                 </section>
 
-                @if (Model.CanEdit && !snapshot.SelectedVersionLocked)
+                @if (Model.CanEdit && !snapshot.SelectedVersionLocked && snapshot.SelectedVersionId is not null && createOptions is not null)
                 {
-                    <details id="new-budget-item" class="lf-card lf-new-item-panel" open="@(snapshot.Items.Count == 0)">
-                        <summary><strong>New budget item</strong><span>Add the basic line, then open it to assign all planning dimensions.</span></summary>
-                        <form method="post" action="/budget/quick-add" class="lf-quick-add-grid">
+                    <section id="new-budget-item" class="lf-card lf-new-item-panel" aria-labelledby="budget-wizard-title" data-open-on-error="@(string.IsNullOrWhiteSpace(Model.ErrorMessage) ? "false" : "true")" hidden>
+                        <div class="lf-panel-header">
+                            <div><h2 id="budget-wizard-title">New budget item</h2><p class="muted">Complete the steps, check the calculated total, then save.</p></div>
+                            <button type="button" class="button" data-close-budget-wizard aria-label="Close budget item wizard">Close</button>
+                        </div>
+                        <form id="lf-budget-create-form" method="post" action="/budget/create" novalidate>
                             @Html.AntiForgeryToken()
                             <input type="hidden" name="fiscalYearId" value="@snapshot.SelectedFiscalYearId" />
                             <input type="hidden" name="versionId" value="@snapshot.SelectedVersionId" />
-                            <div><label for="itemNumber"><strong>Item #</strong></label><input id="itemNumber" name="itemNumber" maxlength="64" required /></div>
-                            <div class="lf-quick-add-description"><label for="description"><strong>Description</strong></label><input id="description" name="description" maxlength="500" required /></div>
-                            <div><label for="quantity"><strong>Quantity</strong></label><input id="quantity" name="quantity" type="number" min="0" step="0.0001" value="1" required /></div>
-                            <div><label for="unitCost"><strong>Unit cost</strong></label><input id="unitCost" name="unitCost" type="number" min="0" step="0.0001" value="0" required /></div>
-                            <div class="lf-quick-add-action"><button class="primary" type="submit">Add item</button></div>
+                            <p class="muted" id="lf-budget-wizard-progress" aria-live="polite">Step 1 of 3</p>
+                            <fieldset data-budget-step>
+                                <legend><strong>Step 1 — Item details</strong></legend>
+                                <div class="lf-form-grid">
+                                    <div class="lf-span-all"><label for="create-description">Item Description</label><input id="create-description" name="description" maxlength="500" required /></div>
+                                    <div><label for="create-section">Section</label><select id="create-section" name="budgetSectionId"><option value="">Unassigned</option>@foreach(var option in createOptions.BudgetSections){<option value="@option.Id">@option.Code · @option.Name</option>}</select></div>
+                                    <div><label for="create-category">Category</label><select id="create-category" name="internalCategoryId"><option value="">Unassigned</option>@foreach(var option in createOptions.InternalCategories){<option value="@option.Id">@option.Name</option>}</select></div>
+                                    <div class="lf-span-all"><label for="create-purpose">Purpose</label><textarea id="create-purpose" name="reasonPurpose" rows="3" maxlength="2000"></textarea></div>
+                                </div>
+                            </fieldset>
+                            <fieldset data-budget-step hidden>
+                                <legend><strong>Step 2 — Classification</strong></legend>
+                                <div class="lf-form-grid">
+                                    <div><label for="create-type">Type</label><select id="create-type" name="purchaseType">@foreach(var option in Enum.GetValues<PurchaseType>()){<option value="@option">@option</option>}</select></div>
+                                    <div><label for="create-finance-type">Finance type</label><select id="create-finance-type" name="financeTypeId"><option value="">Unassigned</option>@foreach(var option in createOptions.FinanceTypes){<option value="@option.Id">@option.Name</option>}</select></div>
+                                    <div><label for="create-location">Location</label><select id="create-location" name="locationId"><option value="">Unassigned</option>@foreach(var option in createOptions.Locations){<option value="@option.Id">@option.Name</option>}</select></div>
+                                    <div><label for="create-department">Department</label><select id="create-department" name="departmentId"><option value="">Unassigned</option>@foreach(var option in createOptions.Departments){<option value="@option.Id">@option.Name</option>}</select></div>
+                                    <div><label for="create-need">Need Level</label><select id="create-need" name="needLevelId"><option value="">Unassigned</option>@foreach(var option in createOptions.NeedLevels){<option value="@option.Id">@option.Name</option>}</select></div>
+                                    <div><label for="create-frequency">Frequency</label><select id="create-frequency" name="frequencyId"><option value="">Unassigned</option>@foreach(var option in createOptions.Frequencies){<option value="@option.Id">@option.Name</option>}</select></div>
+                                </div>
+                                <div class="lf-form-grid">
+                                    <div><label for="create-vendor">Vendor</label><select id="create-vendor" name="vendorId"><option value="">Unassigned</option>@foreach(var option in createOptions.Vendors){<option value="@option.Id">@option.Name</option>}</select></div>
+                                </div>
+                            </fieldset>
+                            <fieldset data-budget-step hidden>
+                                <legend><strong>Step 3 — Cost and review</strong></legend>
+                                <div class="lf-form-grid">
+                                    <div><label for="create-quantity"># of Units</label><input id="create-quantity" name="quantity" type="number" min="0" step="0.0001" value="1" required /></div>
+                                    <div><label for="create-unitCost">Cost per Unit</label><input id="create-unitCost" name="unitCost" type="number" min="0" step="0.0001" value="0" required /></div>
+                                    <div><label for="create-total">Total Cost (calculated)</label><output id="create-total" class="lf-budget-total">$0.00</output></div>
+                                </div>
+                                <div class="lf-form-grid"><div class="lf-span-all"><label for="create-notes">Notes</label><textarea id="create-notes" name="notes" rows="3" maxlength="2000" placeholder="Additional planning notes"></textarea></div></div>
+                                <p class="muted">Total cost is calculated and validated on the server. After saving, you can add actual transactions from Full Item.</p>
+                            </fieldset>
+                            <div class="lf-budget-wizard-actions">
+                                <button type="button" class="button" data-budget-back hidden>Back</button>
+                                <button type="button" class="button primary" data-budget-next>Next</button>
+                                <button type="submit" class="primary" data-budget-save hidden>Create Budget Item</button>
+                            </div>
                         </form>
-                    </details>
+                    </section>
                 }
 
                 <section class="lf-card lf-budget-grid-card" aria-labelledby="budget-grid-title">
+                    @if (Model.CanEdit && !snapshot.SelectedVersionLocked && snapshot.SelectedFiscalYearId is not null && snapshot.SelectedVersionId is not null)
+                    {
+                        <form id="budget-bulk-submit" method="post" action="/budget/bulk-submit" class="lf-toolbar">
+                            @Html.AntiForgeryToken()
+                            <input type="hidden" name="fiscalYearId" value="@snapshot.SelectedFiscalYearId" />
+                            <input type="hidden" name="versionId" value="@snapshot.SelectedVersionId" />
+                            <div><strong>Bulk approval submission</strong><p class="lf-muted">Choose Draft, Proposed, or Deferred items below. Selection applies to this page only, not other filtered pages.</p></div>
+                            <label><input type="checkbox" name="confirmSelection" value="true" required /> Confirm sending these selected items for approval</label>
+                            <button type="submit" class="primary">Send selected to approval</button>
+                            <a class="button" href="/approvals">Approval Queue</a>
+                        </form>
+                    }
+
                     <div class="lf-budget-grid-heading">
                         <div><h2 id="budget-grid-title">Budget items</h2><span>@filteredItems.Length of @snapshot.Items.Count shown</span></div>
                         <span class="badge">@(snapshot.SelectedVersionLocked ? "Locked" : "Editable")</span>
@@ -189,29 +307,47 @@
                             <table class="lf-table lf-budget-grid">
                                 <thead>
                                 <tr>
-                                    <th>Item #</th>
-                                    <th>Description</th>
-                                    <th>Section</th>
-                                    <th>Category</th>
-                                    <th>Vendor</th>
-                                    <th>Location</th>
-                                    <th class="lf-number">Qty</th>
-                                    <th class="lf-number">Unit Cost</th>
-                                    <th class="lf-number">Total</th>
-                                    <th>Need Level</th>
-                                    <th>Frequency</th>
-                                    <th>Renewal</th>
-                                    <th>Status</th>
-                                    <th>Approval</th>
+                                    @if (Model.CanEdit && !snapshot.SelectedVersionLocked)
+                                    {
+                                        <th><label><input type="checkbox" data-bulk-select-all="budget-bulk-submit" aria-label="Select all eligible budget items on this page" /> Select</label></th>
+                                    }
+                                    <th aria-sort="@SortAria("itemNumber")"><a class="lf-budget-sort-link" href="@SortUrl("itemNumber")">Item # <span aria-hidden="true">@SortGlyph("itemNumber")</span></a></th>
+                                    <th aria-sort="@SortAria("description")"><a class="lf-budget-sort-link" href="@SortUrl("description")">Description <span aria-hidden="true">@SortGlyph("description")</span></a></th>
+                                    <th aria-sort="@SortAria("section")"><a class="lf-budget-sort-link" href="@SortUrl("section")">Section <span aria-hidden="true">@SortGlyph("section")</span></a></th>
+                                    <th aria-sort="@SortAria("category")"><a class="lf-budget-sort-link" href="@SortUrl("category")">Category <span aria-hidden="true">@SortGlyph("category")</span></a></th>
+                                    <th aria-sort="@SortAria("vendor")"><a class="lf-budget-sort-link" href="@SortUrl("vendor")">Vendor <span aria-hidden="true">@SortGlyph("vendor")</span></a></th>
+                                    <th aria-sort="@SortAria("location")"><a class="lf-budget-sort-link" href="@SortUrl("location")">Location <span aria-hidden="true">@SortGlyph("location")</span></a></th>
+                                    <th class="lf-number" aria-sort="@SortAria("quantity")"><a class="lf-budget-sort-link" href="@SortUrl("quantity")">Qty <span aria-hidden="true">@SortGlyph("quantity")</span></a></th>
+                                    <th class="lf-number" aria-sort="@SortAria("unitCost")"><a class="lf-budget-sort-link" href="@SortUrl("unitCost")">Unit Cost <span aria-hidden="true">@SortGlyph("unitCost")</span></a></th>
+                                    <th class="lf-number" aria-sort="@SortAria("total")"><a class="lf-budget-sort-link" href="@SortUrl("total")">Total <span aria-hidden="true">@SortGlyph("total")</span></a></th>
+                                    <th class="lf-number" aria-sort="@SortAria("actual")"><a class="lf-budget-sort-link" href="@SortUrl("actual")">Actual <span aria-hidden="true">@SortGlyph("actual")</span></a></th>
+                                    <th aria-sort="@SortAria("needLevel")"><a class="lf-budget-sort-link" href="@SortUrl("needLevel")">Need Level <span aria-hidden="true">@SortGlyph("needLevel")</span></a></th>
+                                    <th aria-sort="@SortAria("frequency")"><a class="lf-budget-sort-link" href="@SortUrl("frequency")">Frequency <span aria-hidden="true">@SortGlyph("frequency")</span></a></th>
+                                    <th aria-sort="@SortAria("renewal")"><a class="lf-budget-sort-link" href="@SortUrl("renewal")">Renewal <span aria-hidden="true">@SortGlyph("renewal")</span></a></th>
+                                    <th aria-sort="@SortAria("status")"><a class="lf-budget-sort-link" href="@SortUrl("status")">Status <span aria-hidden="true">@SortGlyph("status")</span></a></th>
+                                    <th aria-sort="@SortAria("approval")"><a class="lf-budget-sort-link" href="@SortUrl("approval")">Approval <span aria-hidden="true">@SortGlyph("approval")</span></a></th>
                                 </tr>
                                 </thead>
                                 <tbody>
-                                @foreach (var item in filteredItems)
+                                @foreach (var item in table.Rows)
                                 {
                                     var selected = selectedItem?.Id == item.Id;
                                     <tr class="@(selected ? "is-selected" : null)">
-                                        <td><a href="@Url.Action("Index", "Budget", new { fiscalYearId = snapshot.SelectedFiscalYearId, versionId = snapshot.SelectedVersionId, section = sectionFilter, category = categoryFilter, location = locationFilter, vendor = vendorFilter, need = needFilter, status = statusFilter, q = searchFilter, itemId = item.Id })"><strong>@item.ItemNumber</strong></a></td>
-                                        <td><a class="lf-budget-description" href="@Url.Action("Index", "Budget", new { fiscalYearId = snapshot.SelectedFiscalYearId, versionId = snapshot.SelectedVersionId, section = sectionFilter, category = categoryFilter, location = locationFilter, vendor = vendorFilter, need = needFilter, status = statusFilter, q = searchFilter, itemId = item.Id })">@item.Description</a></td>
+                                        @if (Model.CanEdit && !snapshot.SelectedVersionLocked)
+                                        {
+                                            <td>
+                                                @if (item.Status is BudgetItemStatus.Draft or BudgetItemStatus.Proposed or BudgetItemStatus.Deferred)
+                                                {
+                                                    <input type="checkbox" form="budget-bulk-submit" name="selectedItemIds" value="@item.Id" data-bulk-item="budget-bulk-submit" aria-label="Select item @item.ItemNumber for approval" />
+                                                }
+                                                else
+                                                {
+                                                    <span class="lf-muted" title="Only unsubmitted planning items can enter the approval queue">—</span>
+                                                }
+                                            </td>
+                                        }
+                                        <td><a href="@TableUrl(table.PageNumber, itemId: item.Id)"><strong>@item.ItemNumber</strong></a></td>
+                                        <td><a class="lf-budget-description" href="@TableUrl(table.PageNumber, itemId: item.Id)">@item.Description</a></td>
                                         <td>@(item.BudgetSectionName ?? "—")</td>
                                         <td>@(item.InternalCategoryName ?? item.FinanceTypeName ?? "—")</td>
                                         <td>@(item.VendorName ?? "—")</td>
@@ -219,15 +355,77 @@
                                         <td class="lf-number">@item.Quantity.ToString("0.####")</td>
                                         <td class="lf-number">@item.UnitCost.ToString("C2")</td>
                                         <td class="lf-number"><strong>@item.PlannedTotal.ToString("C2")</strong></td>
+                                        <td class="lf-number">@item.Actual.ToString("C2")</td>
                                         <td>@if (!string.IsNullOrWhiteSpace(item.NeedLevelName)){<span class="badge @BadgeClass(item.NeedLevelName)">@item.NeedLevelName</span>}else{<span>—</span>}</td>
                                         <td>@(item.FrequencyName ?? "—")</td>
                                         <td>@(item.RenewalDate?.ToString("MM/dd/yyyy") ?? "—")</td>
                                         <td><span class="lf-status-dot"></span>@FriendlyStatus(item.Status)</td>
-                                        <td><span class="badge @(item.Status == BudgetItemStatus.Approved ? "lf-badge-success" : item.Status == BudgetItemStatus.Submitted ? "lf-badge-warning" : item.Status == BudgetItemStatus.Denied ? "lf-badge-danger" : "lf-badge-muted")">@ApprovalLabel(item.Status)</span></td>
+                                        <td><span class="badge @((item.Status == BudgetItemStatus.Approved || (item.Status == BudgetItemStatus.Purchased && item.ApprovedTotal is not null)) ? "lf-badge-success" : item.Status == BudgetItemStatus.Submitted ? "lf-badge-warning" : item.Status == BudgetItemStatus.Denied ? "lf-badge-danger" : "lf-badge-muted")">@ApprovalLabel(item)</span></td>
                                     </tr>
                                 }
                                 </tbody>
                             </table>
+                        </div>
+                        <div class="lf-budget-pagination">
+                            <p class="lf-budget-page-summary" role="status">
+                                Showing <strong>@table.FirstRow–@table.LastRow</strong> of
+                                <strong>@table.TotalCount</strong> matching items
+                            </p>
+                            <form method="get" action="/budget" class="lf-budget-page-size" aria-label="Rows per page">
+                                <input type="hidden" name="fiscalYearId" value="@snapshot.SelectedFiscalYearId" />
+                                <input type="hidden" name="versionId" value="@snapshot.SelectedVersionId" />
+                                <input type="hidden" name="section" value="@sectionFilter" />
+                                <input type="hidden" name="category" value="@categoryFilter" />
+                                <input type="hidden" name="location" value="@locationFilter" />
+                                <input type="hidden" name="vendor" value="@vendorFilter" />
+                                <input type="hidden" name="need" value="@needFilter" />
+                                <input type="hidden" name="status" value="@statusFilter" />
+                                <input type="hidden" name="q" value="@searchFilter" />
+                                <input type="hidden" name="sort" value="@table.SortKey" />
+                                <input type="hidden" name="dir" value="@table.Direction" />
+                                <input type="hidden" name="page" value="1" />
+                                <label for="budget-page-size">Rows per page</label>
+                                <select id="budget-page-size" name="pageSize" data-budget-page-size>
+                                    @foreach (var size in new[] { 10, 25, 50, 100 })
+                                    {
+                                        <option value="@size" selected="@(size == table.PageSize)">@size</option>
+                                    }
+                                </select>
+                                <button type="submit">Apply</button>
+                            </form>
+                            <nav class="lf-budget-page-links" aria-label="Budget item pagination">
+                                @if (table.PageNumber > 1)
+                                {
+                                    <a href="@TableUrl(1)" aria-label="First page">« First</a>
+                                    <a href="@TableUrl(table.PageNumber - 1)" aria-label="Previous page">‹ Previous</a>
+                                }
+                                else
+                                {
+                                    <span class="is-disabled">« First</span>
+                                    <span class="is-disabled">‹ Previous</span>
+                                }
+                                @for (var pageNum = firstPageLink; pageNum <= lastPageLink; pageNum++)
+                                {
+                                    if (pageNum == table.PageNumber)
+                                    {
+                                        <span class="is-current" aria-current="page">@pageNum</span>
+                                    }
+                                    else
+                                    {
+                                        <a href="@TableUrl(pageNum)" aria-label="Page @pageNum">@pageNum</a>
+                                    }
+                                }
+                                @if (table.PageNumber < table.TotalPages)
+                                {
+                                    <a href="@TableUrl(table.PageNumber + 1)" aria-label="Next page">Next ›</a>
+                                    <a href="@TableUrl(table.TotalPages)" aria-label="Last page">Last »</a>
+                                }
+                                else
+                                {
+                                    <span class="is-disabled">Next ›</span>
+                                    <span class="is-disabled">Last »</span>
+                                }
+                            </nav>
                         </div>
                     }
                 </section>
@@ -240,7 +438,7 @@
         <aside class="lf-budget-drawer" aria-label="Selected budget item">
             <div class="lf-drawer-header">
                 <div><h2>@selectedItem.ItemNumber</h2><p>@selectedItem.Description</p></div>
-                <a class="lf-drawer-close" href="@Url.Action("Index", "Budget", new { fiscalYearId = snapshot.SelectedFiscalYearId, versionId = snapshot.SelectedVersionId, section = sectionFilter, category = categoryFilter, location = locationFilter, vendor = vendorFilter, need = needFilter, status = statusFilter, q = searchFilter })" aria-label="Close item details">×</a>
+                <a class="lf-drawer-close" href="@TableUrl(table.PageNumber)" aria-label="Close item details">×</a>
             </div>
             <nav class="lf-drawer-tabs" aria-label="Budget item sections"><a class="active" href="/budget/items/@selectedItem.Id">Details</a><a href="/budget/items/@selectedItem.Id">Financials</a><a href="/budget/items/@selectedItem.Id">Approvals</a><a href="/documents">Documents</a></nav>
             <div class="lf-drawer-body">
@@ -256,6 +454,7 @@
                     <div><dt>Qty</dt><dd>@selectedItem.Quantity.ToString("0.####")</dd></div>
                     <div><dt>Unit Cost</dt><dd>@selectedItem.UnitCost.ToString("C2")</dd></div>
                     <div><dt>Total</dt><dd><strong>@selectedItem.PlannedTotal.ToString("C2")</strong></dd></div>
+                    <div><dt>Actual</dt><dd><strong>@selectedItem.Actual.ToString("C2")</strong></dd></div>
                 </dl>
 
                 <section class="lf-drawer-card">
@@ -269,6 +468,26 @@
                 <section class="lf-drawer-card">
                     <h3>Quick Actions</h3>
                     <a class="button primary" href="/budget/items/@selectedItem.Id">Open Full Item</a>
+                    @if (Model.CanEdit && (selectedItem.Status is BudgetItemStatus.Draft or BudgetItemStatus.Proposed or BudgetItemStatus.Deferred or BudgetItemStatus.Approved or BudgetItemStatus.Active))
+                    {
+                        <form method="post" action="/budget/items/@selectedItem.Id/purchased">
+                            @Html.AntiForgeryToken()
+                            <input type="hidden" name="returnToBudget" value="true" />
+                            <input type="hidden" name="fiscalYearId" value="@snapshot.SelectedFiscalYearId" />
+                            <input type="hidden" name="versionId" value="@snapshot.SelectedVersionId" />
+                            <button class="button" type="submit">✓ Mark Purchased</button>
+                        </form>
+                    }
+                    @if (Model.CanEdit && selectedItem.Status == BudgetItemStatus.Purchased)
+                    {
+                        <form method="post" action="/budget/items/@selectedItem.Id/undo-purchased">
+                            @Html.AntiForgeryToken()
+                            <input type="hidden" name="returnToBudget" value="true" />
+                            <input type="hidden" name="fiscalYearId" value="@snapshot.SelectedFiscalYearId" />
+                            <input type="hidden" name="versionId" value="@snapshot.SelectedVersionId" />
+                            <button class="button" type="submit">Undo Purchased</button>
+                        </form>
+                    }
                     <a class="button" href="/purchase-orders">Purchase Orders</a>
                     <a class="button" href="/documents">Documents</a>
                 </section>
@@ -276,3 +495,18 @@
         </aside>
     }
 </div>
+
+@if (snapshot.SelectedFiscalYearId is not null)
+{
+    <dialog id="lf-actuals-dialog" class="lf-budget-actuals-dialog" aria-label="Actuals ledger"
+            data-actuals-url="/actuals/modal?fiscalYearId=@snapshot.SelectedFiscalYearId"
+            data-open-on-load="@(Context.Request.Query.ContainsKey("actualModal") ? "true" : "false")">
+        <div class="lf-actuals-dialog-header">
+            <strong>Actuals</strong>
+            <button type="button" class="button" data-close-actuals-modal aria-label="Close Actuals">Close</button>
+        </div>
+        <div class="lf-actuals-dialog-content" data-actuals-content>
+            <p role="status">Loading Actuals…</p>
+        </div>
+    </dialog>
+}

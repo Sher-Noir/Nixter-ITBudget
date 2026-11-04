@@ -69,10 +69,12 @@ public sealed class InvoiceQueryService(LedgerForgeDbContext dbContext)
             .ToArray();
 
         var allocationTotals = await dbContext.InvoiceAllocations.AsNoTracking()
+            .Where(x => !x.IsArchived)
             .GroupBy(x => x.InvoiceId)
             .Select(x => new { Id = x.Key, Total = x.Sum(a => a.Amount) })
             .ToDictionaryAsync(x => x.Id, x => x.Total, cancellationToken);
         var invoiceRows = await dbContext.Invoices.AsNoTracking()
+            .Where(x => !x.IsArchived)
             .OrderByDescending(x => x.InvoiceDate).ThenByDescending(x => x.CreatedAtUtc)
             .ToListAsync(cancellationToken);
 
@@ -97,7 +99,7 @@ public sealed class InvoiceQueryService(LedgerForgeDbContext dbContext)
 
     public async Task<InvoiceDetailSnapshot?> GetAsync(Guid id, CancellationToken cancellationToken = default)
     {
-        var invoice = await dbContext.Invoices.AsNoTracking().SingleOrDefaultAsync(x => x.Id == id, cancellationToken);
+        var invoice = await dbContext.Invoices.AsNoTracking().SingleOrDefaultAsync(x => x.Id == id && !x.IsArchived, cancellationToken);
         if (invoice is null) return null;
 
         var year = await dbContext.FiscalYears.AsNoTracking().SingleAsync(x => x.Id == invoice.FiscalYearId, cancellationToken);
@@ -106,7 +108,7 @@ public sealed class InvoiceQueryService(LedgerForgeDbContext dbContext)
             ? await dbContext.PurchaseOrders.AsNoTracking().Where(x => x.Id == poId).Select(x => x.Number).SingleOrDefaultAsync(cancellationToken)
             : null;
         var allocations = await dbContext.InvoiceAllocations.AsNoTracking()
-            .Where(x => x.InvoiceId == id).OrderBy(x => x.LineNumber).ToListAsync(cancellationToken);
+            .Where(x => x.InvoiceId == id && !x.IsArchived).OrderBy(x => x.LineNumber).ToListAsync(cancellationToken);
 
         var budgetNames = await dbContext.BudgetItems.AsNoTracking().Where(x => x.FiscalYearId == invoice.FiscalYearId)
             .ToDictionaryAsync(x => x.Id, x => x.ItemNumber + " · " + x.Description, cancellationToken);

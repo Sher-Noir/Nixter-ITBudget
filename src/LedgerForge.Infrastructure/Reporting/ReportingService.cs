@@ -119,7 +119,7 @@ public sealed class ReportingService(
             .CountAsync(x => x.FiscalYearId == selectedId.Value, cancellationToken);
         var committed = await outstandingCommitmentService.GetTotalForFiscalYearAsync(selectedId.Value, cancellationToken);
         var purchaseOrderCount = await dbContext.PurchaseOrders.AsNoTracking()
-            .CountAsync(x => x.FiscalYearId == selectedId.Value, cancellationToken);
+            .CountAsync(x => x.FiscalYearId == selectedId.Value && !x.IsArchived, cancellationToken);
         var pendingApprovals = (await approvalQueueService.GetAsync(selectedId.Value, cancellationToken)).TotalCount;
         var today = DateOnly.FromDateTime(DateTime.UtcNow);
         var renewalCutoff = today.AddDays(30);

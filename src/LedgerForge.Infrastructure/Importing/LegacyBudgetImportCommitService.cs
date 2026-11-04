@@ -27,7 +27,10 @@ public sealed class LegacyBudgetImportCommitService(LedgerForgeDbContext dbConte
     public async Task<IReadOnlyList<ImportCommitTarget>> ListTargetsAsync(
         CancellationToken cancellationToken = default)
     {
-        return await dbContext.BudgetVersions
+        // Keep the SQL-translated query in terms of primitive columns. EF Core
+        // need not interpret ordering across a user-defined record constructor
+        // when returning here immediately after an import has been accepted.
+        var targets = await dbContext.BudgetVersions
             .AsNoTracking()
             .Where(version => !version.IsLocked)
             .Join(
@@ -37,15 +40,24 @@ public sealed class LegacyBudgetImportCommitService(LedgerForgeDbContext dbConte
                     year.Status != FiscalYearStatus.Archived),
                 version => version.FiscalYearId,
                 year => year.Id,
-                (version, year) => new ImportCommitTarget(
-                    year.Id,
-                    year.DisplayName,
-                    version.Id,
-                    version.Name,
-                    version.VersionNumber))
+                (version, year) => new
+                {
+                    FiscalYearId = year.Id,
+                    FiscalYearName = year.DisplayName,
+                    BudgetVersionId = version.Id,
+                    BudgetVersionName = version.Name,
+                    VersionNumber = version.VersionNumber
+                })
             .OrderByDescending(x => x.FiscalYearName)
             .ThenByDescending(x => x.VersionNumber)
             .ToListAsync(cancellationToken);
+
+        return targets.Select(x => new ImportCommitTarget(
+            x.FiscalYearId,
+            x.FiscalYearName,
+            x.BudgetVersionId,
+            x.BudgetVersionName,
+            x.VersionNumber)).ToArray();
     }
 
     public async Task<ImportCommitResult> CommitAsync(
@@ -141,7 +153,7 @@ public sealed class LegacyBudgetImportCommitService(LedgerForgeDbContext dbConte
                     itemNumber,
                     source.ItemDescription,
                     source.ReasonPurpose,
-                    source.RenewalDate is null ? PurchaseType.New : PurchaseType.Renewal,
+                    resolved.PurchaseType,
                     source.EstimatedMonth,
                     source.RenewalDate,
                     null,
@@ -151,6 +163,8 @@ public sealed class LegacyBudgetImportCommitService(LedgerForgeDbContext dbConte
                     resolved.NeedLevelId,
                     resolved.InternalCategoryId,
                     resolved.FrequencyId);
+                // Keep imported notes distinct from the business purpose.
+                item.UpdateVendorAndNotes(null, source.Notes);
 
                 if (source.Denial)
                 {
@@ -197,12 +211,39 @@ public sealed class LegacyBudgetImportCommitService(LedgerForgeDbContext dbConte
         var source = parsed.Source;
         return new(
             parsed,
-            ResolveRequired("FinanceType", source.FinanceType, lookups.FinanceTypes, false, aliases),
+            ResolvePurchaseType(source.FinanceType, source.RenewalDate),
+            Enum.TryParse<PurchaseType>(source.FinanceType, true, out var parsedType) && Enum.IsDefined(parsedType)
+                ? null
+                : ResolveRequired("FinanceType", source.FinanceType, lookups.FinanceTypes, false, aliases),
             ResolveRequired("Department", source.Department, lookups.Departments, true, aliases),
             ResolveRequired("Location", source.Location, lookups.Locations, true, aliases),
             ResolveRequired("NeedLevel", source.NeedLevel, lookups.NeedLevels, true, aliases),
             ResolveRequired("InternalCategory", source.InternalCategory, lookups.InternalCategories, false, aliases),
-            ResolveRequired("Frequency", source.Frequency, lookups.Frequencies, false, aliases));
+            ResolveFrequency(source.Frequency, lookups.Frequencies, aliases));
+    }
+
+    private static PurchaseType ResolvePurchaseType(string sourceType, DateOnly? renewalDate)
+    {
+        if (Enum.TryParse<PurchaseType>(sourceType, true, out var parsed) &&
+            Enum.IsDefined(parsed))
+            return parsed;
+        // Backward compatibility with old imports where Type actually held a
+        // finance classification rather than New/Replacement/etc.
+        return renewalDate is null ? PurchaseType.New : PurchaseType.Renewal;
+    }
+
+    private static Guid? ResolveFrequency(
+        string sourceValue, CommitLookupIndex index,
+        IReadOnlyCollection<LookupValueAlias> aliases)
+    {
+        if (string.Equals(sourceValue.Trim(), "Other", StringComparison.OrdinalIgnoreCase))
+        {
+            var otherId = index.Names.GetValueOrDefault("Other");
+            if (otherId != Guid.Empty) return otherId;
+            otherId = index.Codes.GetValueOrDefault("OTHER");
+            return otherId == Guid.Empty ? null : otherId;
+        }
+        return ResolveRequired("Frequency", sourceValue, index, false, aliases);
     }
 
     private static Guid ResolveRequired(
@@ -236,12 +277,13 @@ public sealed class LegacyBudgetImportCommitService(LedgerForgeDbContext dbConte
 
     private sealed record ResolvedRow(
         ParsedRow Parsed,
-        Guid FinanceTypeId,
+        PurchaseType PurchaseType,
+        Guid? FinanceTypeId,
         Guid DepartmentId,
         Guid LocationId,
         Guid NeedLevelId,
         Guid InternalCategoryId,
-        Guid FrequencyId);
+        Guid? FrequencyId);
 
     private sealed record CommitLookupIndex(
         Dictionary<string, Guid> Codes,

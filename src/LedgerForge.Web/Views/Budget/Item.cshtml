@@ -6,9 +6,17 @@
 @inject Microsoft.AspNetCore.Authorization.IAuthorizationService AuthorizationService
 @{
     var workspace = Model.Workspace;
+    var vendorOptions = ViewData["VendorOptions"] as IReadOnlyList<LookupOption>;
     var item = workspace.Item;
     ViewData["Title"] = $"Budget Item {item.ItemNumber}";
     var canSubmit = ViewData["CanSubmit"] as bool? == true;
+    var canReopen = ViewData["CanReopen"] as bool? == true;
+    var directEditWithoutReapproval = ViewData["DirectEditWithoutReapproval"] as bool? == true;
+    var requireReapprovalForEdits = ViewData["RequireReapprovalForBudgetItemEdits"] as bool? == true;
+    var canMarkPurchased = ViewData["CanMarkPurchased"] as bool? == true;
+    var canUndoPurchased = ViewData["CanUndoPurchased"] as bool? == true;
+    var purchasedChanged = ViewData["PurchasedChanged"] as bool? == true;
+    var revisionOpened = ViewData["RevisionOpened"] as bool? == true;
     var submitted = ViewData["Submitted"] as bool? == true;
     var actualSaved = ViewData["ActualSaved"] as bool? == true;
     var brandingError = TempData["BudgetItemError"] as string;
@@ -25,7 +33,7 @@
     var needLevel = OptionName(item.NeedLevels, item.NeedLevelId);
     var category = OptionName(item.InternalCategories, item.InternalCategoryId);
     var frequency = OptionName(item.Frequencies, item.FrequencyId);
-    var vendor = workspace.PurchaseOrders.FirstOrDefault()?.Vendor;
+    var vendor = vendorOptions?.FirstOrDefault(x => x.Id == item.VendorId)?.Name ?? workspace.PurchaseOrders.FirstOrDefault()?.Vendor;
     var variance = workspace.CurrentBudget - workspace.Actual;
     var itemMark = item.ItemNumber.Length >= 2 ? item.ItemNumber[..2].ToUpperInvariant() : "BI";
     var documentUploadUrl = $"/documents?linkedEntityType=BudgetItem&linkedEntityId={item.Id}";
@@ -55,9 +63,17 @@
 {
     <div class="card lf-alert lf-alert-success" role="status">Actual transaction added to this budget item.</div>
 }
+@if (purchasedChanged)
+{
+    <div class="card lf-alert lf-alert-success" role="status">Purchase tracking status updated. Budget approval, POs, invoices and actual amounts were not changed.</div>
+}
 @if (submitted)
 {
-    <div class="card lf-alert lf-alert-success" role="status">Budget item submitted for approval. Planning fields are read-only while the approval is pending.</div>
+    <div class="card lf-alert lf-alert-success" role="status">Budget item submitted for approval. To make another change, select Reopen for editing and resubmit it.</div>
+}
+@if (revisionOpened)
+{
+    <div class="card lf-alert lf-alert-success" role="status">Revision started. Update the item below and submit it for approval again. The previous approved amount remains recorded until the next approval.</div>
 }
 
 <section class="lf-card lf-item-hero">
@@ -71,12 +87,34 @@
             <div class="lf-item-mark" aria-hidden="true">@itemMark</div>
         }
         <div class="lf-item-title">
-            <h1>@item.Description <span class="badge @(item.Status == BudgetItemStatus.Approved ? "lf-badge-success" : "")">@item.Status</span></h1>
+            <h1>@item.Description <span class="badge @(item.Status is BudgetItemStatus.Approved or BudgetItemStatus.Purchased ? "lf-badge-success" : "")">@item.Status</span></h1>
             <p>@item.ItemNumber · <code>@item.StableIdentifier</code></p>
         </div>
         @if (Model.CanEdit)
         {
-            <a class="button" href="#edit-item">✎ Edit Item</a>
+            <a class="button primary" href="#edit-item">✎ Edit Item</a>
+        }
+        @if (canReopen)
+        {
+            <a class="button primary" href="#edit-item">✎ Revise Item</a>
+        }
+        @if (canMarkPurchased)
+        {
+            <form method="post" action="/budget/items/@item.Id/purchased">
+                @Html.AntiForgeryToken()
+                <button class="button" type="submit" title="Tracking status only; does not create a PO, invoice, or actual transaction.">✓ Mark Purchased</button>
+            </form>
+        }
+        @if (canUndoPurchased)
+        {
+            <form method="post" action="/budget/items/@item.Id/undo-purchased">
+                @Html.AntiForgeryToken()
+                <button class="button" type="submit">Undo Purchased</button>
+            </form>
+        }
+        @if (Model.CanPostActuals)
+        {
+            <a class="button" href="#lf-actual-entry" data-open-actual-entry>＋ Record Actual</a>
         }
     </div>
     <div class="lf-item-meta">
@@ -123,6 +161,8 @@
                 <p>@item.Description</p>
                 <h3>Business Justification / Reason &amp; Purpose</h3>
                 <p>@(string.IsNullOrWhiteSpace(item.ReasonPurpose) ? "No business justification has been entered yet." : item.ReasonPurpose)</p>
+                <h3>Notes</h3>
+                <p>@(string.IsNullOrWhiteSpace(item.Notes) ? "No notes added." : item.Notes)</p>
                 <div class="lf-item-facts">
                     <div><span>Purchase Date</span><strong>@(item.EstimatedPurchaseDate?.ToString("MMM d, yyyy") ?? "—")</strong></div>
                     <div><span>Renewal Date</span><strong>@(item.RenewalDate?.ToString("MMM d, yyyy") ?? "—")</strong></div>
@@ -167,7 +207,7 @@
                 <div class="lf-panel-header"><h2>Actuals &amp; Invoices</h2><a href="/invoices">View invoices</a></div>
                 @if (Model.CanPostActuals)
                 {
-                    <details class="lf-inline-entry" open="@actualSaved">
+                    <details id="lf-actual-entry" class="lf-inline-entry" open="@actualSaved">
                         <summary><strong>Add actual</strong><span>Record spending directly against this budget item.</span></summary>
                         <form method="post" action="/budget/items/@item.Id/actuals" class="lf-form-grid lf-form-grid-3">
                             @Html.AntiForgeryToken()
@@ -241,8 +281,8 @@
             </section>
         </div>
 
-        <details id="edit-item" class="lf-card lf-item-edit-panel" open="@(Model.CanEdit && (Model.Saved || !string.IsNullOrWhiteSpace(Model.ErrorMessage)))">
-            <summary><strong>Edit planning details</strong><span>Item dimensions, dates, quantity, unit cost, and business justification.</span></summary>
+        <details id="edit-item" class="lf-card lf-item-edit-panel" open="@(Model.CanEdit || canReopen)">
+            <summary><strong>Edit item information</strong><span>@(directEditWithoutReapproval ? "Save changes directly without reopening approval. Every edit is audited." : "Update planning details; submitted items can be reopened, and approved items follow the organization's reapproval policy.")</span></summary>
             <div class="lf-item-edit-body">
                 @if (item.VersionLocked)
                 {
@@ -250,22 +290,35 @@
                 }
                 else if (item.Status == BudgetItemStatus.Submitted)
                 {
-                    <div class="lf-alert lf-alert-info" role="status">This item is awaiting approval and cannot be edited.</div>
+                    <div class="lf-alert lf-alert-info" role="status">This item is awaiting approval. Reopen it to withdraw the pending submission, edit its information, and submit again.</div>
                 }
-                else if (item.Status == BudgetItemStatus.Approved)
+                else if (directEditWithoutReapproval)
                 {
-                    <div class="lf-alert lf-alert-info" role="status">This item has been approved. Use an amendment for post-approval budget changes.</div>
+                    <div class="lf-alert lf-alert-info" role="status">Direct editing is enabled. Save updates without resubmitting the item for approval. Status and prior approval history stay intact; if the planned cost changes, the current revised budget updates automatically. No PO, invoice or actual entry is created.</div>
+                }
+                else if (item.Status == BudgetItemStatus.Approved && requireReapprovalForEdits)
+                {
+                    <div class="lf-alert lf-alert-info" role="status">This organization requires reapproval for edits to approved budget items. Start a revision to edit and submit it again.</div>
+                }
+                @if (canReopen)
+                {
+                    <form method="post" action="/budget/items/@item.Id/reopen" class="lf-secondary-form">
+                        @Html.AntiForgeryToken()
+                        <p><button type="submit" class="button primary">@(item.Status == BudgetItemStatus.Approved ? "Start revision to edit" : "Reopen for editing")</button></p>
+                    </form>
                 }
 
                 <form method="post" action="/budget/items/@item.Id">
                     @Html.AntiForgeryToken()
                     <fieldset disabled="@(!Model.CanEdit)" class="lf-fieldset">
                         <div class="lf-form-grid lf-form-grid-3">
-                            <div><label for="itemNumber"><strong>Item number</strong></label><input id="itemNumber" name="itemNumber" value="@item.ItemNumber" maxlength="64" required /></div>
+                            <input type="hidden" name="itemNumber" value="@item.ItemNumber" />
                             <div><label for="purchaseType"><strong>Purchase type</strong></label><select id="purchaseType" name="purchaseType">@foreach (var purchaseType in Enum.GetValues<PurchaseType>()){<option value="@purchaseType" selected="@(purchaseType == item.PurchaseType)">@purchaseType</option>}</select></div>
                             <div><label for="budgetSectionId"><strong>Budget section</strong></label><select id="budgetSectionId" name="budgetSectionId"><option value="">Unassigned</option>@foreach (var option in item.BudgetSections){<option value="@option.Id" selected="@(option.Id == item.BudgetSectionId)">@option.Code · @option.Name</option>}</select></div>
                             <div class="lf-span-all"><label for="description"><strong>Description</strong></label><input id="description" name="description" value="@item.Description" maxlength="500" required /></div>
                             <div class="lf-span-all"><label for="reasonPurpose"><strong>Reason / purpose</strong></label><textarea id="reasonPurpose" name="reasonPurpose" rows="4" maxlength="2000">@item.ReasonPurpose</textarea></div>
+                            <div class="lf-span-all"><label for="notes"><strong>Notes</strong></label><textarea id="notes" name="notes" rows="3" maxlength="2000">@item.Notes</textarea></div>
+                            <div><label for="vendorId"><strong>Vendor</strong></label><select id="vendorId" name="vendorId"><option value="">Unassigned</option>@if(vendorOptions is not null){foreach(var option in vendorOptions){<option value="@option.Id" selected="@(option.Id == item.VendorId)">@option.Name</option>}}</select></div>
                             <div><label for="financeTypeId"><strong>Finance type</strong></label><select id="financeTypeId" name="financeTypeId"><option value="">Unassigned</option>@foreach (var option in item.FinanceTypes){<option value="@option.Id" selected="@(option.Id == item.FinanceTypeId)">@option.Name</option>}</select></div>
                             <div><label for="departmentId"><strong>Department</strong></label><select id="departmentId" name="departmentId"><option value="">Unassigned</option>@foreach (var option in item.Departments){<option value="@option.Id" selected="@(option.Id == item.DepartmentId)">@option.Code · @option.Name</option>}</select></div>
                             <div><label for="locationId"><strong>Location</strong></label><select id="locationId" name="locationId"><option value="">Unassigned</option>@foreach (var option in item.Locations){<option value="@option.Id" selected="@(option.Id == item.LocationId)">@option.Code · @option.Name</option>}</select></div>
@@ -274,8 +327,9 @@
                             <div><label for="frequencyId"><strong>Frequency</strong></label><select id="frequencyId" name="frequencyId"><option value="">Unassigned</option>@foreach (var option in item.Frequencies){<option value="@option.Id" selected="@(option.Id == item.FrequencyId)">@option.Name</option>}</select></div>
                             <div><label for="estimatedPurchaseDate"><strong>Estimated purchase date</strong></label><input id="estimatedPurchaseDate" name="estimatedPurchaseDate" type="date" value="@(item.EstimatedPurchaseDate?.ToString("yyyy-MM-dd"))" /></div>
                             <div><label for="renewalDate"><strong>Renewal date</strong></label><input id="renewalDate" name="renewalDate" type="date" value="@(item.RenewalDate?.ToString("yyyy-MM-dd"))" /></div>
-                            <div><label for="quantity"><strong>Quantity</strong></label><input id="quantity" name="quantity" type="number" min="0" step="0.0001" value="@item.Quantity.ToString("0.####", System.Globalization.CultureInfo.InvariantCulture)" required /></div>
-                            <div><label for="unitCost"><strong>Unit cost</strong></label><input id="unitCost" name="unitCost" type="number" min="0" step="0.0001" value="@item.UnitCost.ToString("0.####", System.Globalization.CultureInfo.InvariantCulture)" required /></div>
+                            <div><label for="quantity"><strong># of Units</strong></label><input id="quantity" name="quantity" type="number" min="0" step="0.0001" value="@item.Quantity.ToString("0.####", System.Globalization.CultureInfo.InvariantCulture)" required /></div>
+                            <div><label for="unitCost"><strong>Cost per Unit</strong></label><input id="unitCost" name="unitCost" type="number" min="0" step="0.0001" value="@item.UnitCost.ToString("0.####", System.Globalization.CultureInfo.InvariantCulture)" required /></div>
+                            <div><label for="edit-total"><strong>Total Cost (calculated)</strong></label><output id="edit-total">@item.PlannedTotal.ToString("C2")</output></div>
                         </div>
                     </fieldset>
                     @if (Model.CanEdit){<p><button class="primary" type="submit">Save planning item</button></p>}
@@ -284,7 +338,7 @@
                 {
                     <form method="post" action="/budget/items/@item.Id/submit" class="lf-secondary-form">@Html.AntiForgeryToken()<button class="primary" type="submit">Submit for approval</button></form>
                 }
-                @if (Model.CanEdit)
+                @if (Model.CanEdit && item.Status is BudgetItemStatus.Draft or BudgetItemStatus.Proposed or BudgetItemStatus.Deferred)
                 {
                     <form method="post" action="/budget/items/@item.Id/delete" class="lf-danger-zone">
                         @Html.AntiForgeryToken()
@@ -361,7 +415,7 @@
             <div class="lf-item-quick-actions">
                 <a class="button" href="/purchase-orders">Create / View Purchase Order</a>
                 <a class="button" href="/invoices">Record / View Invoice</a>
-                @if (Model.CanPostActuals){<a class="button" href="#actuals-invoices">Add Actual</a>}
+                @if (Model.CanPostActuals){<a class="button" href="#lf-actual-entry" data-open-actual-entry>Add Actual</a>}
                 <a class="button" href="@documentUploadUrl">Upload Document</a>
                 <a class="button" href="/budget/amendments?budgetItemId=@item.Id">Create Amendment</a>
                 <a class="button" href="/renewals">Open Renewal Center</a>

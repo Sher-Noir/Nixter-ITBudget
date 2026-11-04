@@ -13,4 +13,9 @@ public sealed class BrandingOptions
     public string TimeZone { get; set; } = "America/New_York";
     public string DefaultFiscalYearLabel { get; set; } = "Current FY";
     public string DefaultTheme { get; set; } = "system";
+
+    // Off by default: authorized staff can update approved and purchased items
+    // directly without restarting approval. Administrators can opt into
+    // mandatory reapproval in Organization & Appearance.
+    public bool RequireReapprovalForBudgetItemEdits { get; set; } = false;
 }
