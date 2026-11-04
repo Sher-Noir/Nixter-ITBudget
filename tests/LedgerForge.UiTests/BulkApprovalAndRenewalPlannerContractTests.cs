@@ -20,7 +20,7 @@ public sealed class BulkApprovalAndRenewalPlannerContractTests
         Assert.Contains("SubmitBudgetItemsAsync(", controller, StringComparison.Ordinal);
         Assert.Contains("SubmitBudgetItemsAsync(", service, StringComparison.Ordinal);
         Assert.Contains("BeginTransactionAsync(cancellationToken)", service, StringComparison.Ordinal);
-        Assert.Contains("ids.Distinct().Count()", service, StringComparison.Ordinal);
+        Assert.Contains("itemIds.Distinct().Count()", service, StringComparison.Ordinal);
         Assert.Contains("items.Any(x => x.IsArchived || !x.IsPlanningEditable)", service, StringComparison.Ordinal);
         Assert.Contains("[data-bulk-select-all]", script, StringComparison.Ordinal);
     }
