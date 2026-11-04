@@ -1,0 +1,177 @@
+@model LedgerForge.Infrastructure.Budgeting.RenewalPlanningSnapshot
+@using LedgerForge.Infrastructure.Budgeting
+@using LedgerForge.Domain.Budgeting
+@{
+    ViewData["Title"] = "Next Fiscal Year Renewal Planner";
+    var canPlan = ViewData["CanPlan"] as bool? == true;
+    var error = ViewData["Error"] as string;
+    var created = ViewData["Created"] as string;
+    var targetYear = Model.Years.FirstOrDefault(x => x.Id == Model.TargetFiscalYearId);
+    var sourceYear = Model.Years.FirstOrDefault(x => x.Id == Model.SourceFiscalYearId);
+    var targetVersion = Model.Versions.FirstOrDefault(x => x.Id == Model.TargetVersionId);
+    var targetEditable = canPlan && targetYear is not null && !targetYear.IsLocked &&
+        targetYear.Status is not (FiscalYearStatus.Closed or FiscalYearStatus.Archived) &&
+        targetVersion is not null && !targetVersion.IsLocked;
+}
+
+<div class="lf-page-header">
+    <div>
+        <h1 class="lf-page-title">Next Fiscal Year Renewal Planner</h1>
+        <p class="lf-subtitle">Forecast recurring costs, review contract notice dates, and carry selected renewals into the next planning budget as Draft items.</p>
+    </div>
+    <a class="button" href="/renewals">Renewal Calendar</a>
+</div>
+
+@if (!string.IsNullOrWhiteSpace(error))
+{
+    <div class="lf-card lf-alert lf-alert-danger" role="alert">@error</div>
+}
+@if (!string.IsNullOrWhiteSpace(created))
+{
+    <div class="lf-card lf-alert lf-alert-success" role="status">@created renewal draft(s) added to the target budget. You can review and edit them before submitting for approval.</div>
+}
+
+<section class="lf-card" aria-labelledby="renewal-planning-options-title">
+    <div class="lf-panel-header">
+        <div>
+            <h2 id="renewal-planning-options-title">Build your next-year forecast</h2>
+            <p class="lf-muted">Select the source budget, the following fiscal year, and an unlocked planning version. Forecast estimates aren't purchase commitments.</p>
+        </div>
+    </div>
+    <form method="get" action="/renewals/plan" class="lf-form-grid lf-form-grid-4">
+        <div>
+            <label for="sourceFiscalYearId">Source fiscal year</label>
+            <select id="sourceFiscalYearId" name="sourceFiscalYearId" required>
+                @foreach (var year in Model.Years)
+                {
+                    <option value="@year.Id" selected="@(year.Id == Model.SourceFiscalYearId)">@year.Name@(year.IsCurrent ? " (current)" : "")</option>
+                }
+            </select>
+        </div>
+        <div>
+            <label for="targetFiscalYearId">Next fiscal year</label>
+            <select id="targetFiscalYearId" name="targetFiscalYearId" required>
+                <option value="">Choose a later fiscal year</option>
+                @foreach (var year in Model.Years.Where(x => sourceYear is null || x.StartDate > sourceYear.StartDate))
+                {
+                    <option value="@year.Id" selected="@(year.Id == Model.TargetFiscalYearId)">@year.Name@(year.IsLocked ? " (locked)" : "")</option>
+                }
+            </select>
+        </div>
+        <div>
+            <label for="targetVersionId">Target planning version</label>
+            <select id="targetVersionId" name="targetVersionId">
+                @foreach (var version in Model.Versions)
+                {
+                    <option value="@version.Id" selected="@(version.Id == Model.TargetVersionId)">@version.Name (v@version.VersionNumber)@(version.IsLocked ? " · Locked" : "")</option>
+                }
+            </select>
+            <small class="lf-muted">After changing fiscal year, select Load forecast to refresh its versions.</small>
+        </div>
+        <div>
+            <label for="upliftPercent">Estimated price change (%)</label>
+            <input id="upliftPercent" type="number" name="upliftPercent" step="0.1" min="-100" max="300" value="@Model.UpliftPercent.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture)" />
+        </div>
+        <div><button class="primary" type="submit">Load forecast</button></div>
+        <div><a class="button" href="/fiscal-years">Manage fiscal years</a></div>
+    </form>
+</section>
+
+@if (Model.TargetFiscalYearId is null)
+{
+    <div class="lf-card lf-empty-state">
+        <h2>Set up the following fiscal year</h2>
+        <p>Create the next fiscal year and its initial planning version under Fiscal Years, then return to this planner. You don't have to close the current year first.</p>
+        <a class="button primary" href="/fiscal-years">Create next fiscal year</a>
+    </div>
+}
+else
+{
+    <div class="lf-kpi-grid">
+        <article class="lf-card lf-kpi"><div><div class="lf-card-title">Renewal candidates</div><div class="lf-kpi-value">@Model.NewCandidateCount</div><p class="lf-muted">@Model.Candidates.Count(x => x.AlreadyPlanned) already in target budget</p></div></article>
+        <article class="lf-card lf-kpi"><div><div class="lf-card-title">Current baseline</div><div class="lf-kpi-value">@Model.BaselineTotal.ToString("C2")</div></div></article>
+        <article class="lf-card lf-kpi"><div><div class="lf-card-title">Next-year projection</div><div class="lf-kpi-value">@Model.ProjectedTotal.ToString("C2")</div></div></article>
+        <article class="lf-card lf-kpi"><div><div class="lf-card-title">Forecast difference</div><div class="lf-kpi-value">@((Model.ProjectedTotal - Model.BaselineTotal).ToString("C2"))</div></div></article>
+    </div>
+
+    <section class="lf-card" aria-labelledby="next-renewals-title">
+        <div class="lf-panel-header">
+            <div><h2 id="next-renewals-title">Renewals to consider for @targetYear?.Name</h2><p class="lf-muted">Includes recurring budget items and scheduled contract renewals. Estimates should be checked with vendors before purchasing.</p></div>
+            <a class="button" href="/budget?fiscalYearId=@Model.TargetFiscalYearId&versionId=@Model.TargetVersionId">Open target budget</a>
+        </div>
+        @if (Model.Candidates.Count == 0)
+        {
+            <div class="lf-empty-state"><p>No recurring items or contract renewals were found for these fiscal years. Check Renewal Date, Frequency, and linked Contracts on source records.</p></div>
+        }
+        else
+        {
+            @if (targetEditable)
+            {
+                <form id="renewal-carry-form" method="post" action="/renewals/plan" class="lf-toolbar">
+                    @Html.AntiForgeryToken()
+                    <input type="hidden" name="sourceFiscalYearId" value="@Model.SourceFiscalYearId" />
+                    <input type="hidden" name="targetFiscalYearId" value="@Model.TargetFiscalYearId" />
+                    <input type="hidden" name="targetVersionId" value="@Model.TargetVersionId" />
+                    <input type="hidden" name="upliftPercent" value="@Model.UpliftPercent.ToString(System.Globalization.CultureInfo.InvariantCulture)" />
+                    <label><input type="checkbox" data-bulk-select-all="renewal-carry-form" /> Select all available renewal candidates</label>
+                    <label><input type="checkbox" name="confirmSelection" value="true" required /> I reviewed these costs, dates, and the target version</label>
+                    <button class="primary" type="submit">Create selected Draft renewal items</button>
+                </form>
+            }
+            else
+            {
+                <p class="lf-muted">Choose an unlocked target fiscal year and planning version, and sign in with budget-edit permission to create drafts.</p>
+            }
+            <div class="lf-table-wrap">
+                <table class="lf-table">
+                    <thead>
+                        <tr>
+                            <th>Select</th><th>Source</th><th>Description</th><th>Vendor</th>
+                            <th>Proposed renewal date</th><th>Notice deadline</th>
+                            <th>Baseline</th><th>Projected</th><th>Planning status</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var item in Model.Candidates)
+                        {
+                            <tr>
+                                <td>
+                                    @if (targetEditable && !item.AlreadyPlanned)
+                                    {
+                                        <input type="checkbox" form="renewal-carry-form" name="selectedKeys" value="@item.Key" data-bulk-item="renewal-carry-form" aria-label="Carry forward @item.Reference" />
+                                    }
+                                    else
+                                    {
+                                        <span>—</span>
+                                    }
+                                </td>
+                                <td><span class="badge">@item.Source</span><small class="lf-muted">@item.Reference</small></td>
+                                <td><strong>@item.Description</strong><small class="lf-muted">@item.Quantity.ToString("0.####") planned unit(s)</small></td>
+                                <td>@(item.Vendor ?? "Unassigned")</td>
+                                <td>@item.RenewalDate.ToString("MMM d, yyyy")</td>
+                                <td>@(item.NoticeDate?.ToString("MMM d, yyyy") ?? "—")</td>
+                                <td class="lf-number">@item.SourceEstimate.ToString("C2")</td>
+                                <td class="lf-number"><strong>@item.ProjectedTotal.ToString("C2")</strong></td>
+                                <td>
+                                    @if (item.AlreadyPlanned)
+                                    {
+                                        <span class="badge">Already planned</span>
+                                    }
+                                    else if (item.DateNeedsReview)
+                                    {
+                                        <span class="badge">Date needs review</span>
+                                    }
+                                    else
+                                    {
+                                        <span class="badge">Ready for draft</span>
+                                    }
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+            <p class="lf-muted">Each new budget item starts as Draft. The original source item and contract records are unchanged. Existing target matches are skipped. No automatic PO, invoice, actual expense, or contract commitment is created.</p>
+        }
+    </section>
+}
