@@ -72,6 +72,7 @@
     var needs = snapshot.Items.Select(x => x.NeedLevelName).OfType<string>().Where(x => !string.IsNullOrWhiteSpace(x)).Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(x => x).ToArray();
 
     var displayedPlanned = filteredItems.Sum(x => x.PlannedTotal);
+    var displayedActual = filteredItems.Sum(x => x.Actual);
     var displayedApproved = filteredItems.Sum(x => x.ApprovedTotal ?? 0m);
     var displayedProposed = filteredItems.Where(x => x.Status is BudgetItemStatus.Draft or BudgetItemStatus.Proposed or BudgetItemStatus.Submitted or BudgetItemStatus.Deferred).Sum(x => x.PlannedTotal);
     var mustHave = filteredItems.Count(x => string.Equals(x.NeedLevelName, "Must Have", StringComparison.OrdinalIgnoreCase));
@@ -209,6 +210,7 @@
                     <article class="lf-card lf-budget-kpi"><span class="lf-budget-kpi-icon blue">▥</span><div><strong>@filteredItems.Length</strong><span>Total Items</span></div></article>
                     <article class="lf-card lf-budget-kpi"><span class="lf-budget-kpi-icon gold">★</span><div><strong>@mustHave</strong><span>Must Have</span></div></article>
                     <article class="lf-card lf-budget-kpi"><span class="lf-budget-kpi-icon green">▤</span><div><strong>@displayedPlanned.ToString("C2")</strong><span>Planned Total</span></div></article>
+                    <article class="lf-card lf-budget-kpi"><span class="lf-budget-kpi-icon teal">▥</span><div><strong>@displayedActual.ToString("C2")</strong><span>Actual</span></div></article>
                     <article class="lf-card lf-budget-kpi"><span class="lf-budget-kpi-icon purple">▧</span><div><strong>@displayedProposed.ToString("C2")</strong><span>Open / Proposed</span></div></article>
                     <article class="lf-card lf-budget-kpi"><span class="lf-budget-kpi-icon teal">✓</span><div><strong>@displayedApproved.ToString("C2")</strong><span>Approved</span></div></article>
                 </section>
@@ -291,6 +293,7 @@
                                     <th class="lf-number" aria-sort="@SortAria("quantity")"><a class="lf-budget-sort-link" href="@SortUrl("quantity")">Qty <span aria-hidden="true">@SortGlyph("quantity")</span></a></th>
                                     <th class="lf-number" aria-sort="@SortAria("unitCost")"><a class="lf-budget-sort-link" href="@SortUrl("unitCost")">Unit Cost <span aria-hidden="true">@SortGlyph("unitCost")</span></a></th>
                                     <th class="lf-number" aria-sort="@SortAria("total")"><a class="lf-budget-sort-link" href="@SortUrl("total")">Total <span aria-hidden="true">@SortGlyph("total")</span></a></th>
+                                    <th class="lf-number" aria-sort="@SortAria("actual")"><a class="lf-budget-sort-link" href="@SortUrl("actual")">Actual <span aria-hidden="true">@SortGlyph("actual")</span></a></th>
                                     <th aria-sort="@SortAria("needLevel")"><a class="lf-budget-sort-link" href="@SortUrl("needLevel")">Need Level <span aria-hidden="true">@SortGlyph("needLevel")</span></a></th>
                                     <th aria-sort="@SortAria("frequency")"><a class="lf-budget-sort-link" href="@SortUrl("frequency")">Frequency <span aria-hidden="true">@SortGlyph("frequency")</span></a></th>
                                     <th aria-sort="@SortAria("renewal")"><a class="lf-budget-sort-link" href="@SortUrl("renewal")">Renewal <span aria-hidden="true">@SortGlyph("renewal")</span></a></th>
@@ -312,6 +315,7 @@
                                         <td class="lf-number">@item.Quantity.ToString("0.####")</td>
                                         <td class="lf-number">@item.UnitCost.ToString("C2")</td>
                                         <td class="lf-number"><strong>@item.PlannedTotal.ToString("C2")</strong></td>
+                                        <td class="lf-number">@item.Actual.ToString("C2")</td>
                                         <td>@if (!string.IsNullOrWhiteSpace(item.NeedLevelName)){<span class="badge @BadgeClass(item.NeedLevelName)">@item.NeedLevelName</span>}else{<span>—</span>}</td>
                                         <td>@(item.FrequencyName ?? "—")</td>
                                         <td>@(item.RenewalDate?.ToString("MM/dd/yyyy") ?? "—")</td>
@@ -410,6 +414,7 @@
                     <div><dt>Qty</dt><dd>@selectedItem.Quantity.ToString("0.####")</dd></div>
                     <div><dt>Unit Cost</dt><dd>@selectedItem.UnitCost.ToString("C2")</dd></div>
                     <div><dt>Total</dt><dd><strong>@selectedItem.PlannedTotal.ToString("C2")</strong></dd></div>
+                    <div><dt>Actual</dt><dd><strong>@selectedItem.Actual.ToString("C2")</strong></dd></div>
                 </dl>
 
                 <section class="lf-drawer-card">
