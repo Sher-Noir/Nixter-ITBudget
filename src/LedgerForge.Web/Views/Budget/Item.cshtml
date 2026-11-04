@@ -258,7 +258,7 @@
             </section>
         </div>
 
-        <details id="edit-item" class="lf-card lf-item-edit-panel" open="@Model.CanEdit">
+        <details id="edit-item" class="lf-card lf-item-edit-panel" open="@(Model.CanEdit || canReopen)">
             <summary><strong>Edit item information</strong><span>Update all item details. Submitted or approved items can be reopened for a new approval cycle.</span></summary>
             <div class="lf-item-edit-body">
                 @if (item.VersionLocked)
