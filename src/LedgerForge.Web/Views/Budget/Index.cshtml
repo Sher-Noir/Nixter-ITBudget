@@ -192,7 +192,6 @@
                             <fieldset data-budget-step>
                                 <legend><strong>Step 1 — Item details</strong></legend>
                                 <div class="lf-form-grid">
-                                    <div><label for="create-itemNumber">Item number</label><input id="create-itemNumber" name="itemNumber" maxlength="64" required /></div>
                                     <div class="lf-span-all"><label for="create-description">Item Description</label><input id="create-description" name="description" maxlength="500" required /></div>
                                     <div><label for="create-section">Section</label><select id="create-section" name="budgetSectionId"><option value="">Unassigned</option>@foreach(var option in createOptions.BudgetSections){<option value="@option.Id">@option.Code · @option.Name</option>}</select></div>
                                     <div><label for="create-category">Category</label><select id="create-category" name="internalCategoryId"><option value="">Unassigned</option>@foreach(var option in createOptions.InternalCategories){<option value="@option.Id">@option.Name</option>}</select></div>
