@@ -29,6 +29,19 @@ public sealed class BudgetItemTableTests
     }
 
     [Fact]
+    public void ActualSort_UsesNetPostedSpend_NotPlannedTotal()
+    {
+        var rows = new[]
+        {
+            Row("1", total: 200m) with { Actual = 20m },
+            Row("2", total: 30m) with { Actual = -5m },
+            Row("3", total: 10m) with { Actual = 150m }
+        };
+        var table = BudgetItemTable.Create(rows, "actual", "desc", 1, 25);
+        Assert.Equal(new[] { "3", "1", "2" }, table.Rows.Select(x => x.ItemNumber).ToArray());
+    }
+
+    [Fact]
     public void PageBoundaries_AreCorrect_AndRowsDoNotRepeat()
     {
         var rows = Enumerable.Range(1, 33)
@@ -103,6 +116,7 @@ public sealed class BudgetItemTableTests
     [InlineData("quantity")]
     [InlineData("unitCost")]
     [InlineData("total")]
+    [InlineData("actual")]
     [InlineData("needLevel")]
     [InlineData("frequency")]
     [InlineData("renewal")]
