@@ -183,13 +183,20 @@ public sealed class BudgetItem : AuditableEntity
 
     /// <summary>
     /// Corrects an accidental Purchased flag. Does not alter financial entries.
-    /// Items with prior approved totals return to Approved; others to Draft.
+    /// If the prior status is unavailable, restore Approved when an approved
+    /// total exists and Draft otherwise.
     /// </summary>
-    public void UndoPurchased()
+    public void UndoPurchased(BudgetItemStatus? previousStatus = null)
     {
         if (Status != BudgetItemStatus.Purchased || IsArchived)
             throw new InvalidOperationException("Only a Purchased budget item can have its purchase flag removed.");
-        Status = ApprovedTotal is not null ? BudgetItemStatus.Approved : BudgetItemStatus.Draft;
+        if (previousStatus.HasValue &&
+            previousStatus.Value is not (BudgetItemStatus.Draft or BudgetItemStatus.Proposed or
+                BudgetItemStatus.Deferred or BudgetItemStatus.Approved or BudgetItemStatus.Active))
+            throw new ArgumentOutOfRangeException(nameof(previousStatus));
+        // When available, restore the exact status captured by the explicit
+        // Purchased audit event, rather than guessing from the approval amount.
+        Status = previousStatus ?? (ApprovedTotal is not null ? BudgetItemStatus.Approved : BudgetItemStatus.Draft);
     }
 
     public void SetStatus(BudgetItemStatus status)
