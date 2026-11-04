@@ -17,6 +17,26 @@ public sealed class ApprovalsController(ApprovalQueueService approvalQueueServic
         return View(await approvalQueueService.GetAsync(cancellationToken));
     }
 
+    [HttpPost("budget-items/bulk-approve")]
+    public async Task<IActionResult> BulkApproveBudgetItems(
+        Guid[] selectedItemIds, bool confirmSelection, string? note,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            if (!confirmSelection)
+                throw new ArgumentException("Review and confirm the selected pending items.");
+            var count = await approvalQueueService.ApproveBudgetItemsAsync(
+                selectedItemIds, RequireActor(), note, cancellationToken);
+            return RedirectToAction(nameof(Index), new { bulkApproved = count });
+        }
+        catch (Exception exception) when (exception is ArgumentException or InvalidOperationException or KeyNotFoundException)
+        {
+            TempData["ApprovalError"] = exception.Message;
+            return RedirectToAction(nameof(Index));
+        }
+    }
+
     [HttpPost("budget-items/{id:guid}/approve")]
     public Task<IActionResult> ApproveBudgetItem(Guid id, string? note, CancellationToken cancellationToken)
         => RunDecision(() => approvalQueueService.ApproveBudgetItemAsync(id, RequireActor(), note, cancellationToken));
