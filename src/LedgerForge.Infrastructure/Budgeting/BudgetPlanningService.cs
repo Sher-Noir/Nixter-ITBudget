@@ -37,7 +37,8 @@ public sealed record BudgetItemSummary(
     string? FrequencyName,
     string? VendorName,
     Guid? VendorId = null,
-    string? Notes = null);
+    string? Notes = null,
+    decimal Actual = 0m);
 
 public sealed record BudgetPlanningSnapshot(
     IReadOnlyList<FiscalYearSummary> FiscalYears,
@@ -163,6 +164,14 @@ public sealed class BudgetPlanningService(
         var frequencies = await dbContext.Frequencies.AsNoTracking().ToDictionaryAsync(x => x.Id, x => x.Name, cancellationToken);
 
         var itemIds = itemRows.Select(x => x.Id).ToArray();
+        // Net posted actuals, including reversals, for items in this selected
+        // budget version. Do not use the all-fiscal-year total for a version table.
+        var actualTotals = await dbContext.ActualTransactions.AsNoTracking()
+            .Where(x => x.BudgetItemId != null && itemIds.Contains(x.BudgetItemId.Value))
+            .GroupBy(x => x.BudgetItemId!.Value)
+            .Select(group => new { BudgetItemId = group.Key, Total = group.Sum(x => x.Amount) })
+            .ToDictionaryAsync(x => x.BudgetItemId, x => x.Total, cancellationToken);
+
         var vendorLinks = await (
             from line in dbContext.PurchaseOrderLines.AsNoTracking()
             join order in dbContext.PurchaseOrders.AsNoTracking() on line.PurchaseOrderId equals order.Id
@@ -215,7 +224,8 @@ public sealed class BudgetPlanningService(
             x.VendorId is Guid vendorId && directVendors.TryGetValue(vendorId, out var directName)
                 ? directName : vendorsByItem.GetValueOrDefault(x.Id),
             x.VendorId,
-            x.Notes))
+            x.Notes,
+            actualTotals.GetValueOrDefault(x.Id)))
             .ToArray();
 
         return new(
