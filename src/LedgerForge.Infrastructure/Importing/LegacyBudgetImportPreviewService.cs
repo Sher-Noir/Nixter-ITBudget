@@ -76,7 +76,7 @@ public sealed class LegacyBudgetImportPreviewService(
 
                 var rowIssues = ValidateRow(sourceRow, importRow.Id, batch.Id, lookups, aliases);
                 if (string.IsNullOrWhiteSpace(sourceRow.Vendor)) missingVendorCount++;
-                if (string.Equals(sourceRow.Frequency?.Trim(), "Other", StringComparison.OrdinalIgnoreCase) &&
+                if (string.Equals(sourceRow.Frequency.Trim(), "Other", StringComparison.OrdinalIgnoreCase) &&
                     !TryResolveLookup("Frequency", sourceRow.Frequency, lookups.Frequencies, false, aliases, out _))
                     missingGenericFrequencyCount++;
                 foreach (var issue in rowIssues)
@@ -180,7 +180,7 @@ public sealed class LegacyBudgetImportPreviewService(
         ValidateLookup("Location", row.Location, lookups.Locations, true, aliases, importBatchId, importRowId, issues);
         ValidateLookup("NeedLevel", row.NeedLevel, lookups.NeedLevels, true, aliases, importBatchId, importRowId, issues);
         ValidateLookup("InternalCategory", row.InternalCategory, lookups.InternalCategories, false, aliases, importBatchId, importRowId, issues);
-        if (!string.Equals(row.Frequency?.Trim(), "Other", StringComparison.OrdinalIgnoreCase))
+        if (!string.Equals(row.Frequency.Trim(), "Other", StringComparison.OrdinalIgnoreCase))
             ValidateLookup("Frequency", row.Frequency, lookups.Frequencies, false, aliases, importBatchId, importRowId, issues);
 
         var workflowFlags = (row.Approval ? 1 : 0) + (row.Denial ? 1 : 0) + (row.Proposed ? 1 : 0);
