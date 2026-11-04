@@ -45,7 +45,7 @@ public sealed class BudgetController(
     [Authorize(Policy = AuthorizationPolicies.EditPlanningBudget)]
     [HttpPost("create")]
     public async Task<IActionResult> Create(
-        Guid fiscalYearId, Guid versionId, string itemNumber, string description,
+        Guid fiscalYearId, Guid versionId, string description,
         string? reasonPurpose, PurchaseType purchaseType, decimal quantity, decimal unitCost,
         Guid? budgetSectionId, Guid? financeTypeId, Guid? departmentId, Guid? locationId,
         Guid? needLevelId, Guid? internalCategoryId, Guid? frequencyId,
@@ -55,7 +55,7 @@ public sealed class BudgetController(
         try
         {
             var id = await planningService.CreateDetailedItemAsync(
-                fiscalYearId, versionId, itemNumber, description, reasonPurpose, purchaseType,
+                fiscalYearId, versionId, description, reasonPurpose, purchaseType,
                 quantity, unitCost, budgetSectionId, financeTypeId, departmentId, locationId,
                 needLevelId, internalCategoryId, frequencyId, cancellationToken, vendorId, notes);
             return RedirectToAction(nameof(Item), new { id, saved = true });
