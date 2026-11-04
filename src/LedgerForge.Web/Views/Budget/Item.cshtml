@@ -11,6 +11,8 @@
     ViewData["Title"] = $"Budget Item {item.ItemNumber}";
     var canSubmit = ViewData["CanSubmit"] as bool? == true;
     var canReopen = ViewData["CanReopen"] as bool? == true;
+    var directEditWithoutReapproval = ViewData["DirectEditWithoutReapproval"] as bool? == true;
+    var requireReapprovalForEdits = ViewData["RequireReapprovalForBudgetItemEdits"] as bool? == true;
     var canMarkPurchased = ViewData["CanMarkPurchased"] as bool? == true;
     var canUndoPurchased = ViewData["CanUndoPurchased"] as bool? == true;
     var purchasedChanged = ViewData["PurchasedChanged"] as bool? == true;
@@ -280,7 +282,7 @@
         </div>
 
         <details id="edit-item" class="lf-card lf-item-edit-panel" open="@(Model.CanEdit || canReopen)">
-            <summary><strong>Edit item information</strong><span>Update all item details. Submitted or approved items can be reopened for a new approval cycle.</span></summary>
+            <summary><strong>Edit item information</strong><span>@(directEditWithoutReapproval ? "Save changes directly without reopening approval. Every edit is audited." : "Update planning details; submitted items can be reopened, and approved items follow the organization's reapproval policy.")</span></summary>
             <div class="lf-item-edit-body">
                 @if (item.VersionLocked)
                 {
@@ -290,9 +292,13 @@
                 {
                     <div class="lf-alert lf-alert-info" role="status">This item is awaiting approval. Reopen it to withdraw the pending submission, edit its information, and submit again.</div>
                 }
-                else if (item.Status == BudgetItemStatus.Approved)
+                else if (directEditWithoutReapproval)
                 {
-                    <div class="lf-alert lf-alert-info" role="status">This item is approved. Start a new revision to edit it; the earlier approved total is retained until the revised item is reapproved. Use Budget Amendments for formal post-approval funding adjustments.</div>
+                    <div class="lf-alert lf-alert-info" role="status">Direct editing is enabled. Save updates without resubmitting the item for approval. Status and prior approval history stay intact; if the planned cost changes, the current revised budget updates automatically. No PO, invoice or actual entry is created.</div>
+                }
+                else if (item.Status == BudgetItemStatus.Approved && requireReapprovalForEdits)
+                {
+                    <div class="lf-alert lf-alert-info" role="status">This organization requires reapproval for edits to approved budget items. Start a revision to edit and submit it again.</div>
                 }
                 @if (canReopen)
                 {
@@ -332,7 +338,7 @@
                 {
                     <form method="post" action="/budget/items/@item.Id/submit" class="lf-secondary-form">@Html.AntiForgeryToken()<button class="primary" type="submit">Submit for approval</button></form>
                 }
-                @if (Model.CanEdit)
+                @if (Model.CanEdit && item.Status is BudgetItemStatus.Draft or BudgetItemStatus.Proposed or BudgetItemStatus.Deferred)
                 {
                     <form method="post" action="/budget/items/@item.Id/delete" class="lf-danger-zone">
                         @Html.AntiForgeryToken()
