@@ -114,6 +114,11 @@ public sealed class BudgetController(
         var canPostActuals = (await authorizationService.AuthorizeAsync(User, AuthorizationPolicies.PostActuals)).Succeeded;
         var workflowEditable = snapshot.Status is BudgetItemStatus.Draft or BudgetItemStatus.Proposed or BudgetItemStatus.Deferred;
         ViewData["CanSubmit"] = canEditRole && !snapshot.VersionLocked && workflowEditable;
+        ViewData["CanMarkPurchased"] = canEditRole &&
+            snapshot.Status is BudgetItemStatus.Draft or BudgetItemStatus.Proposed or
+                BudgetItemStatus.Deferred or BudgetItemStatus.Approved or BudgetItemStatus.Active;
+        ViewData["CanUndoPurchased"] = canEditRole && snapshot.Status == BudgetItemStatus.Purchased;
+        ViewData["PurchasedChanged"] = Request.Query.ContainsKey("purchasedChanged");
         ViewData["CanReopen"] = canEditRole && !snapshot.VersionLocked &&
             (snapshot.Status is BudgetItemStatus.Submitted or BudgetItemStatus.Approved);
         ViewData["RevisionOpened"] = Request.Query.ContainsKey("reopened");
@@ -238,6 +243,42 @@ public sealed class BudgetController(
         {
             TempData["BudgetItemError"] = exception.Message;
             return RedirectToAction(nameof(Item), new { id });
+        }
+    }
+
+    [Authorize(Policy = AuthorizationPolicies.EditPlanningBudget)]
+    [HttpPost("items/{id:guid}/purchased")]
+    public Task<IActionResult> MarkPurchased(
+        Guid id, bool returnToBudget, Guid? fiscalYearId, Guid? versionId,
+        CancellationToken cancellationToken)
+        => ChangePurchasedStatus(id, true, returnToBudget, fiscalYearId, versionId, cancellationToken);
+
+    [Authorize(Policy = AuthorizationPolicies.EditPlanningBudget)]
+    [HttpPost("items/{id:guid}/undo-purchased")]
+    public Task<IActionResult> UndoPurchased(
+        Guid id, bool returnToBudget, Guid? fiscalYearId, Guid? versionId,
+        CancellationToken cancellationToken)
+        => ChangePurchasedStatus(id, false, returnToBudget, fiscalYearId, versionId, cancellationToken);
+
+    private async Task<IActionResult> ChangePurchasedStatus(
+        Guid id, bool purchased, bool returnToBudget, Guid? fiscalYearId,
+        Guid? versionId, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await approvalQueueService.SetBudgetItemPurchasedAsync(
+                id, RequireActor(), purchased, cancellationToken);
+            return returnToBudget
+                ? RedirectToAction(nameof(Index), new { fiscalYearId, versionId, purchasedChanged = true })
+                : RedirectToAction(nameof(Item), new { id, purchasedChanged = true });
+        }
+        catch (KeyNotFoundException) { return NotFound(); }
+        catch (Exception exception) when (exception is ArgumentException or InvalidOperationException)
+        {
+            TempData[returnToBudget ? "BudgetError" : "BudgetItemError"] = exception.Message;
+            return returnToBudget
+                ? RedirectToAction(nameof(Index), new { fiscalYearId, versionId })
+                : RedirectToAction(nameof(Item), new { id });
         }
     }
 
