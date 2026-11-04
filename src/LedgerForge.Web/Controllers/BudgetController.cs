@@ -2,6 +2,7 @@ using LedgerForge.Domain.Budgeting;
 using LedgerForge.Infrastructure.Actuals;
 using LedgerForge.Infrastructure.Approvals;
 using LedgerForge.Infrastructure.Budgeting;
+using LedgerForge.Web.Configuration;
 using LedgerForge.Web.Documents;
 using LedgerForge.Web.Models.Budgeting;
 using LedgerForge.Web.Security;
@@ -19,7 +20,8 @@ public sealed class BudgetController(
     ApprovalQueueService approvalQueueService,
     IAuthorizationService authorizationService,
     IWebHostEnvironment environment,
-    IConfiguration configuration) : Controller
+    IConfiguration configuration,
+    OrganizationSettingsStore organizationSettingsStore) : Controller
 {
     [HttpGet("")]
     public async Task<IActionResult> Index(
@@ -113,6 +115,11 @@ public sealed class BudgetController(
         var canEditRole = (await authorizationService.AuthorizeAsync(User, AuthorizationPolicies.EditPlanningBudget)).Succeeded;
         var canPostActuals = (await authorizationService.AuthorizeAsync(User, AuthorizationPolicies.PostActuals)).Succeeded;
         var workflowEditable = snapshot.Status is BudgetItemStatus.Draft or BudgetItemStatus.Proposed or BudgetItemStatus.Deferred;
+        var requireReapproval = (await organizationSettingsStore.GetAsync(cancellationToken)).RequireReapprovalForBudgetItemEdits;
+        var directEditable = !requireReapproval &&
+            snapshot.Status is BudgetItemStatus.Approved or BudgetItemStatus.Active or BudgetItemStatus.Purchased;
+        ViewData["DirectEditWithoutReapproval"] = canEditRole && !snapshot.VersionLocked && directEditable;
+        ViewData["RequireReapprovalForBudgetItemEdits"] = requireReapproval;
         ViewData["CanSubmit"] = canEditRole && !snapshot.VersionLocked && workflowEditable;
         ViewData["CanMarkPurchased"] = canEditRole &&
             snapshot.Status is BudgetItemStatus.Draft or BudgetItemStatus.Proposed or
@@ -120,7 +127,8 @@ public sealed class BudgetController(
         ViewData["CanUndoPurchased"] = canEditRole && snapshot.Status == BudgetItemStatus.Purchased;
         ViewData["PurchasedChanged"] = Request.Query.ContainsKey("purchasedChanged");
         ViewData["CanReopen"] = canEditRole && !snapshot.VersionLocked &&
-            (snapshot.Status is BudgetItemStatus.Submitted or BudgetItemStatus.Approved);
+            (snapshot.Status == BudgetItemStatus.Submitted ||
+                (requireReapproval && snapshot.Status == BudgetItemStatus.Approved));
         ViewData["RevisionOpened"] = Request.Query.ContainsKey("reopened");
         ViewData["Submitted"] = Request.Query.ContainsKey("submitted");
         ViewData["ActualSaved"] = Request.Query.ContainsKey("actualSaved");
@@ -141,7 +149,7 @@ public sealed class BudgetController(
         return View("Item", new BudgetItemEditViewModel(
             workspace,
             documents,
-            canEditRole && !snapshot.VersionLocked && workflowEditable,
+            canEditRole && !snapshot.VersionLocked && (workflowEditable || directEditable),
             canPostActuals,
             actualOptions,
             TempData["BudgetItemError"] as string,
@@ -173,6 +181,8 @@ public sealed class BudgetController(
     {
         try
         {
+            var allowDirectApprovedEdits =
+                !(await organizationSettingsStore.GetAsync(cancellationToken)).RequireReapprovalForBudgetItemEdits;
             await planningService.UpdateItemAsync(
                 id,
                 itemNumber,
@@ -193,7 +203,8 @@ public sealed class BudgetController(
                 cancellationToken,
                 vendorId: vendorId,
                 notes: notes,
-                updateVendorAndNotes: true);
+                updateVendorAndNotes: true,
+                allowDirectApprovedEdits: allowDirectApprovedEdits);
 
             return RedirectToAction(nameof(Item), new { id, saved = true });
         }
