@@ -2,6 +2,124 @@
 (() => {
     "use strict";
 
+    // Progressive enhancement: keep native <select> elements as the form source of truth,
+    // and provide an accessible type-to-filter combobox for every wizard/edit dropdown.
+    // If scripting is unavailable, the original dropdown remains fully usable.
+    const enhanceSelect = select => {
+        if (!select.id || select.dataset.searchEnhanced === "true") return;
+        const label = document.querySelector(`label[for="${select.id}"]`);
+        const sourceOptions = [...select.options].map(option => ({
+            value: option.value, label: option.textContent.trim()
+        }));
+        if (sourceOptions.length === 0) return;
+
+        const wrapper = document.createElement("div");
+        wrapper.className = "lf-select-combobox";
+        const search = document.createElement("input");
+        search.type = "search";
+        search.className = "lf-select-search";
+        search.id = select.id + "-search";
+        search.setAttribute("role", "combobox");
+        search.setAttribute("aria-autocomplete", "list");
+        search.setAttribute("aria-haspopup", "listbox");
+        search.setAttribute("aria-expanded", "false");
+        search.setAttribute("autocomplete", "off");
+        search.placeholder = "Search or select…";
+        if (label) label.htmlFor = search.id;
+
+        const popup = document.createElement("div");
+        popup.className = "lf-select-options";
+        popup.id = select.id + "-options";
+        popup.setAttribute("role", "listbox");
+        popup.hidden = true;
+        search.setAttribute("aria-controls", popup.id);
+        wrapper.append(search, popup);
+        select.before(wrapper);
+        select.dataset.searchEnhanced = "true";
+        select.classList.add("lf-searchable-native");
+        select.setAttribute("aria-hidden", "true");
+        select.tabIndex = -1;
+
+        const chosen = () => sourceOptions.find(option => option.value === select.value);
+        const restoreText = () => { search.value = chosen()?.label || ""; };
+        let matches = [];
+        let highlighted = -1;
+
+        const close = (restore = true) => {
+            popup.hidden = true;
+            search.setAttribute("aria-expanded", "false");
+            search.removeAttribute("aria-activedescendant");
+            if (restore) restoreText();
+        };
+        const pick = option => {
+            select.value = option.value;
+            select.dispatchEvent(new Event("change", {bubbles: true}));
+            close(true);
+            search.focus();
+        };
+        const render = filter => {
+            const query = filter.trim().toLocaleLowerCase();
+            matches = sourceOptions.filter(option => option.label.toLocaleLowerCase().includes(query));
+            highlighted = -1;
+            popup.replaceChildren();
+            if (!matches.length) {
+                const empty = document.createElement("div");
+                empty.className = "lf-select-no-results";
+                empty.textContent = "No matches";
+                popup.append(empty);
+            } else {
+                matches.slice(0, 100).forEach((option, index) => {
+                    const button = document.createElement("button");
+                    button.type = "button";
+                    button.className = "lf-select-option";
+                    button.id = select.id + "-option-" + index;
+                    button.setAttribute("role", "option");
+                    button.setAttribute("aria-selected", String(option.value === select.value));
+                    button.textContent = option.label;
+                    button.addEventListener("click", () => pick(option));
+                    popup.append(button);
+                });
+            }
+            popup.hidden = false;
+            search.setAttribute("aria-expanded", "true");
+        };
+        const highlight = nextIndex => {
+            const choices = [...popup.querySelectorAll(".lf-select-option")];
+            if (!choices.length) return;
+            highlighted = Math.min(Math.max(nextIndex, 0), choices.length - 1);
+            choices.forEach((choice, index) => {
+                choice.classList.toggle("is-highlighted", index === highlighted);
+            });
+            const active = choices[highlighted];
+            search.setAttribute("aria-activedescendant", active.id);
+            active.scrollIntoView({block: "nearest"});
+        };
+        search.addEventListener("focus", () => render(""));
+        search.addEventListener("input", () => render(search.value));
+        search.addEventListener("keydown", event => {
+            if (event.key === "Escape") { event.preventDefault(); close(); }
+            else if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+                event.preventDefault();
+                if (popup.hidden) render("");
+                highlight(event.key === "ArrowDown" ? highlighted + 1 : highlighted < 0 ? 0 : highlighted - 1);
+            } else if (event.key === "Enter" && !popup.hidden) {
+                event.preventDefault();
+                const option = matches[highlighted >= 0 ? highlighted : 0];
+                if (option) pick(option);
+            } else if (event.key === "Tab") close();
+        });
+        search.addEventListener("blur", event => {
+            if (!wrapper.contains(event.relatedTarget)) close();
+        });
+        document.addEventListener("pointerdown", event => {
+            if (!wrapper.contains(event.target)) close();
+        });
+        select.addEventListener("change", restoreText);
+        restoreText();
+    };
+    document.querySelectorAll("#lf-budget-create-form select, #edit-item select")
+        .forEach(enhanceSelect);
+
     const wizard = document.getElementById("new-budget-item");
     const form = document.getElementById("lf-budget-create-form");
     if (wizard && form) {
