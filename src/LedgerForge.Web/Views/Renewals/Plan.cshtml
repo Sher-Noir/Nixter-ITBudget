@@ -117,7 +117,10 @@ else
     <section class="lf-card" aria-labelledby="next-renewals-title">
         <div class="lf-panel-header">
             <div><h2 id="next-renewals-title">Renewals to consider for @(targetYear?.Name ?? "the target year")</h2><p class="lf-muted">Includes recurring budget items and scheduled contract renewals. Estimates should be checked with vendors before purchasing.</p></div>
-            <a class="button" href="/budget?fiscalYearId=@Model.TargetFiscalYearId&versionId=@Model.TargetVersionId">Open target budget</a>
+            <div class="lf-toolbar">
+                <a class="button" href="/renewals/plan/export.csv?sourceFiscalYearId=@Model.SourceFiscalYearId&targetFiscalYearId=@Model.TargetFiscalYearId&targetVersionId=@Model.TargetVersionId&upliftPercent=@Model.UpliftPercent.ToString(System.Globalization.CultureInfo.InvariantCulture)">Export forecast CSV</a>
+                <a class="button" href="/budget?fiscalYearId=@Model.TargetFiscalYearId&versionId=@Model.TargetVersionId">Open target budget</a>
+            </div>
         </div>
         @if (Model.Candidates.Count == 0)
         {
