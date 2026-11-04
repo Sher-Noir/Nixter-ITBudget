@@ -153,6 +153,30 @@ public sealed class ActualsController(
         }
     }
 
+    [Authorize(Policy = AuthorizationPolicies.PostActuals)]
+    [HttpPost("{id:guid}/correct")]
+    public async Task<IActionResult> Correct(
+        Guid id, Guid fiscalYearId, DateOnly transactionDate, decimal amount,
+        string description, string? sourceReference, Guid? budgetItemId,
+        Guid? financeAccountId, Guid? departmentId, Guid? locationId,
+        string reason, bool returnToBudget, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await actualLedgerService.CorrectManualAsync(
+                id, transactionDate, amount, description, sourceReference,
+                budgetItemId, financeAccountId, departmentId, locationId, reason, cancellationToken);
+            TempData["ActualsSuccess"] = "Manual actual corrected. The original and its reversal remain in the audited ledger.";
+            return ReturnAfterActual(fiscalYearId, returnToBudget);
+        }
+        catch (KeyNotFoundException) { return NotFound(); }
+        catch (Exception exception) when (exception is ArgumentException or InvalidOperationException or OverflowException)
+        {
+            TempData["ActualsError"] = exception.Message;
+            return ReturnAfterActual(fiscalYearId, returnToBudget);
+        }
+    }
+
     private IActionResult ReturnAfterActual(Guid fiscalYearId, bool returnToBudget, bool saved = false, bool reversed = false)
         => returnToBudget
             ? RedirectToAction("Index", "Budget", new { fiscalYearId, actualModal = true })
