@@ -114,6 +114,9 @@ public sealed class BudgetController(
         var canPostActuals = (await authorizationService.AuthorizeAsync(User, AuthorizationPolicies.PostActuals)).Succeeded;
         var workflowEditable = snapshot.Status is BudgetItemStatus.Draft or BudgetItemStatus.Proposed or BudgetItemStatus.Deferred;
         ViewData["CanSubmit"] = canEditRole && !snapshot.VersionLocked && workflowEditable;
+        ViewData["CanReopen"] = canEditRole && !snapshot.VersionLocked &&
+            (snapshot.Status is BudgetItemStatus.Submitted or BudgetItemStatus.Approved);
+        ViewData["RevisionOpened"] = Request.Query.ContainsKey("reopened");
         ViewData["Submitted"] = Request.Query.ContainsKey("submitted");
         ViewData["ActualSaved"] = Request.Query.ContainsKey("actualSaved");
 
@@ -232,6 +235,26 @@ public sealed class BudgetController(
             return NotFound();
         }
         catch (Exception exception) when (exception is ArgumentException or ArgumentOutOfRangeException or InvalidOperationException or OverflowException)
+        {
+            TempData["BudgetItemError"] = exception.Message;
+            return RedirectToAction(nameof(Item), new { id });
+        }
+    }
+
+    [Authorize(Policy = AuthorizationPolicies.EditPlanningBudget)]
+    [HttpPost("items/{id:guid}/reopen")]
+    public async Task<IActionResult> ReopenItem(Guid id, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await approvalQueueService.ReopenBudgetItemForRevisionAsync(id, RequireActor(), cancellationToken);
+            return RedirectToAction(nameof(Item), new { id, reopened = true });
+        }
+        catch (KeyNotFoundException)
+        {
+            return NotFound();
+        }
+        catch (Exception exception) when (exception is ArgumentException or InvalidOperationException)
         {
             TempData["BudgetItemError"] = exception.Message;
             return RedirectToAction(nameof(Item), new { id });
