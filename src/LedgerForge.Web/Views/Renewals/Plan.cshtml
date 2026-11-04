@@ -4,6 +4,7 @@
 @{
     ViewData["Title"] = "Next Fiscal Year Renewal Planner";
     var canPlan = ViewData["CanPlan"] as bool? == true;
+    var canCreateYear = ViewData["CanCreateYear"] as bool? == true;
     var error = ViewData["Error"] as string;
     var created = ViewData["Created"] as string;
     var targetYear = Model.Years.FirstOrDefault(x => x.Id == Model.TargetFiscalYearId);
@@ -82,7 +83,26 @@
     <div class="lf-card lf-empty-state">
         <h2>Set up the following fiscal year</h2>
         <p>Create the next fiscal year and its initial planning version under Fiscal Years, then return to this planner. You don't have to close the current year first.</p>
-        <a class="button primary" href="/fiscal-years">Create next fiscal year</a>
+        @if (canCreateYear && sourceYear is not null)
+        {
+            var nextStart = sourceYear.EndDate.AddDays(1);
+            var nextEnd = sourceYear.EndDate.AddYears(1);
+            var nextPlanningYear = nextEnd.Year;
+            <form method="post" action="/renewals/plan/create-fiscal-year" class="lf-form-grid">
+                @Html.AntiForgeryToken()
+                <input type="hidden" name="sourceFiscalYearId" value="@sourceYear.Id" />
+                <div><label for="next-fy-label">Fiscal-year label</label><input id="next-fy-label" name="displayName" maxlength="32" value="FY@nextPlanningYear" required /></div>
+                <div><label for="next-fy-start">Start</label><input id="next-fy-start" name="startDate" type="date" value="@nextStart.ToString("yyyy-MM-dd")" required /></div>
+                <div><label for="next-fy-end">End</label><input id="next-fy-end" name="endDate" type="date" value="@nextEnd.ToString("yyyy-MM-dd")" required /></div>
+                <div><label for="next-fy-planning-year">Planning year</label><input id="next-fy-planning-year" name="planningYear" type="number" min="1900" max="9999" value="@nextPlanningYear" required /></div>
+                <div><label for="next-fy-version">First budget version</label><input id="next-fy-version" name="initialVersionName" maxlength="100" value="Initial Planning" required /></div>
+                <p><button class="primary" type="submit">Create next fiscal year and open planner</button></p>
+            </form>
+        }
+        else
+        {
+            <a class="button primary" href="/fiscal-years">Create next fiscal year</a>
+        }
     </div>
 }
 else
