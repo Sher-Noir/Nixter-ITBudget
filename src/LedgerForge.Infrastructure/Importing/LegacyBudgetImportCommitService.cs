@@ -224,7 +224,7 @@ public sealed class LegacyBudgetImportCommitService(LedgerForgeDbContext dbConte
         string sourceValue, CommitLookupIndex index,
         IReadOnlyCollection<LookupValueAlias> aliases)
     {
-        if (string.Equals(sourceValue?.Trim(), "Other", StringComparison.OrdinalIgnoreCase))
+        if (string.Equals(sourceValue.Trim(), "Other", StringComparison.OrdinalIgnoreCase))
         {
             var otherId = index.Names.GetValueOrDefault("Other");
             if (otherId != Guid.Empty) return otherId;
