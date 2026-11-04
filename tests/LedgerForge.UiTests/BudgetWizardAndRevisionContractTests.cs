@@ -78,6 +78,36 @@ public sealed class BudgetWizardAndRevisionContractTests
         Assert.Contains("NumericItemNumberKey", service, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void ImportCommitTargets_SortMappedColumnsBeforeConstructingRecords()
+    {
+        var service = Read("src", "LedgerForge.Infrastructure", "Importing", "LegacyBudgetImportCommitService.cs");
+        var begin = service.IndexOf("public async Task<IReadOnlyList<ImportCommitTarget>> ListTargetsAsync(", StringComparison.Ordinal);
+        var end = service.IndexOf("public async Task<ImportCommitResult> CommitAsync(", begin, StringComparison.Ordinal);
+        Assert.True(begin >= 0 && end > begin);
+        var method = service[begin..end];
+
+        Assert.Contains(".OrderByDescending(x => x.FiscalYearName)", method, StringComparison.Ordinal);
+        Assert.Contains(".ToListAsync(cancellationToken)", method, StringComparison.Ordinal);
+        Assert.Contains("return targets.Select(x => new ImportCommitTarget(", method, StringComparison.Ordinal);
+        Assert.True(method.IndexOf(".ToListAsync(cancellationToken)", StringComparison.Ordinal) <
+                    method.IndexOf("new ImportCommitTarget(", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void WindowsIis_DataProtectionKeysPersistAcrossSetupMaintenance()
+    {
+        var startup = Read("src", "LedgerForge.Web", "Program.cs");
+        Assert.Contains("Documents:StoragePath", startup, StringComparison.Ordinal);
+        Assert.Contains("data-protection-keys", startup, StringComparison.Ordinal);
+        Assert.Contains(".PersistKeysToFileSystem(", startup, StringComparison.Ordinal);
+        Assert.Contains(".ProtectKeysWithDpapi(protectToLocalMachine: true)", startup, StringComparison.Ordinal);
+        Assert.Contains(".SetApplicationName(\"LedgerForge\")", startup, StringComparison.Ordinal);
+
+        var maintenance = Read("src", "LedgerForge.Setup", "MainWindow.Maintenance.cs");
+        Assert.Contains("host data are not touched", maintenance, StringComparison.Ordinal);
+    }
+
     private static string Read(params string[] segments)
     {
         var directory = new DirectoryInfo(AppContext.BaseDirectory);
