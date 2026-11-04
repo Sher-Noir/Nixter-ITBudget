@@ -21,6 +21,10 @@
 {
     <div class="lf-card lf-alert lf-alert-success" role="status">Approval decision saved.</div>
 }
+@if (Context.Request.Query.ContainsKey("bulkApproved"))
+{
+    <div class="lf-card lf-alert lf-alert-success" role="status">@Context.Request.Query["bulkApproved"] budget item(s) approved as a batch.</div>
+}
 
 <div class="lf-kpi-grid">
     <article class="lf-card lf-kpi"><div class="lf-kpi-icon blue">B</div><div><div class="lf-card-title">Budget Items</div><div class="lf-kpi-value">@Model.BudgetItemCount</div><div class="lf-kpi-note">Submitted planning items</div></div></article>
@@ -30,6 +34,18 @@
 </div>
 
 <section class="lf-card" aria-labelledby="approval-list-title">
+    @if (Model.BudgetItemCount > 0)
+    {
+        <form id="bulk-budget-approve" action="/approvals/budget-items/bulk-approve" method="post" class="lf-toolbar">
+            @Html.AntiForgeryToken()
+            <div><strong>Bulk approve budget items</strong><p class="lf-muted">Select individual pending budget items below. Purchase orders, invoices, and amendments are not included.</p></div>
+            <label><input type="checkbox" data-bulk-select-all="bulk-budget-approve" /> Select all pending budget items shown</label>
+            <input type="text" name="note" maxlength="2000" placeholder="Optional shared approval note" aria-label="Bulk approval note" />
+            <label><input type="checkbox" name="confirmSelection" value="true" required /> I reviewed the selection and approve all checked items</label>
+            <button class="primary" type="submit">Approve selected budget items</button>
+        </form>
+    }
+
     <div class="lf-panel-header">
         <div><h2 id="approval-list-title">Pending decisions</h2><p class="lf-muted">Oldest submissions appear first · @Model.PendingAmount.ToString("C2") total financial impact.</p></div>
         <span class="badge">@Model.TotalCount pending</span>
@@ -53,6 +69,13 @@
                     _ => item.Type.ToString()
                 };
                 <article class="lf-card lf-approval-card">
+                    @if (item.Type == ApprovalQueueItemType.BudgetItem)
+                    {
+                        <label class="lf-approval-bulk-select">
+                            <input type="checkbox" form="bulk-budget-approve" name="selectedItemIds" value="@item.Id" data-bulk-item="bulk-budget-approve" />
+                            Select for bulk approval
+                        </label>
+                    }
                     <div class="lf-panel-header">
                         <div>
                             <span class="badge">@typeLabel</span>
