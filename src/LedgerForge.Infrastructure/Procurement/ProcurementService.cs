@@ -132,11 +132,13 @@ public sealed class ProcurementService(LedgerForgeDbContext dbContext)
         var yearNames = await dbContext.FiscalYears.AsNoTracking().ToDictionaryAsync(x => x.Id, x => x.DisplayName, cancellationToken);
         var vendorNames = await dbContext.Vendors.AsNoTracking().ToDictionaryAsync(x => x.Id, x => x.Name, cancellationToken);
         var totals = await dbContext.PurchaseOrderLines.AsNoTracking()
+            .Where(x => !x.IsArchived)
             .GroupBy(x => x.PurchaseOrderId)
             .Select(x => new { PurchaseOrderId = x.Key, Total = x.Sum(line => line.LineTotal) })
             .ToDictionaryAsync(x => x.PurchaseOrderId, x => x.Total, cancellationToken);
 
         var orderRows = await dbContext.PurchaseOrders.AsNoTracking()
+            .Where(x => !x.IsArchived)
             .OrderByDescending(x => x.CreatedAtUtc)
             .ThenBy(x => x.Number)
             .Select(x => new { x.Id, x.Number, x.FiscalYearId, x.VendorId, x.Description, x.State, x.SupersedesPurchaseOrderId, x.ChangeOrderSequence })
@@ -158,13 +160,13 @@ public sealed class ProcurementService(LedgerForgeDbContext dbContext)
 
     public async Task<PurchaseOrderDetailSnapshot?> GetPurchaseOrderAsync(Guid id, CancellationToken cancellationToken = default)
     {
-        var order = await dbContext.PurchaseOrders.AsNoTracking().SingleOrDefaultAsync(x => x.Id == id, cancellationToken);
+        var order = await dbContext.PurchaseOrders.AsNoTracking().SingleOrDefaultAsync(x => x.Id == id && !x.IsArchived, cancellationToken);
         if (order is null) return null;
 
         var year = await dbContext.FiscalYears.AsNoTracking().SingleAsync(x => x.Id == order.FiscalYearId, cancellationToken);
         var vendor = await dbContext.Vendors.AsNoTracking().SingleAsync(x => x.Id == order.VendorId, cancellationToken);
         var lineRows = await dbContext.PurchaseOrderLines.AsNoTracking()
-            .Where(x => x.PurchaseOrderId == id)
+            .Where(x => x.PurchaseOrderId == id && !x.IsArchived)
             .OrderBy(x => x.LineNumber)
             .ToListAsync(cancellationToken);
         var lineIds = lineRows.Select(x => x.Id).ToArray();
@@ -265,6 +267,75 @@ public sealed class ProcurementService(LedgerForgeDbContext dbContext)
         dbContext.PurchaseOrders.Add(order);
         await dbContext.SaveChangesAsync(cancellationToken);
         return order.Id;
+    }
+
+    public async Task UpdateDraftAsync(
+        Guid id, string number, string description, CancellationToken cancellationToken = default)
+    {
+        var order = await RequireOrderAsync(id, cancellationToken);
+        if (order.State != PurchaseOrderState.Draft)
+            throw new InvalidOperationException("Only draft purchase orders can be edited.");
+        var cleanNumber = number?.Trim() ?? string.Empty;
+        if (await dbContext.PurchaseOrders.AsNoTracking().AnyAsync(
+            x => x.FiscalYearId == order.FiscalYearId && x.Id != id && x.Number == cleanNumber,
+            cancellationToken))
+            throw new InvalidOperationException("That purchase order number is already in use in this fiscal year.");
+        order.UpdateDraft(cleanNumber, description);
+        await dbContext.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task ArchiveDraftAsync(
+        Guid id, string actor, string reason, CancellationToken cancellationToken = default)
+    {
+        var order = await RequireOrderAsync(id, cancellationToken);
+        if (await dbContext.Invoices.AsNoTracking().AnyAsync(x => x.PurchaseOrderId == id, cancellationToken) ||
+            await dbContext.PurchaseOrders.AsNoTracking().AnyAsync(x => x.SupersedesPurchaseOrderId == id, cancellationToken) ||
+            await dbContext.Set<PurchaseReceipt>().AsNoTracking().AnyAsync(x => x.PurchaseOrderId == id, cancellationToken))
+            throw new InvalidOperationException("A linked invoice, change order, or receipt prevents removing this purchase order.");
+        order.ArchiveDraft(actor, reason, DateTimeOffset.UtcNow);
+        await dbContext.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task UpdateLineAsync(
+        Guid purchaseOrderId, Guid lineId, string description, decimal quantity, decimal unitCost,
+        Guid? budgetItemId, Guid? financeAccountId, Guid? departmentId, Guid? locationId,
+        CancellationToken cancellationToken = default)
+    {
+        var order = await RequireOrderAsync(purchaseOrderId, cancellationToken);
+        if (order.State != PurchaseOrderState.Draft)
+            throw new InvalidOperationException("Only draft purchase order lines can be edited.");
+        var line = await dbContext.PurchaseOrderLines.SingleOrDefaultAsync(
+            x => x.Id == lineId && x.PurchaseOrderId == purchaseOrderId && !x.IsArchived, cancellationToken)
+            ?? throw new KeyNotFoundException("Purchase order line was not found.");
+
+        budgetItemId ??= line.BudgetItemId;
+        financeAccountId ??= line.FinanceAccountId;
+        departmentId ??= line.DepartmentId;
+        locationId ??= line.LocationId;
+        if (budgetItemId is not null && !await dbContext.BudgetItems.AsNoTracking().AnyAsync(
+            x => x.Id == budgetItemId && x.FiscalYearId == order.FiscalYearId, cancellationToken))
+            throw new InvalidOperationException("Budget item must belong to the PO fiscal year.");
+        await RequireActiveLookupAsync(dbContext.FinanceAccounts, financeAccountId, "finance account", cancellationToken);
+        await RequireActiveLookupAsync(dbContext.Departments, departmentId, "department", cancellationToken);
+        await RequireActiveLookupAsync(dbContext.Locations, locationId, "location", cancellationToken);
+        line.Update(description, quantity, unitCost, budgetItemId, financeAccountId, departmentId, locationId);
+        await dbContext.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task DeleteLineAsync(
+        Guid purchaseOrderId, Guid lineId, CancellationToken cancellationToken = default)
+    {
+        var order = await RequireOrderAsync(purchaseOrderId, cancellationToken);
+        if (order.State != PurchaseOrderState.Draft)
+            throw new InvalidOperationException("Only draft purchase order lines can be removed.");
+        var line = await dbContext.PurchaseOrderLines.SingleOrDefaultAsync(
+            x => x.Id == lineId && x.PurchaseOrderId == purchaseOrderId && !x.IsArchived, cancellationToken)
+            ?? throw new KeyNotFoundException("Purchase order line was not found.");
+        if (await dbContext.Set<PurchaseReceiptLine>().AsNoTracking().AnyAsync(
+            x => x.PurchaseOrderLineId == lineId, cancellationToken))
+            throw new InvalidOperationException("Received purchase-order lines cannot be removed.");
+        line.ArchiveDraftLine();
+        await dbContext.SaveChangesAsync(cancellationToken);
     }
 
     public async Task<Guid> CreateChangeOrderAsync(
@@ -500,7 +571,7 @@ public sealed class ProcurementService(LedgerForgeDbContext dbContext)
 
     private async Task<decimal> TotalAsync(Guid purchaseOrderId, CancellationToken cancellationToken)
         => await dbContext.PurchaseOrderLines.AsNoTracking()
-            .Where(x => x.PurchaseOrderId == purchaseOrderId)
+            .Where(x => x.PurchaseOrderId == purchaseOrderId && !x.IsArchived)
             .SumAsync(x => (decimal?)x.LineTotal, cancellationToken) ?? 0m;
 
     private static PurchaseOrderSummary ToSummary(PurchaseOrder order, string fiscalYear, string vendor, decimal total)
@@ -509,7 +580,7 @@ public sealed class ProcurementService(LedgerForgeDbContext dbContext)
     private async Task<PurchaseOrder> RequireOrderAsync(Guid id, CancellationToken cancellationToken)
     {
         if (id == Guid.Empty) throw new ArgumentException("Purchase order ID is required.", nameof(id));
-        return await dbContext.PurchaseOrders.SingleOrDefaultAsync(x => x.Id == id, cancellationToken)
+        return await dbContext.PurchaseOrders.SingleOrDefaultAsync(x => x.Id == id && !x.IsArchived, cancellationToken)
             ?? throw new KeyNotFoundException("Purchase order was not found.");
     }
 
