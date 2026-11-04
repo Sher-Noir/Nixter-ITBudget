@@ -10,6 +10,8 @@
     var item = workspace.Item;
     ViewData["Title"] = $"Budget Item {item.ItemNumber}";
     var canSubmit = ViewData["CanSubmit"] as bool? == true;
+    var canReopen = ViewData["CanReopen"] as bool? == true;
+    var revisionOpened = ViewData["RevisionOpened"] as bool? == true;
     var submitted = ViewData["Submitted"] as bool? == true;
     var actualSaved = ViewData["ActualSaved"] as bool? == true;
     var brandingError = TempData["BudgetItemError"] as string;
@@ -58,7 +60,11 @@
 }
 @if (submitted)
 {
-    <div class="card lf-alert lf-alert-success" role="status">Budget item submitted for approval. Planning fields are read-only while the approval is pending.</div>
+    <div class="card lf-alert lf-alert-success" role="status">Budget item submitted for approval. To make another change, select Reopen for editing and resubmit it.</div>
+}
+@if (revisionOpened)
+{
+    <div class="card lf-alert lf-alert-success" role="status">Revision started. Update the item below and submit it for approval again. The previous approved amount remains recorded until the next approval.</div>
 }
 
 <section class="lf-card lf-item-hero">
@@ -78,6 +84,10 @@
         @if (Model.CanEdit)
         {
             <a class="button primary" href="#edit-item">✎ Edit Item</a>
+        }
+        @if (canReopen)
+        {
+            <a class="button primary" href="#edit-item">✎ Revise Item</a>
         }
         @if (Model.CanPostActuals)
         {
@@ -249,7 +259,7 @@
         </div>
 
         <details id="edit-item" class="lf-card lf-item-edit-panel" open="@Model.CanEdit">
-            <summary><strong>Edit item information</strong><span>Update description, section, category, purpose, type, location, department, units, cost, and need level.</span></summary>
+            <summary><strong>Edit item information</strong><span>Update all item details. Submitted or approved items can be reopened for a new approval cycle.</span></summary>
             <div class="lf-item-edit-body">
                 @if (item.VersionLocked)
                 {
@@ -257,18 +267,25 @@
                 }
                 else if (item.Status == BudgetItemStatus.Submitted)
                 {
-                    <div class="lf-alert lf-alert-info" role="status">This item is awaiting approval and cannot be edited.</div>
+                    <div class="lf-alert lf-alert-info" role="status">This item is awaiting approval. Reopen it to withdraw the pending submission, edit its information, and submit again.</div>
                 }
                 else if (item.Status == BudgetItemStatus.Approved)
                 {
-                    <div class="lf-alert lf-alert-info" role="status">This item has been approved. Use an amendment for post-approval budget changes.</div>
+                    <div class="lf-alert lf-alert-info" role="status">This item is approved. Start a new revision to edit it; the earlier approved total is retained until the revised item is reapproved. Use Budget Amendments for formal post-approval funding adjustments.</div>
+                }
+                @if (canReopen)
+                {
+                    <form method="post" action="/budget/items/@item.Id/reopen" class="lf-secondary-form">
+                        @Html.AntiForgeryToken()
+                        <p><button type="submit" class="button primary">@(item.Status == BudgetItemStatus.Approved ? "Start revision to edit" : "Reopen for editing")</button></p>
+                    </form>
                 }
 
                 <form method="post" action="/budget/items/@item.Id">
                     @Html.AntiForgeryToken()
                     <fieldset disabled="@(!Model.CanEdit)" class="lf-fieldset">
                         <div class="lf-form-grid lf-form-grid-3">
-                            <div><label for="itemNumber"><strong>Item number</strong></label><input id="itemNumber" name="itemNumber" value="@item.ItemNumber" maxlength="64" required /></div>
+                            <input type="hidden" name="itemNumber" value="@item.ItemNumber" />
                             <div><label for="purchaseType"><strong>Purchase type</strong></label><select id="purchaseType" name="purchaseType">@foreach (var purchaseType in Enum.GetValues<PurchaseType>()){<option value="@purchaseType" selected="@(purchaseType == item.PurchaseType)">@purchaseType</option>}</select></div>
                             <div><label for="budgetSectionId"><strong>Budget section</strong></label><select id="budgetSectionId" name="budgetSectionId"><option value="">Unassigned</option>@foreach (var option in item.BudgetSections){<option value="@option.Id" selected="@(option.Id == item.BudgetSectionId)">@option.Code · @option.Name</option>}</select></div>
                             <div class="lf-span-all"><label for="description"><strong>Description</strong></label><input id="description" name="description" value="@item.Description" maxlength="500" required /></div>
