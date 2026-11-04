@@ -131,6 +131,10 @@
         {
             <div class="card lf-alert lf-alert-success" role="status">Budget item added.</div>
         }
+        @if (Context.Request.Query.ContainsKey("bulkSubmitted"))
+        {
+            <div class="card lf-alert lf-alert-success" role="status">@Context.Request.Query["bulkSubmitted"] budget item(s) sent to the approval queue.</div>
+        }
         @if (Context.Request.Query.ContainsKey("purchasedChanged"))
         {
             <div class="card lf-alert lf-alert-success" role="status">Budget item purchase tracking status updated. Financial records were not changed.</div>
@@ -276,6 +280,19 @@
                 }
 
                 <section class="lf-card lf-budget-grid-card" aria-labelledby="budget-grid-title">
+                    @if (Model.CanEdit && !snapshot.SelectedVersionLocked && snapshot.SelectedFiscalYearId is not null && snapshot.SelectedVersionId is not null)
+                    {
+                        <form id="budget-bulk-submit" method="post" action="/budget/bulk-submit" class="lf-toolbar">
+                            @Html.AntiForgeryToken()
+                            <input type="hidden" name="fiscalYearId" value="@snapshot.SelectedFiscalYearId" />
+                            <input type="hidden" name="versionId" value="@snapshot.SelectedVersionId" />
+                            <div><strong>Bulk approval submission</strong><p class="lf-muted">Choose Draft, Proposed, or Deferred items below. Selection applies to this page only, not other filtered pages.</p></div>
+                            <label><input type="checkbox" name="confirmSelection" value="true" required /> Confirm sending these selected items for approval</label>
+                            <button type="submit" class="primary">Send selected to approval</button>
+                            <a class="button" href="/approvals">Approval Queue</a>
+                        </form>
+                    }
+
                     <div class="lf-budget-grid-heading">
                         <div><h2 id="budget-grid-title">Budget items</h2><span>@filteredItems.Length of @snapshot.Items.Count shown</span></div>
                         <span class="badge">@(snapshot.SelectedVersionLocked ? "Locked" : "Editable")</span>
@@ -290,6 +307,10 @@
                             <table class="lf-table lf-budget-grid">
                                 <thead>
                                 <tr>
+                                    @if (Model.CanEdit && !snapshot.SelectedVersionLocked)
+                                    {
+                                        <th><label><input type="checkbox" data-bulk-select-all="budget-bulk-submit" aria-label="Select all eligible budget items on this page" /> Select</label></th>
+                                    }
                                     <th aria-sort="@SortAria("itemNumber")"><a class="lf-budget-sort-link" href="@SortUrl("itemNumber")">Item # <span aria-hidden="true">@SortGlyph("itemNumber")</span></a></th>
                                     <th aria-sort="@SortAria("description")"><a class="lf-budget-sort-link" href="@SortUrl("description")">Description <span aria-hidden="true">@SortGlyph("description")</span></a></th>
                                     <th aria-sort="@SortAria("section")"><a class="lf-budget-sort-link" href="@SortUrl("section")">Section <span aria-hidden="true">@SortGlyph("section")</span></a></th>
@@ -312,6 +333,19 @@
                                 {
                                     var selected = selectedItem?.Id == item.Id;
                                     <tr class="@(selected ? "is-selected" : null)">
+                                        @if (Model.CanEdit && !snapshot.SelectedVersionLocked)
+                                        {
+                                            <td>
+                                                @if (item.Status is BudgetItemStatus.Draft or BudgetItemStatus.Proposed or BudgetItemStatus.Deferred)
+                                                {
+                                                    <input type="checkbox" form="budget-bulk-submit" name="selectedItemIds" value="@item.Id" data-bulk-item="budget-bulk-submit" aria-label="Select item @item.ItemNumber for approval" />
+                                                }
+                                                else
+                                                {
+                                                    <span class="lf-muted" title="Only unsubmitted planning items can enter the approval queue">—</span>
+                                                }
+                                            </td>
+                                        }
                                         <td><a href="@TableUrl(table.PageNumber, itemId: item.Id)"><strong>@item.ItemNumber</strong></a></td>
                                         <td><a class="lf-budget-description" href="@TableUrl(table.PageNumber, itemId: item.Id)">@item.Description</a></td>
                                         <td>@(item.BudgetSectionName ?? "—")</td>
