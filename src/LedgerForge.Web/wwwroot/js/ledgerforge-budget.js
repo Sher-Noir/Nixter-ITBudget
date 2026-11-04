@@ -176,6 +176,12 @@
         quantity?.addEventListener("input", updateTotal);
         cost?.addEventListener("input", updateTotal);
         form.addEventListener("submit", event => {
+            // Enter in a text/search field must not bypass the wizard's final step.
+            if (step !== steps.length - 1) {
+                event.preventDefault();
+                next?.click();
+                return;
+            }
             for (let i = 0; i < steps.length; i++) {
                 const invalid = firstInvalid(steps[i]);
                 if (invalid) {
