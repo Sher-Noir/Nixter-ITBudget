@@ -176,7 +176,7 @@ public sealed class BudgetPlanningService(
             from line in dbContext.PurchaseOrderLines.AsNoTracking()
             join order in dbContext.PurchaseOrders.AsNoTracking() on line.PurchaseOrderId equals order.Id
             join vendor in dbContext.Vendors.AsNoTracking() on order.VendorId equals vendor.Id
-            where line.BudgetItemId != null && itemIds.Contains(line.BudgetItemId.Value)
+            where !line.IsArchived && !order.IsArchived && line.BudgetItemId != null && itemIds.Contains(line.BudgetItemId.Value)
             select new { BudgetItemId = line.BudgetItemId!.Value, VendorName = vendor.Name, order.CreatedAtUtc })
             .ToListAsync(cancellationToken);
 
