@@ -23,7 +23,6 @@
     var actualSaved = ViewData["ActualSaved"] as bool? == true;
     var actualCorrected = ViewData["ActualCorrected"] as string;
     var recurringMessage = ViewData["RecurringActualMessage"] as string;
-    var billingCadenceChanged = ViewData["BillingCadenceChanged"] as string;
     var recurringSchedules = ViewData["RecurringSchedules"] as IReadOnlyList<RecurringActualSchedule> ?? [];
     var recurringToday = ViewData["RecurringToday"] as DateOnly? ?? DateOnly.FromDateTime(DateTime.Today);
     var recurringFiscal = ViewData["RecurringFiscalDates"] is ValueTuple<DateOnly, DateOnly> fiscal
@@ -72,10 +71,6 @@
 @if (actualSaved)
 {
     <div class="card lf-alert lf-alert-success" role="status">Actual transaction added to this budget item.</div>
-}
-@if (!string.IsNullOrWhiteSpace(billingCadenceChanged))
-{
-    <div class="card lf-alert lf-alert-success" role="status">@billingCadenceChanged</div>
 }
 @if (!string.IsNullOrWhiteSpace(actualCorrected))
 {
@@ -192,30 +187,9 @@
                     <div><span>Purchase Date</span><strong>@(item.EstimatedPurchaseDate?.ToString("MMM d, yyyy") ?? "—")</strong></div>
                     <div><span>Renewal Date</span><strong>@(item.RenewalDate?.ToString("MMM d, yyyy") ?? "—")</strong></div>
                     <div><span>Frequency</span><strong>@(frequency ?? "—")</strong></div>
-                    <div><span>Billing cadence</span><strong>@item.BillingCadence</strong></div>
                     <div><span>Finance Type</span><strong>@(financeType ?? "—")</strong></div>
                     <div><span>Internal Category</span><strong>@(category ?? "—")</strong></div>
                     <div><span>Budget Version</span><strong>@item.BudgetVersionName</strong></div>
-                </div>
-                <div class="lf-spending-cadence">
-                    <h3>Billing cadence for spending comparisons</h3>
-                    <p class="muted">This is separate from the item's Frequency/renewal setting. It changes only how year-to-date expected spending is compared with posted actuals—not the approved budget or actual transactions.</p>
-                    @if (canEditBranding && !item.VersionLocked &&
-                        item.Status is not (BudgetItemStatus.Archived or BudgetItemStatus.Cancelled))
-                    {
-                        <form method="post" action="/budget/items/@item.Id/billing-cadence" class="lf-spending-cadence-form">
-                            @Html.AntiForgeryToken()
-                            <label for="billingCadence-@item.Id">Billing cadence</label>
-                            <select id="billingCadence-@item.Id" name="billingCadence">
-                                <option value="Automatic" selected="@(item.BillingCadence == BudgetBillingCadence.Automatic)">Automatic (detect 3 consecutive billed months)</option>
-                                <option value="Monthly" selected="@(item.BillingCadence == BudgetBillingCadence.Monthly)">Monthly (annual budget ÷ 12)</option>
-                                <option value="Quarterly" selected="@(item.BillingCadence == BudgetBillingCadence.Quarterly)">Quarterly (annual budget ÷ 4)</option>
-                                <option value="OneTime" selected="@(item.BillingCadence == BudgetBillingCadence.OneTime)">One-time / annual lump-sum</option>
-                            </select>
-                            <button type="submit">Save cadence</button>
-                        </form>
-                    }
-                    <p class="muted">For monthly charges, the budgeted amount for each billing month is annual budget ÷ 12. Only months with recorded net-positive actuals count as billed; an unbilled November isn't compared yet. For undated one-time purchases with no actual, no spending is assumed due.</p>
                 </div>
             </div>
             <div>
@@ -226,13 +200,17 @@
                     <div><span>Actual</span><strong>@workspace.Actual.ToString("C2")</strong></div>
                     <div><span>Available</span><strong>@workspace.Available.ToString("C2")</strong></div>
                     <div><span>Forecast</span><strong>@workspace.Forecast.ToString("C2")</strong></div>
+                    <div><span>Expected to date</span><strong>@workspace.SpendProjection.ExpectedToDate.ToString("C2")</strong></div>
+                    <div><span>Spending pace over/under</span><strong>@(workspace.SpendProjection.ExpectedToDate - workspace.Actual < 0m ? "-" : "+")@Math.Abs(workspace.SpendProjection.ExpectedToDate - workspace.Actual).ToString("C2")</strong></div>
                     <div><span>Variance (Budget vs Actual)</span><strong>@variance.ToString("C2")</strong></div>
                 </div>
                 <details id="forecast-breakdown" class="lf-forecast-breakdown">
                     <summary>View forecast calculation</summary>
                     <div class="lf-financial-bars">
                         <div><span>Posted actuals</span><strong>@workspace.ForecastDetails.PostedActual.ToString("C2")</strong></div>
-                        <div><span>Remaining unposted recurring</span><strong>@workspace.ForecastDetails.UnpostedRecurring.ToString("C2")</strong></div>
+                        <div><span>Remaining scheduled/periodic charges</span><strong>@workspace.ForecastDetails.UnpostedRecurring.ToString("C2")</strong></div>
+                        <div><span>Expected billed installments</span><strong>@workspace.SpendProjection.ExpectedInstallmentsToDate.ToString("C2")</strong></div>
+                        <div><span>Billed periods</span><strong>@workspace.SpendProjection.BilledPeriods × @workspace.SpendProjection.BudgetPerBillingPeriod.ToString("C2")</strong></div>
                         <div><span>Outstanding PO commitments</span><strong>@workspace.ForecastDetails.OutstandingCommitments.ToString("C2")</strong></div>
                         <div><span>Additional commitments beyond recurring coverage</span><strong>@workspace.ForecastDetails.AdditionalUncoveredCommitments.ToString("C2")</strong></div>
                         @if (workspace.ForecastDetails.PublishedScenarioTotal is decimal publishedTotal)
@@ -242,7 +220,7 @@
                         }
                         <div><span><strong>Expected total spending</strong></span><strong>@workspace.Forecast.ToString("C2")</strong></div>
                     </div>
-                    <p class="muted">Recurring charges not yet posted remain in Forecast, never Actual. As posted months replace projected months, the total updates automatically. Because a PO may already cover future recurring charges, outstanding PO commitments first cover recurring obligations and only the excess is added. If POs cover separate expenses, this conservative estimate may be low until that spend is included in a published forecast scenario. A published scenario is a total estimate, not an additional charge.</p>
+                    <p class="muted">Billing comparison basis: @workspace.SpendProjection.ExpectedToDateBasis. Recurring charges not yet posted remain in Forecast, never Actual. As posted months replace projected months, the total updates automatically. Because a PO may already cover future recurring charges, outstanding PO commitments first cover recurring obligations and only the excess is added. If POs cover separate expenses, this conservative estimate may be low until that spend is included in a published forecast scenario. A published scenario is a total estimate, not an additional charge.</p>
                 </details>
             </div>
         </section>

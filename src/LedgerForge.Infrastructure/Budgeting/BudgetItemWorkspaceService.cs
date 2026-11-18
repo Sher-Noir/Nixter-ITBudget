@@ -55,7 +55,8 @@ public sealed record BudgetItemWorkspaceSnapshot(
     IReadOnlyList<BudgetItemActualSummary> Actuals,
     IReadOnlyList<BudgetItemActivitySummary> Activity,
     bool ActualCorrectionsAllowed,
-    BudgetItemForecastBreakdown ForecastDetails);
+    BudgetItemForecastBreakdown ForecastDetails,
+    BudgetItemSpendProjection SpendProjection);
 
 public sealed class BudgetItemWorkspaceService(
     LedgerForgeDbContext dbContext,
@@ -169,56 +170,18 @@ public sealed class BudgetItemWorkspaceService(
             .SumAsync(x => (decimal?)x.Amount, cancellationToken) ?? 0m;
         var available = currentBudget - committed - actual;
 
-        var publishedScenarioId = await dbContext.ForecastScenarios.AsNoTracking()
-            .Where(x => x.FiscalYearId == item.FiscalYearId &&
-                        x.BudgetVersionId == item.BudgetVersionId &&
-                        x.State == ForecastScenarioState.Published)
-            .OrderByDescending(x => x.PublishedAtUtc)
-            .ThenByDescending(x => x.AsOfDate)
-            .Select(x => (Guid?)x.Id)
-            .FirstOrDefaultAsync(cancellationToken);
-
-        decimal? publishedForecast = null;
-        if (publishedScenarioId is not null)
-        {
-            publishedForecast = await dbContext.ForecastLines.AsNoTracking()
-                .Where(x => x.ForecastScenarioId == publishedScenarioId.Value && x.BudgetItemId == itemId)
-                .Select(x => (decimal?)x.ForecastTotal)
-                .SingleOrDefaultAsync(cancellationToken);
-        }
-
-        // Only unposted months count as forecasted recurring. Every posted
-        // occurrence remains posted even if its actual was later corrected.
-        var recurringSchedules = await dbContext.RecurringActualSchedules.AsNoTracking()
-            .Where(x => x.BudgetItemId == itemId && x.IsActive)
-            .ToListAsync(cancellationToken);
-        var scheduleIds = recurringSchedules.Select(x => x.Id).ToArray();
-        var postedMonths = scheduleIds.Length == 0
-            ? new HashSet<(Guid, int, int)>()
-            : (await dbContext.RecurringActualOccurrences.AsNoTracking()
-                .Where(x => scheduleIds.Contains(x.ScheduleId))
-                .Select(x => new { x.ScheduleId, x.BillingYear, x.BillingMonth })
-                .ToListAsync(cancellationToken))
-                .Select(x => (x.ScheduleId, x.BillingYear, x.BillingMonth))
-                .ToHashSet();
-
-        decimal unpostedRecurring = 0m;
-        foreach (var schedule in recurringSchedules)
-        {
-            var firstMonth = new DateOnly(schedule.StartDate.Year, schedule.StartDate.Month, 1);
-            var finalMonth = new DateOnly(schedule.EndDate.Year, schedule.EndDate.Month, 1);
-            for (var month = firstMonth; month <= finalMonth; month = month.AddMonths(1))
-            {
-                var billingDate = schedule.BillingDate(month.Year, month.Month);
-                if (billingDate >= schedule.StartDate && billingDate <= schedule.EndDate &&
-                    !postedMonths.Contains((schedule.Id, month.Year, month.Month)))
-                    unpostedRecurring += schedule.Amount;
-            }
-        }
-
+        // Share exactly the same monthly/installment projection with the Budget
+        // page and detailed CSV export.
+        var projections = await BudgetItemSpendProjectionQuery.GetAsync(
+            dbContext, item.FiscalYearId, item.BudgetVersionId,
+            [new BudgetItemSpendInput(
+                itemId, item.EstimatedPurchaseDate, currentBudget,
+                item.Status, item.BillingCadence)],
+            new Dictionary<Guid, decimal> { [itemId] = actual }, cancellationToken);
+        var projection = projections[itemId];
         var forecastDetails = BudgetItemForecastCalculator.Calculate(
-            actual, committed, unpostedRecurring, publishedForecast);
-        var forecast = forecastDetails.Total;
+            actual, committed, projection.UnpostedRecurring, projection.ForecastFloor);
+        var forecast = projection.FullYearForecast;
 
         return new(
             item,
@@ -232,6 +195,7 @@ public sealed class BudgetItemWorkspaceService(
             actuals,
             activity,
             actualCorrectionsAllowed,
-            forecastDetails);
+            forecastDetails,
+            projection);
     }
 }
