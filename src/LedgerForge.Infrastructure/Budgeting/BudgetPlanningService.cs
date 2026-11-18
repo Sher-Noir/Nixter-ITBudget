@@ -172,6 +172,7 @@ public sealed class BudgetPlanningService(
                 x.InternalCategoryId,
                 x.FrequencyId,
                 x.BillingCadence,
+                x.ExcludeFromOverUnder,
                 x.VendorId,
                 x.Notes
             })
