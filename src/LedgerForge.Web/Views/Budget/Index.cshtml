@@ -73,9 +73,15 @@
 
     var displayedPlanned = filteredItems.Sum(x => x.PlannedTotal);
     var displayedActual = filteredItems.Sum(x => x.Actual);
-    var displayedApproved = filteredItems.Sum(x => x.ApprovedTotal ?? 0m);
-    var displayedProposed = filteredItems.Where(x => x.Status is BudgetItemStatus.Draft or BudgetItemStatus.Proposed or BudgetItemStatus.Submitted or BudgetItemStatus.Deferred).Sum(x => x.PlannedTotal);
-    var mustHave = filteredItems.Count(x => string.Equals(x.NeedLevelName, "Must Have", StringComparison.OrdinalIgnoreCase));
+    var displayedForecast = filteredItems.Sum(x => x.Forecast);
+    var expectedToDate = filteredItems.Sum(x => x.ExpectedToDate);
+    // Positive = below the expected spending pace; negative = overspent.
+    var currentOverUnder = expectedToDate - displayedActual;
+    var overUnderDisplay = currentOverUnder < 0m
+        ? "-" + Math.Abs(currentOverUnder).ToString("C2")
+        : currentOverUnder > 0m
+            ? "+" + currentOverUnder.ToString("C2")
+            : currentOverUnder.ToString("C2");
 
     string FriendlyStatus(BudgetItemStatus status) => status switch
     {
@@ -218,11 +224,13 @@
 
                 <section class="lf-budget-kpis" aria-label="Budget summary">
                     <article class="lf-card lf-budget-kpi"><span class="lf-budget-kpi-icon blue">▥</span><div><strong>@filteredItems.Length</strong><span>Total Items</span></div></article>
-                    <article class="lf-card lf-budget-kpi"><span class="lf-budget-kpi-icon gold">★</span><div><strong>@mustHave</strong><span>Must Have</span></div></article>
                     <article class="lf-card lf-budget-kpi"><span class="lf-budget-kpi-icon green">▤</span><div><strong>@displayedPlanned.ToString("C2")</strong><span>Planned Total</span></div></article>
-                    <article class="lf-card lf-budget-kpi"><span class="lf-budget-kpi-icon teal">▥</span><div><strong>@displayedActual.ToString("C2")</strong><span>Actual</span></div></article>
-                    <article class="lf-card lf-budget-kpi"><span class="lf-budget-kpi-icon purple">▧</span><div><strong>@displayedProposed.ToString("C2")</strong><span>Open / Proposed</span></div></article>
-                    <article class="lf-card lf-budget-kpi"><span class="lf-budget-kpi-icon teal">✓</span><div><strong>@displayedApproved.ToString("C2")</strong><span>Approved</span></div></article>
+                    <article class="lf-card lf-budget-kpi"><span class="lf-budget-kpi-icon teal">▥</span><div><strong>@displayedActual.ToString("C2")</strong><span>Current Actual</span></div></article>
+                    <article class="lf-card lf-budget-kpi"><span class="lf-budget-kpi-icon purple">⌁</span><div><strong>@displayedForecast.ToString("C2")</strong><span>Current Forecasted <small>Full fiscal-year projection</small></span></div></article>
+                    <article class="lf-card lf-budget-kpi lf-budget-over-under @(currentOverUnder < 0m ? "is-over" : currentOverUnder > 0m ? "is-under" : "is-on-target")" title="Expected spending through today: @expectedToDate.ToString("C2"). Negative means over expected spending.">
+                        <span class="lf-budget-kpi-icon @(currentOverUnder < 0m ? "red" : "teal")">↕</span>
+                        <div><strong>@overUnderDisplay</strong><span>Current Over/Under <small>Expected to date: @expectedToDate.ToString("C2")</small></span></div>
+                    </article>
                 </section>
 
                 @if (Model.CanEdit && !snapshot.SelectedVersionLocked && snapshot.SelectedVersionId is not null && createOptions is not null)
@@ -462,6 +470,10 @@
                     <div><span>Planned</span><strong>@selectedItem.PlannedTotal.ToString("C2")</strong></div>
                     <div><span>Approved</span><strong>@(selectedItem.ApprovedTotal?.ToString("C2") ?? "$0.00")</strong></div>
                     <div><span>Revised</span><strong>@(selectedItem.RevisedTotal?.ToString("C2") ?? selectedItem.ApprovedTotal?.ToString("C2") ?? selectedItem.PlannedTotal.ToString("C2"))</strong></div>
+                    <div><span>Current Actual</span><strong>@selectedItem.Actual.ToString("C2")</strong></div>
+                    <div><span>Full-year Forecast</span><strong>@selectedItem.Forecast.ToString("C2")</strong></div>
+                    <div><span>Expected to Date</span><strong>@selectedItem.ExpectedToDate.ToString("C2")</strong></div>
+                    <div><span>Current Over/Under</span><strong>@(selectedItem.ExpectedToDate - selectedItem.Actual < 0m ? "-" : selectedItem.ExpectedToDate - selectedItem.Actual > 0m ? "+" : "")@Math.Abs(selectedItem.ExpectedToDate - selectedItem.Actual).ToString("C2")</strong></div>
                     <div><span>Status</span><strong>@FriendlyStatus(selectedItem.Status)</strong></div>
                 </section>
 

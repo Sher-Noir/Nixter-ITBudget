@@ -38,7 +38,9 @@ public sealed record BudgetItemSummary(
     string? VendorName,
     Guid? VendorId = null,
     string? Notes = null,
-    decimal Actual = 0m);
+    decimal Actual = 0m,
+    decimal Forecast = 0m,
+    decimal ExpectedToDate = 0m);
 
 public sealed record BudgetPlanningSnapshot(
     IReadOnlyList<FiscalYearSummary> FiscalYears,
@@ -172,6 +174,13 @@ public sealed class BudgetPlanningService(
             .Select(group => new { BudgetItemId = group.Key, Total = group.Sum(x => x.Amount) })
             .ToDictionaryAsync(x => x.BudgetItemId, x => x.Total, cancellationToken);
 
+        var projections = await BudgetItemSpendProjectionQuery.GetAsync(
+            dbContext, selectedFiscalYearId.Value, selectedVersion.Id,
+            itemRows.Select(x => new BudgetItemSpendInput(
+                x.Id, x.EstimatedPurchaseDate,
+                x.RevisedTotal ?? x.ApprovedTotal ?? x.PlannedTotal, x.Status))
+                .ToArray(), actualTotals, cancellationToken);
+
         var vendorLinks = await (
             from line in dbContext.PurchaseOrderLines.AsNoTracking()
             join order in dbContext.PurchaseOrders.AsNoTracking() on line.PurchaseOrderId equals order.Id
@@ -225,7 +234,9 @@ public sealed class BudgetPlanningService(
                 ? directName : vendorsByItem.GetValueOrDefault(x.Id),
             x.VendorId,
             x.Notes,
-            actualTotals.GetValueOrDefault(x.Id)))
+            actualTotals.GetValueOrDefault(x.Id),
+            projections.GetValueOrDefault(x.Id)?.FullYearForecast ?? 0m,
+            projections.GetValueOrDefault(x.Id)?.ExpectedToDate ?? 0m))
             .ToArray();
 
         return new(

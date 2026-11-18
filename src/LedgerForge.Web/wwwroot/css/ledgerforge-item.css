@@ -320,3 +320,37 @@ button.danger:hover,
     max-height: 400px;
   }
 }
+
+/* Item-detail buttons: aligned, predictable widths, no text wrapping. */
+.lf-item-hero-actions { align-self: start; width: max-content; max-width: 100%; }
+.lf-item-hero-actions > .button,
+.lf-item-hero-actions > form > .button {
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: .4rem;
+  min-width: 132px;
+  height: 40px;
+  min-height: 40px;
+  padding: .5rem .85rem;
+  font-size: .76rem;
+  font-weight: 650;
+  line-height: 1.2;
+  white-space: nowrap;
+  text-decoration: none;
+}
+.lf-item-hero-actions > form { align-self: stretch; }
+@media (max-width: 1250px) {
+  .lf-item-hero-actions {
+    grid-column: 1 / -1;
+    justify-content: flex-start;
+    width: auto;
+  }
+}
+@media (max-width: 620px) {
+  .lf-item-hero-actions { width: 100%; }
+  .lf-item-hero-actions > .button,
+  .lf-item-hero-actions > form { flex: 1 1 150px; }
+  .lf-item-hero-actions > form > .button { width: 100%; }
+}
