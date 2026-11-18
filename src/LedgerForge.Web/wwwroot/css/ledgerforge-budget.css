@@ -366,3 +366,57 @@
   .lf-budget-variance-breakdown > div { flex-direction: column; gap: .1rem; }
   .lf-budget-variance-breakdown dd { align-self: flex-end; }
 }
+
+/* Budget table: exclude as-needed items from spending pace only. */
+.lf-budget-variance-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: .35rem;
+  margin: 0;
+}
+.lf-budget-variance-toggle label {
+  display: inline-flex;
+  align-items: center;
+  gap: .4rem;
+  margin: 0;
+  cursor: pointer;
+  font-size: .71rem;
+  white-space: nowrap;
+}
+.lf-budget-variance-toggle input[type="checkbox"],
+.lf-variance-exclusion-form input[type="checkbox"] {
+  box-sizing: border-box;
+  flex: 0 0 17px;
+  width: 17px;
+  min-width: 17px;
+  height: 17px;
+  min-height: 17px;
+  padding: 0;
+  margin: 0;
+  accent-color: var(--lf-primary);
+}
+.lf-budget-variance-save {
+  box-sizing: border-box;
+  min-height: 28px;
+  height: 28px;
+  padding: .2rem .45rem;
+  font-size: .67rem;
+  width: auto;
+  white-space: nowrap;
+}
+.lf-budget-variance-toggle.is-js-ready .lf-budget-variance-save { display: none; }
+.lf-variance-exclusion-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: .6rem;
+  margin: .5rem 0;
+}
+.lf-variance-exclusion-form label {
+  display: inline-flex;
+  align-items: center;
+  gap: .5rem;
+  cursor: pointer;
+  font-size: .74rem;
+}
+.lf-variance-exclusion-form button { width: auto; min-height: 36px; white-space: nowrap; }

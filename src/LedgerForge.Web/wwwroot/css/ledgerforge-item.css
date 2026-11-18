@@ -378,3 +378,25 @@ button.danger:hover,
 @media(max-width: 620px) {
   .lf-spending-cadence-form button { flex: 1 1 100%; }
 }
+
+.lf-variance-exclusion-settings {
+  margin-top: 1rem;
+  padding: .8rem;
+  background: var(--lf-surface-2);
+  border: 1px solid var(--lf-border);
+  border-radius: var(--lf-radius);
+}
+.lf-variance-exclusion-settings h3 { margin: 0 0 .4rem; font-size: .84rem; }
+.lf-variance-exclusion-settings .muted { font-size: .72rem; line-height: 1.5; margin: .5rem 0; }
+.lf-variance-exclusion-form input[type="checkbox"] {
+  width: 17px;
+  min-width: 17px;
+  height: 17px;
+  min-height: 17px;
+  margin: 0;
+  flex: 0 0 17px;
+  accent-color: var(--lf-primary);
+}
+.lf-variance-exclusion-form label { display: inline-flex; align-items: center; gap: .5rem; }
+.lf-variance-exclusion-form { display: flex; flex-wrap: wrap; gap: .65rem; align-items: center; }
+.lf-variance-exclusion-form button { width: auto; min-height: 36px; }

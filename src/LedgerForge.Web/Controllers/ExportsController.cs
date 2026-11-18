@@ -71,10 +71,17 @@ public sealed class ExportsController(
             "Billing Cadence Setting", "Effective Billing Cadence",
             "Recorded Billing Periods", "Per-Period Budget",
             "Expected Billing Installments To Date",
-            "Remaining Year Billing Allowance", "Billing Cadence Basis"
+            "Remaining Year Billing Allowance", "Billing Cadence Basis",
+            "Excluded From Over Under", "Expected To Date Before Exclusion",
+            "Actual Included In Over Under", "Actual Excluded From Over Under",
+            "Underlying Over Under Before Exclusion"
         };
 
-        object?[] ItemRow(BudgetItemSummary x) =>
+        object?[] ItemRow(BudgetItemSummary x)
+        {
+            var pace = BudgetOverUnderCalculator.Calculate(
+                x.ExpectedToDate, x.Actual, x.ExcludeFromOverUnder);
+            return
         [
             fiscal.DisplayName, version?.Name, x.ItemNumber, x.Description, x.Status.ToString(),
             x.Quantity, x.UnitCost, x.PlannedTotal, x.ApprovedTotal, x.RevisedTotal,
@@ -84,23 +91,27 @@ public sealed class ExportsController(
             x.FrequencyName, x.PurchaseType.ToString(), x.ReasonPurpose, x.Notes,
             asOf, fiscal.StartDate, fiscal.EndDate,
             x.RevisedTotal ?? x.ApprovedTotal ?? x.PlannedTotal,
-            x.Actual, x.Forecast, x.ExpectedToDate, x.ExpectedToDate - x.Actual,
+            x.Actual, x.Forecast, pace.ExpectedIncluded, pace.Variance,
             (x.RevisedTotal ?? x.ApprovedTotal ?? x.PlannedTotal) - x.Actual,
             x.Forecast - (x.RevisedTotal ?? x.ApprovedTotal ?? x.PlannedTotal),
-            x.ExpectedRecurringToDate,
-            x.ExpectedDatedPurchaseToDate,
-            x.ExpectedUndatedSpentToDate,
-            x.ExpectedUndatedPacedToDate,
-            x.ExpectedToDateBasis,
+            x.ExcludeFromOverUnder ? 0m : x.ExpectedRecurringToDate,
+            x.ExcludeFromOverUnder ? 0m : x.ExpectedDatedPurchaseToDate,
+            x.ExcludeFromOverUnder ? 0m : x.ExpectedUndatedSpentToDate,
+            x.ExcludeFromOverUnder ? 0m : x.ExpectedUndatedPacedToDate,
+            x.ExcludeFromOverUnder ? "Excluded from Over/Under; " + x.ExpectedToDateBasis : x.ExpectedToDateBasis,
             x.UnpostedRecurring, x.OutstandingCommitments,
             x.AdditionalUncoveredCommitments, x.PublishedScenarioTotal,
             x.ForecastFloor, x.AdditionalExpectedFromForecastFloor,
             x.RecurringScheduleDetails,
             x.BillingCadence.ToString(), x.EffectiveBillingCadence.ToString(),
             x.BilledPeriods, x.BudgetPerBillingPeriod,
-            x.ExpectedInstallmentsToDate, x.RemainingInstallmentAllowance,
-            x.BillingCadenceBasis
+            x.ExcludeFromOverUnder ? 0m : x.ExpectedInstallmentsToDate,
+            x.RemainingInstallmentAllowance, x.BillingCadenceBasis,
+            x.ExcludeFromOverUnder ? "Yes" : "No",
+            x.ExpectedToDate, pace.ActualIncluded, pace.ActualExcluded,
+            x.ExpectedToDate - x.Actual
         ];
+        }
 
         // All numeric totals use the exact same filtered items as the Budget KPIs.
         // A total row allows Excel users to reconcile with the dashboard instantly.
@@ -122,7 +133,21 @@ public sealed class ExportsController(
             totals[index] = itemRows.Sum(row =>
                 row[index] is decimal number ? number : 0m);
         }
-        totals[38] = "TOTAL: Expected To Date minus Current Actual (negative = over expected pace)";
+        foreach (var column in new[]
+        {
+            "Expected To Date Before Exclusion",
+            "Actual Included In Over Under",
+            "Actual Excluded From Over Under",
+            "Underlying Over Under Before Exclusion"
+        })
+        {
+            var index = Array.IndexOf(headers, column);
+            totals[index] = itemRows.Sum(row =>
+                row[index] is decimal number ? number : 0m);
+        }
+        totals[Array.IndexOf(headers, "Excluded From Over Under")] =
+            $"{items.Count(x => x.ExcludeFromOverUnder)} excluded";
+        totals[38] = "TOTAL: Current Over/Under uses included expected minus included actual; excluded amounts remain in gross Actual and Forecast.";
         // Published scenario is optional per item; retain the raw sum for reconciliation.
         var csvRows = itemRows
             .Select(row => (IReadOnlyList<object?>)row)

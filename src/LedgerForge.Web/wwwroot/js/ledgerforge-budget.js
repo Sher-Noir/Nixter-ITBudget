@@ -262,6 +262,18 @@
             });
     });
 
+    // Budget table: auto-save the exclusion checkboxes when JS is available.
+    // A small Save button remains as the fallback when JS is disabled.
+    document.querySelectorAll(".lf-budget-variance-toggle").forEach(form => {
+        form.classList.add("is-js-ready");
+        const input = form.querySelector("[data-budget-exclusion-toggle]");
+        input?.addEventListener("change", () => {
+            if (form.dataset.submitted === "true") return;
+            form.dataset.submitted = "true";
+            form.requestSubmit();
+        });
+    });
+
     const dialog = document.getElementById("lf-actuals-dialog");
     if (dialog) {
         const content = dialog.querySelector("[data-actuals-content]");
