@@ -4,8 +4,8 @@ namespace LedgerForge.Infrastructure.Budgeting;
 
 /// <summary>
 /// Estimates the expected one-time spend by today. An undated item is not
-/// silently valued at zero: prior actual spend or purchased status means its
-/// full budget is due, otherwise its amount is spread evenly over the fiscal year.
+/// invented fiscal-year proration: posted actual spend or purchased status
+/// makes the full budget due; otherwise no expected one-time spend is assumed.
 /// </summary>
 public static class BudgetSpendPacingCalculator
 {
@@ -32,10 +32,9 @@ public static class BudgetSpendPacingCalculator
         if (status == BudgetItemStatus.Purchased || postedActual > 0m)
             return currentBudget;
 
-        var fiscalDays = fiscalYearEnd.DayNumber - fiscalYearStart.DayNumber + 1;
-        var elapsedDays = Math.Clamp(today.DayNumber - fiscalYearStart.DayNumber + 1,
-            0, fiscalDays);
-        return decimal.Round(currentBudget * elapsedDays / fiscalDays, 2,
-            MidpointRounding.AwayFromZero);
+        // No reliable billing or purchase date => no expected-to-date charge.
+        // A guessed calendar proration produced false under-budget balances
+        // for unscheduled equipment and annual renewals.
+        return 0m;
     }
 }

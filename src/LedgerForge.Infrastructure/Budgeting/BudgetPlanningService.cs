@@ -52,7 +52,14 @@ public sealed record BudgetItemSummary(
     decimal? ForecastFloor = null,
     decimal AdditionalExpectedFromForecastFloor = 0m,
     string ExpectedToDateBasis = "",
-    string RecurringScheduleDetails = "");
+    string RecurringScheduleDetails = "",
+    BudgetBillingCadence BillingCadence = BudgetBillingCadence.Automatic,
+    BudgetBillingCadence EffectiveBillingCadence = BudgetBillingCadence.OneTime,
+    int BilledPeriods = 0,
+    decimal BudgetPerBillingPeriod = 0m,
+    decimal ExpectedInstallmentsToDate = 0m,
+    decimal RemainingInstallmentAllowance = 0m,
+    string BillingCadenceBasis = "");
 
 public sealed record BudgetPlanningSnapshot(
     IReadOnlyList<FiscalYearSummary> FiscalYears,
@@ -102,7 +109,8 @@ public sealed record BudgetItemEditSnapshot(
     IReadOnlyList<LookupOption> InternalCategories,
     IReadOnlyList<LookupOption> Frequencies,
     Guid? VendorId = null,
-    string? Notes = null);
+    string? Notes = null,
+    BudgetBillingCadence BillingCadence = BudgetBillingCadence.Automatic);
 
 public sealed record BudgetItemCreateOptions(
     IReadOnlyList<LookupOption> BudgetSections,
@@ -161,6 +169,7 @@ public sealed class BudgetPlanningService(
                 x.NeedLevelId,
                 x.InternalCategoryId,
                 x.FrequencyId,
+                x.BillingCadence,
                 x.VendorId,
                 x.Notes
             })
@@ -190,7 +199,7 @@ public sealed class BudgetPlanningService(
             dbContext, selectedFiscalYearId.Value, selectedVersion.Id,
             itemRows.Select(x => new BudgetItemSpendInput(
                 x.Id, x.EstimatedPurchaseDate,
-                x.RevisedTotal ?? x.ApprovedTotal ?? x.PlannedTotal, x.Status))
+                x.RevisedTotal ?? x.ApprovedTotal ?? x.PlannedTotal, x.Status, x.BillingCadence))
                 .ToArray(), actualTotals, cancellationToken);
 
         var vendorLinks = await (
@@ -260,7 +269,14 @@ public sealed class BudgetPlanningService(
             projections.GetValueOrDefault(x.Id)?.ForecastFloor,
             projections.GetValueOrDefault(x.Id)?.AdditionalExpectedFromForecastFloor ?? 0m,
             projections.GetValueOrDefault(x.Id)?.ExpectedToDateBasis ?? "",
-            projections.GetValueOrDefault(x.Id)?.RecurringScheduleDetails ?? ""))
+            projections.GetValueOrDefault(x.Id)?.RecurringScheduleDetails ?? "",
+            x.BillingCadence,
+            projections.GetValueOrDefault(x.Id)?.EffectiveBillingCadence ?? BudgetBillingCadence.OneTime,
+            projections.GetValueOrDefault(x.Id)?.BilledPeriods ?? 0,
+            projections.GetValueOrDefault(x.Id)?.BudgetPerBillingPeriod ?? 0m,
+            projections.GetValueOrDefault(x.Id)?.ExpectedInstallmentsToDate ?? 0m,
+            projections.GetValueOrDefault(x.Id)?.RemainingInstallmentAllowance ?? 0m,
+            projections.GetValueOrDefault(x.Id)?.BillingCadenceBasis ?? ""))
             .ToArray();
 
         return new(
@@ -336,7 +352,8 @@ public sealed class BudgetPlanningService(
             categories,
             frequencies,
             item.VendorId,
-            item.Notes);
+            item.Notes,
+            item.BillingCadence);
     }
 
     public async Task<BudgetItemCreateOptions> GetCreateOptionsAsync(CancellationToken cancellationToken = default)
@@ -499,6 +516,21 @@ public sealed class BudgetPlanningService(
             item.UpdateVendorAndNotes(vendorId, notes, allowDirectApprovedEdits);
         }
 
+        await dbContext.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task SetBillingCadenceAsync(
+        Guid itemId, BudgetBillingCadence cadence, CancellationToken cancellationToken = default)
+    {
+        var item = await dbContext.BudgetItems
+            .SingleOrDefaultAsync(x => x.Id == itemId, cancellationToken)
+            ?? throw new KeyNotFoundException("Budget item was not found.");
+        await GetEditableVersionAsync(item.FiscalYearId, item.BudgetVersionId, cancellationToken);
+        var year = await dbContext.FiscalYears.AsNoTracking()
+            .SingleAsync(x => x.Id == item.FiscalYearId, cancellationToken);
+        if (year.Status is FiscalYearStatus.Closed or FiscalYearStatus.Archived || year.IsLocked)
+            throw new InvalidOperationException("Cannot edit billing cadence in a locked or closed fiscal year.");
+        item.SetBillingCadence(cadence);
         await dbContext.SaveChangesAsync(cancellationToken);
     }
 

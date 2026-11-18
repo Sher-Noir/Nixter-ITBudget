@@ -462,6 +462,11 @@ namespace LedgerForge.Infrastructure.Persistence.Migrations
                         .HasPrecision(19, 4)
                         .HasColumnType("decimal(19,4)");
 
+                    b.Property<int>("BillingCadence")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int")
+                        .HasDefaultValue(0);
+
                     b.Property<Guid?>("BudgetSectionId")
                         .HasColumnType("uniqueidentifier");
 
@@ -616,6 +621,8 @@ namespace LedgerForge.Infrastructure.Persistence.Migrations
 
                     b.ToTable("BudgetItem", null, t =>
                         {
+                            t.HasCheckConstraint("CK_BudgetItem_BillingCadence", "[BillingCadence] BETWEEN 0 AND 3");
+
                             t.HasCheckConstraint("CK_BudgetItem_ApprovedTotal", "[ApprovedTotal] IS NULL OR [ApprovedTotal] >= 0");
 
                             t.HasCheckConstraint("CK_BudgetItem_PlannedTotal", "[PlannedTotal] >= 0");

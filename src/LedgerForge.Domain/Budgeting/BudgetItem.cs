@@ -3,6 +3,10 @@ using LedgerForge.Domain.Common;
 namespace LedgerForge.Domain.Budgeting;
 
 public enum PurchaseType { New, Replacement, Renewal, Expansion, Project, Other }
+
+// Independent of Frequency / renewal frequency. Automatic safely detects
+// monthly bill runs; explicit choices cover new and irregular services.
+public enum BudgetBillingCadence { Automatic = 0, Monthly = 1, Quarterly = 2, OneTime = 3 }
 // Add new status values at the end to preserve existing database enum integer values.
 public enum BudgetItemStatus { Draft, Proposed, Submitted, Approved, Denied, Deferred, Active, Cancelled, Archived, Purchased }
 
@@ -29,6 +33,7 @@ public sealed class BudgetItem : AuditableEntity
         PlannedTotal = DomainBudgetCalculator.Multiply(quantity, unitCost);
         Status = BudgetItemStatus.Draft;
         PurchaseType = PurchaseType.New;
+        BillingCadence = BudgetBillingCadence.Automatic;
     }
 
     public Guid FiscalYearId { get; private set; }
@@ -40,6 +45,7 @@ public sealed class BudgetItem : AuditableEntity
     public string? Notes { get; private set; }
     public Guid? VendorId { get; private set; }
     public PurchaseType PurchaseType { get; private set; }
+    public BudgetBillingCadence BillingCadence { get; private set; }
     public Guid? BudgetSectionId { get; private set; }
     public Guid? FinanceTypeId { get; private set; }
     public Guid? DepartmentId { get; private set; }
@@ -62,6 +68,19 @@ public sealed class BudgetItem : AuditableEntity
     public string? DecisionNote { get; private set; }
 
     public bool IsPlanningEditable => Status is BudgetItemStatus.Draft or BudgetItemStatus.Proposed or BudgetItemStatus.Deferred;
+
+    /// <summary>
+    /// Classification only; does not change an approved line's budget,
+    /// purchase status, transactions, or workflow approval.
+    /// </summary>
+    public void SetBillingCadence(BudgetBillingCadence cadence)
+    {
+        if (!Enum.IsDefined(cadence))
+            throw new ArgumentOutOfRangeException(nameof(cadence));
+        if (IsArchived || Status is BudgetItemStatus.Archived or BudgetItemStatus.Cancelled)
+            throw new InvalidOperationException("Billing cadence cannot be changed on an inactive item.");
+        BillingCadence = cadence;
+    }
 
     public void ChangeCost(decimal quantity, decimal unitCost, bool allowDirectApprovedEdits = false)
     {

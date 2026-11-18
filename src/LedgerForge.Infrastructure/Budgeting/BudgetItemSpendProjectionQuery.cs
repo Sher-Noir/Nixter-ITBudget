@@ -21,8 +21,16 @@ public sealed record BudgetItemSpendProjection(
     decimal? ForecastFloor,
     decimal AdditionalExpectedFromForecastFloor,
     string ExpectedToDateBasis,
-    string RecurringScheduleDetails);
-public sealed record BudgetItemSpendInput(Guid Id, DateOnly? PurchaseDate, decimal CurrentBudget, BudgetItemStatus Status);
+    string RecurringScheduleDetails,
+    BudgetBillingCadence EffectiveBillingCadence,
+    int BilledPeriods,
+    decimal BudgetPerBillingPeriod,
+    decimal ExpectedInstallmentsToDate,
+    decimal RemainingInstallmentAllowance,
+    string BillingCadenceBasis);
+public sealed record BudgetItemSpendInput(
+    Guid Id, DateOnly? PurchaseDate, decimal CurrentBudget, BudgetItemStatus Status,
+    BudgetBillingCadence BillingCadence = BudgetBillingCadence.Automatic);
 
 /// <summary>Batch-computes consistent item-level annual forecast and expected spend to date.</summary>
 public static class BudgetItemSpendProjectionQuery
@@ -70,6 +78,23 @@ public static class BudgetItemSpendProjectionQuery
                     m.BillingDate, orig.Amount)
             ).ToListAsync(ct);
         var postedKeys = posted.Select(x => (x.ScheduleId, x.Year, x.Month)).ToHashSet();
+
+        // Read actual transaction dates once. Net reversals against the same
+        // month and count each billed month only once (even for split invoices).
+        var localToday = RecurringActualService.EasternToday();
+        var transactionRows = await db.ActualTransactions.AsNoTracking()
+            .Where(x => x.BudgetItemId != null && ids.Contains(x.BudgetItemId.Value)
+                && x.TransactionDate >= fiscalYear.StartDate && x.TransactionDate <= localToday
+                && x.TransactionDate <= fiscalYear.EndDate)
+            .Select(x => new { BudgetItemId = x.BudgetItemId!.Value, x.TransactionDate, x.Amount })
+            .ToListAsync(ct);
+        var billedMonths = transactionRows
+            .GroupBy(x => new { x.BudgetItemId, x.TransactionDate.Year, x.TransactionDate.Month })
+            .Where(g => g.Sum(row => row.Amount) > 0m)
+            .GroupBy(g => g.Key.BudgetItemId)
+            .ToDictionary(g => g.Key, g => g
+                .Select(x => (x.Key.Year * 12 + x.Key.Month - 1)).OrderBy(x => x).ToArray());
+        var fiscalStartMonth = fiscalYear.StartDate.Year * 12 + fiscalYear.StartDate.Month - 1;
         var itemBySchedule = schedules.ToDictionary(x => x.Id, x => x.BudgetItemId);
         var itemsWithSchedules = schedules.Select(x => x.BudgetItemId).ToHashSet();
         var recurringByItem = new Dictionary<Guid, decimal>();
@@ -117,7 +142,14 @@ public static class BudgetItemSpendProjectionQuery
         {
             var actual = actualTotals.GetValueOrDefault(x.Id);
             var recurringExpected = expectedByItem.GetValueOrDefault(x.Id);
-            var oneTimeExpected = itemsWithSchedules.Contains(x.Id) ? 0m :
+            var months = billedMonths.GetValueOrDefault(x.Id) ?? [];
+            var billingPace = BudgetBillingPaceCalculator.Calculate(
+                x.CurrentBudget, x.BillingCadence, months,
+                months.Select(month => (month - fiscalStartMonth) / 3).Distinct().ToArray());
+            var usesInstallments = !itemsWithSchedules.Contains(x.Id) &&
+                (billingPace.EffectiveCadence is BudgetBillingCadence.Monthly or BudgetBillingCadence.Quarterly);
+            var installmentExpected = usesInstallments ? billingPace.ExpectedToDate : 0m;
+            var oneTimeExpected = itemsWithSchedules.Contains(x.Id) || usesInstallments ? 0m :
                 BudgetSpendPacingCalculator.ExpectedOneTimeToDate(
                     x.CurrentBudget, x.PurchaseDate, x.Status, actual,
                     fiscalYear.StartDate, fiscalYear.EndDate, today);
@@ -126,10 +158,8 @@ public static class BudgetItemSpendProjectionQuery
             var undatedSpent = x.PurchaseDate is null &&
                 (x.Status == BudgetItemStatus.Purchased || actual > 0m)
                 ? oneTimeExpected : 0m;
-            var undatedPaced = x.PurchaseDate is null &&
-                x.Status != BudgetItemStatus.Purchased && actual <= 0m
-                ? oneTimeExpected : 0m;
-            if (itemsWithSchedules.Contains(x.Id))
+            var undatedPaced = 0m; // no false fiscal-day proration
+            if (itemsWithSchedules.Contains(x.Id) || usesInstallments)
             {
                 datedPurchase = 0m;
                 undatedSpent = 0m;
@@ -147,19 +177,22 @@ public static class BudgetItemSpendProjectionQuery
                 : x.Status is BudgetItemStatus.Cancelled or BudgetItemStatus.Archived
                     ? publishedScenario
                     : Math.Max(publishedScenario ?? 0m, x.CurrentBudget);
-            var remainingRecurring = recurringByItem.GetValueOrDefault(x.Id);
+            var remainingRecurring = recurringByItem.GetValueOrDefault(x.Id) +
+                (usesInstallments ? billingPace.RemainingFullYearAllowance : 0m);
             var breakdown = BudgetItemForecastCalculator.Calculate(
                 actual, commitments, remainingRecurring, scenarioOrPlan);
             var itemSchedules = schedules.Where(s => s.BudgetItemId == x.Id).ToArray();
             var basis = itemSchedules.Length > 0
                 ? "Recurring schedule (one-time estimate excluded)"
+                : usesInstallments
+                    ? $"{billingPace.Basis}: {billingPace.BilledPeriods} billed periods × {billingPace.BudgetPerPeriod:C2}"
                 : x.Status is BudgetItemStatus.Cancelled or BudgetItemStatus.Archived
                     ? "Excluded (cancelled or archived)"
                     : x.PurchaseDate is DateOnly
-                        ? "Estimated purchase date (full budget after date)"
+                        ? "One-time: expected at purchase date"
                         : x.Status == BudgetItemStatus.Purchased || actual > 0m
-                            ? "Undated; purchased or actual posted (full current budget)"
-                            : "Undated; estimated evenly across fiscal-year days";
+                            ? "One-time: undated, full budget expected once purchased"
+                            : "Unscheduled one-time: no expected spending assumed";
             var scheduleDetails = string.Join("; ", itemSchedules.Select(s =>
                 s.Description + " | " + s.Amount.ToString("0.####", System.Globalization.CultureInfo.InvariantCulture) +
                 " | " + (s.LastDayOfMonth ? "Last calendar day" : "Day " + s.DayOfMonth) +
@@ -167,12 +200,18 @@ public static class BudgetItemSpendProjectionQuery
                 " to " + s.EndDate.ToString("yyyy-MM-dd") +
                 " | " + (s.IsActive ? "Active" : "Paused")));
             return new BudgetItemSpendProjection(
-                breakdown.Total, recurringExpected + oneTimeExpected,
+                breakdown.Total, recurringExpected + oneTimeExpected + installmentExpected,
                 recurringExpected, datedPurchase, undatedSpent, undatedPaced,
                 x.CurrentBudget, breakdown.UnpostedRecurring,
                 breakdown.OutstandingCommitments, breakdown.AdditionalUncoveredCommitments,
                 publishedScenario, scenarioOrPlan, breakdown.OtherExpectedFromPublishedScenario,
-                basis, scheduleDetails);
+                basis, scheduleDetails,
+                billingPace.EffectiveCadence,
+                usesInstallments ? billingPace.BilledPeriods : 0,
+                usesInstallments ? billingPace.BudgetPerPeriod : 0m,
+                installmentExpected,
+                usesInstallments ? billingPace.RemainingFullYearAllowance : 0m,
+                itemSchedules.Length > 0 ? "Recurring actual schedule controls billing" : billingPace.Basis);
         });
     }
 

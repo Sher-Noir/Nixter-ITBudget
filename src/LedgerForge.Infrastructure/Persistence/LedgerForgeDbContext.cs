@@ -121,6 +121,7 @@ public sealed class LedgerForgeDbContext(DbContextOptions<LedgerForgeDbContext> 
             entity.ToTable("BudgetItem", table =>
             {
                 table.HasCheckConstraint("CK_BudgetItem_Quantity", "[Quantity] >= 0");
+                table.HasCheckConstraint("CK_BudgetItem_BillingCadence", "[BillingCadence] BETWEEN 0 AND 3");
                 table.HasCheckConstraint("CK_BudgetItem_UnitCost", "[UnitCost] >= 0");
                 table.HasCheckConstraint("CK_BudgetItem_PlannedTotal", "[PlannedTotal] >= 0");
                 table.HasCheckConstraint("CK_BudgetItem_ApprovedTotal", "[ApprovedTotal] IS NULL OR [ApprovedTotal] >= 0");
@@ -138,6 +139,7 @@ public sealed class LedgerForgeDbContext(DbContextOptions<LedgerForgeDbContext> 
             entity.Property(x => x.Quantity).HasPrecision(19, 4);
             entity.Property(x => x.UnitCost).HasPrecision(19, 4);
             entity.Property(x => x.PlannedTotal).HasPrecision(19, 4);
+            entity.Property(x => x.BillingCadence).HasDefaultValue(BudgetBillingCadence.Automatic);
             entity.Property(x => x.ApprovedTotal).HasPrecision(19, 4);
             entity.Property(x => x.RevisedTotal).HasPrecision(19, 4);
             entity.Property(x => x.RowVersion).IsRowVersion();
