@@ -140,6 +140,7 @@ public sealed class LedgerForgeDbContext(DbContextOptions<LedgerForgeDbContext> 
             entity.Property(x => x.UnitCost).HasPrecision(19, 4);
             entity.Property(x => x.PlannedTotal).HasPrecision(19, 4);
             entity.Property(x => x.BillingCadence).HasDefaultValue(BudgetBillingCadence.Automatic);
+            entity.Property(x => x.ExcludeFromOverUnder).HasDefaultValue(false);
             entity.Property(x => x.ApprovedTotal).HasPrecision(19, 4);
             entity.Property(x => x.RevisedTotal).HasPrecision(19, 4);
             entity.Property(x => x.RowVersion).IsRowVersion();

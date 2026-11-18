@@ -59,7 +59,8 @@ public sealed record BudgetItemSummary(
     decimal BudgetPerBillingPeriod = 0m,
     decimal ExpectedInstallmentsToDate = 0m,
     decimal RemainingInstallmentAllowance = 0m,
-    string BillingCadenceBasis = "");
+    string BillingCadenceBasis = "",
+    bool ExcludeFromOverUnder = false);
 
 public sealed record BudgetPlanningSnapshot(
     IReadOnlyList<FiscalYearSummary> FiscalYears,
@@ -110,7 +111,8 @@ public sealed record BudgetItemEditSnapshot(
     IReadOnlyList<LookupOption> Frequencies,
     Guid? VendorId = null,
     string? Notes = null,
-    BudgetBillingCadence BillingCadence = BudgetBillingCadence.Automatic);
+    BudgetBillingCadence BillingCadence = BudgetBillingCadence.Automatic,
+    bool ExcludeFromOverUnder = false);
 
 public sealed record BudgetItemCreateOptions(
     IReadOnlyList<LookupOption> BudgetSections,
@@ -276,7 +278,8 @@ public sealed class BudgetPlanningService(
             projections.GetValueOrDefault(x.Id)?.BudgetPerBillingPeriod ?? 0m,
             projections.GetValueOrDefault(x.Id)?.ExpectedInstallmentsToDate ?? 0m,
             projections.GetValueOrDefault(x.Id)?.RemainingInstallmentAllowance ?? 0m,
-            projections.GetValueOrDefault(x.Id)?.BillingCadenceBasis ?? ""))
+            projections.GetValueOrDefault(x.Id)?.BillingCadenceBasis ?? "",
+            x.ExcludeFromOverUnder))
             .ToArray();
 
         return new(
@@ -353,7 +356,8 @@ public sealed class BudgetPlanningService(
             frequencies,
             item.VendorId,
             item.Notes,
-            item.BillingCadence);
+            item.BillingCadence,
+            item.ExcludeFromOverUnder);
     }
 
     public async Task<BudgetItemCreateOptions> GetCreateOptionsAsync(CancellationToken cancellationToken = default)
@@ -516,6 +520,21 @@ public sealed class BudgetPlanningService(
             item.UpdateVendorAndNotes(vendorId, notes, allowDirectApprovedEdits);
         }
 
+        await dbContext.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task SetOverUnderExclusionAsync(
+        Guid itemId, bool excluded, CancellationToken cancellationToken = default)
+    {
+        var item = await dbContext.BudgetItems
+            .SingleOrDefaultAsync(x => x.Id == itemId, cancellationToken)
+            ?? throw new KeyNotFoundException("Budget item was not found.");
+        await GetEditableVersionAsync(item.FiscalYearId, item.BudgetVersionId, cancellationToken);
+        var year = await dbContext.FiscalYears.AsNoTracking()
+            .SingleAsync(x => x.Id == item.FiscalYearId, cancellationToken);
+        if (year.Status is FiscalYearStatus.Closed or FiscalYearStatus.Archived || year.IsLocked)
+            throw new InvalidOperationException("Cannot adjust spending comparison exclusions for a locked or closed fiscal year.");
+        item.SetOverUnderExclusion(excluded);
         await dbContext.SaveChangesAsync(cancellationToken);
     }
 

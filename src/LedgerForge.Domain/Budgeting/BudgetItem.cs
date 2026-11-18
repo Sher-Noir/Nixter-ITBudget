@@ -46,6 +46,8 @@ public sealed class BudgetItem : AuditableEntity
     public Guid? VendorId { get; private set; }
     public PurchaseType PurchaseType { get; private set; }
     public BudgetBillingCadence BillingCadence { get; private set; }
+    /// <summary>Exclude only from year-to-date pace variance, not actual, budget or forecast totals.</summary>
+    public bool ExcludeFromOverUnder { get; private set; }
     public Guid? BudgetSectionId { get; private set; }
     public Guid? FinanceTypeId { get; private set; }
     public Guid? DepartmentId { get; private set; }
@@ -73,6 +75,13 @@ public sealed class BudgetItem : AuditableEntity
     /// Classification only; does not change an approved line's budget,
     /// purchase status, transactions, or workflow approval.
     /// </summary>
+    public void SetOverUnderExclusion(bool excluded)
+    {
+        if (IsArchived || Status is BudgetItemStatus.Archived or BudgetItemStatus.Cancelled)
+            throw new InvalidOperationException("Cannot change the spending comparison treatment of an inactive item.");
+        ExcludeFromOverUnder = excluded;
+    }
+
     public void SetBillingCadence(BudgetBillingCadence cadence)
     {
         if (!Enum.IsDefined(cadence))

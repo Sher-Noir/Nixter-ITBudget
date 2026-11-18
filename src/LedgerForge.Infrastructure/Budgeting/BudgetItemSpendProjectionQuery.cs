@@ -188,10 +188,12 @@ public static class BudgetItemSpendProjectionQuery
                     ? $"{billingPace.Basis}: {billingPace.BilledPeriods} billed periods × {billingPace.BudgetPerPeriod:C2}"
                 : x.Status is BudgetItemStatus.Cancelled or BudgetItemStatus.Archived
                     ? "Excluded (cancelled or archived)"
-                    : x.PurchaseDate is DateOnly
-                        ? "One-time: expected at purchase date"
-                        : x.Status == BudgetItemStatus.Purchased || actual > 0m
-                            ? "One-time: undated, full budget expected once purchased"
+                    : x.Status == BudgetItemStatus.Purchased || actual > 0m
+                        ? x.PurchaseDate is DateOnly
+                            ? "One-time: recorded purchase / actual (planned date informational)"
+                            : "One-time: undated, full budget expected once purchased"
+                        : x.PurchaseDate is DateOnly
+                            ? "One-time: estimated purchase date only; not purchased or billed"
                             : "Unscheduled one-time: no expected spending assumed";
             var scheduleDetails = string.Join("; ", itemSchedules.Select(s =>
                 s.Description + " | " + s.Amount.ToString("0.####", System.Globalization.CultureInfo.InvariantCulture) +

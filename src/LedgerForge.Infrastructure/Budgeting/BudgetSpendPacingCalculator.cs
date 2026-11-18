@@ -3,9 +3,9 @@ using LedgerForge.Domain.Budgeting;
 namespace LedgerForge.Infrastructure.Budgeting;
 
 /// <summary>
-/// Estimates the expected one-time spend by today. An undated item is not
-/// invented fiscal-year proration: posted actual spend or purchased status
-/// makes the full budget due; otherwise no expected one-time spend is assumed.
+/// Estimates the expected one-time spend by today. Neither an undated
+/// item nor a past estimated purchase date is proof a purchase happened.
+/// Only a recorded purchase or posted actual enables its planned allowance.
 /// </summary>
 public static class BudgetSpendPacingCalculator
 {
@@ -26,9 +26,9 @@ public static class BudgetSpendPacingCalculator
         if (status is BudgetItemStatus.Cancelled or BudgetItemStatus.Archived)
             return 0m;
 
-        if (estimatedPurchaseDate is DateOnly date)
-            return date <= today ? currentBudget : 0m;
-
+        // An estimated purchase date is a planning intention, not evidence
+        // that an expense was incurred. Count an expected one-time charge
+        // only when it is marked Purchased or a net-positive actual exists.
         if (status == BudgetItemStatus.Purchased || postedActual > 0m)
             return currentBudget;
 

@@ -503,6 +503,11 @@ namespace LedgerForge.Infrastructure.Persistence.Migrations
                     b.Property<DateOnly?>("EstimatedPurchaseDate")
                         .HasColumnType("date");
 
+                    b.Property<bool>("ExcludeFromOverUnder")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(false);
+
                     b.Property<Guid?>("FinanceTypeId")
                         .HasColumnType("uniqueidentifier");
 
