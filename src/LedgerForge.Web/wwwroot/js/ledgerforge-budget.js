@@ -216,6 +216,14 @@
         updateEditTotal();
     }
 
+    // Forecast KPI opens the in-page spending breakdown.
+    document.querySelectorAll("[data-open-forecast-breakdown]").forEach(link => {
+        link.addEventListener("click", () => {
+            const details = document.getElementById("forecast-breakdown");
+            if (details) details.open = true;
+        });
+    });
+
     const actualEntry = document.getElementById("lf-actual-entry");
     if (actualEntry) {
         document.querySelectorAll("[data-open-actual-entry]").forEach(link =>

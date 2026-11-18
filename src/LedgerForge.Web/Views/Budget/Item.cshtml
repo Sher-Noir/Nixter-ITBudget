@@ -160,7 +160,7 @@
     <article class="lf-card lf-kpi"><div class="lf-kpi-icon orange">↔</div><div><div class="lf-card-title">Committed</div><div class="lf-kpi-value">@workspace.Committed.ToString("C2")</div><div class="lf-kpi-note">Issued PO value not yet posted</div></div></article>
     <article class="lf-card lf-kpi"><div class="lf-kpi-icon green">▥</div><div><div class="lf-card-title">Actual</div><div class="lf-kpi-value">@workspace.Actual.ToString("C2")</div><div class="lf-kpi-note">Posted actual transactions</div></div></article>
     <article class="lf-card lf-kpi"><div class="lf-kpi-icon teal">□</div><div><div class="lf-card-title">Available</div><div class="lf-kpi-value">@workspace.Available.ToString("C2")</div><div class="lf-kpi-note">Current less commitments and actuals</div></div></article>
-    <article class="lf-card lf-kpi"><div class="lf-kpi-icon blue">⌁</div><div><div class="lf-card-title">Forecast</div><div class="lf-kpi-value">@workspace.Forecast.ToString("C2")</div><div class="lf-kpi-note">Published line or calculated fallback</div></div></article>
+    <a class="lf-card lf-kpi lf-kpi-forecast" href="#forecast-breakdown" data-open-forecast-breakdown aria-label="View forecast spending breakdown"><div class="lf-kpi-icon blue">⌁</div><div><div class="lf-card-title">Forecast</div><div class="lf-kpi-value">@workspace.Forecast.ToString("C2")</div><div class="lf-kpi-note">Expected fiscal-year spend · View breakdown</div></div></a>
 </section>
 
 <nav class="lf-item-tabs" aria-label="Budget item sections">
@@ -168,7 +168,7 @@
     <a href="#purchase-orders">Purchase Orders (@workspace.PurchaseOrders.Count)</a>
     <a href="#actuals-invoices">Actuals &amp; Invoices (@(workspace.Actuals.Count + workspace.Invoices.Count))</a>
     <a href="#recurring-actuals">Recurring Actuals (@recurringSchedules.Count)</a>
-    <a href="#documents">Documents (@Model.Documents.Count)</a>
+    <a href="@documentUploadUrl">Documents (@Model.Documents.Count)</a>
     <a href="#approval-history">Approval / Activity (@workspace.Activity.Count)</a>
     <a href="#edit-item">Edit</a>
 </nav>
@@ -202,6 +202,22 @@
                     <div><span>Forecast</span><strong>@workspace.Forecast.ToString("C2")</strong></div>
                     <div><span>Variance (Budget vs Actual)</span><strong>@variance.ToString("C2")</strong></div>
                 </div>
+                <details id="forecast-breakdown" class="lf-forecast-breakdown">
+                    <summary>View forecast calculation</summary>
+                    <div class="lf-financial-bars">
+                        <div><span>Posted actuals</span><strong>@workspace.ForecastDetails.PostedActual.ToString("C2")</strong></div>
+                        <div><span>Remaining unposted recurring</span><strong>@workspace.ForecastDetails.UnpostedRecurring.ToString("C2")</strong></div>
+                        <div><span>Outstanding PO commitments</span><strong>@workspace.ForecastDetails.OutstandingCommitments.ToString("C2")</strong></div>
+                        <div><span>Additional commitments beyond recurring coverage</span><strong>@workspace.ForecastDetails.AdditionalUncoveredCommitments.ToString("C2")</strong></div>
+                        @if (workspace.ForecastDetails.PublishedScenarioTotal is decimal publishedTotal)
+                        {
+                            <div><span>Published scenario total</span><strong>@publishedTotal.ToString("C2")</strong></div>
+                            <div><span>Additional expected from scenario</span><strong>@workspace.ForecastDetails.OtherExpectedFromPublishedScenario.ToString("C2")</strong></div>
+                        }
+                        <div><span><strong>Expected total spending</strong></span><strong>@workspace.Forecast.ToString("C2")</strong></div>
+                    </div>
+                    <p class="muted">Recurring charges not yet posted remain in Forecast, never Actual. As posted months replace projected months, the total updates automatically. Because a PO may already cover future recurring charges, outstanding PO commitments first cover recurring obligations and only the excess is added. If POs cover separate expenses, this conservative estimate may be low until that spend is included in a published forecast scenario. A published scenario is a total estimate, not an additional charge.</p>
+                </details>
             </div>
         </section>
 
@@ -390,28 +406,6 @@
                         }
                         </tbody>
                     </table></div>
-                }
-            </section>
-
-            <section id="documents" class="lf-card">
-                <div class="lf-panel-header"><h2>Documents (@Model.Documents.Count)</h2><a href="@documentUploadUrl">Upload / View all</a></div>
-                @if (Model.Documents.Count == 0)
-                {
-                    <div class="lf-empty-state lf-compact-empty"><p>No documents are linked to this budget item.</p></div>
-                }
-                else
-                {
-                    <div class="lf-document-list">
-                    @foreach (var document in Model.Documents.Take(6))
-                    {
-                        var latestVersion = document.Versions.OrderByDescending(x => x.VersionNumber).FirstOrDefault();
-                        <a href="/documents/@document.Id" class="lf-document-row">
-                            <span class="lf-document-icon">□</span>
-                            <span><strong>@document.Title</strong><small>@(latestVersion?.OriginalFileName ?? "Stored document")</small></span>
-                            <time>@document.CreatedAtUtc.ToLocalTime().ToString("MMM d, yyyy")</time>
-                        </a>
-                    }
-                    </div>
                 }
             </section>
 

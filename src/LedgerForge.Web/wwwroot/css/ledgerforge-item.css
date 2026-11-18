@@ -32,7 +32,7 @@
   gap: .65rem;
   margin-top: .65rem;
 }
-.lf-related-grid > section:last-child { grid-column: 1 / -1; }
+.lf-related-grid > #approval-history { grid-column: 1 / -1; }
 .lf-compact-empty { min-height: 125px; padding: 1rem; }
 .lf-document-list { display: grid; }
 .lf-document-row {
@@ -198,14 +198,14 @@ button.danger:hover,
 }
 @media (max-width: 1220px) {
   .lf-related-grid { grid-template-columns: repeat(2,minmax(0,1fr)); }
-  .lf-related-grid > section:last-child { grid-column: 1 / -1; }
+  .lf-related-grid > #approval-history { grid-column: 1 / -1; }
 }
 @media (max-width: 1080px) {
   .lf-form-grid-3 { grid-template-columns: repeat(2,minmax(0,1fr)); }
 }
 @media (max-width: 880px) {
   .lf-related-grid { grid-template-columns: 1fr; }
-  .lf-related-grid > section:last-child { grid-column: auto; }
+  .lf-related-grid > #approval-history { grid-column: auto; }
   .lf-item-kpis { grid-template-columns: repeat(2,minmax(0,1fr)); }
 }
 @media (max-width: 620px) {
@@ -285,3 +285,38 @@ button.danger:hover,
 .lf-recurring-checkbox input { width: auto; flex: none; }
 .lf-recurring-toggle { margin-top: .75rem; }
 @media (max-width: 620px) { .lf-recurring-schedule > summary { align-items: flex-start; flex-direction: column; } }
+
+/* Equal-height Purchase Orders, Recurring Actuals and Actuals & Invoices. */
+.lf-related-grid > :is(#purchase-orders, #recurring-actuals, #actuals-invoices) {
+  box-sizing: border-box;
+  height: 440px;
+  min-height: 440px;
+  max-height: 440px;
+  min-width: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+}
+.lf-related-grid > #approval-history { min-width: 0; }
+.lf-kpi-forecast { color: inherit; text-decoration: none; }
+.lf-kpi-forecast:hover,
+.lf-kpi-forecast:focus-visible { border-color: var(--lf-primary); text-decoration: none; }
+.lf-forecast-breakdown { margin-top: .65rem; }
+.lf-forecast-breakdown > summary {
+  cursor: pointer;
+  padding: .5rem .65rem;
+  border-radius: var(--lf-radius);
+  border: 1px solid var(--lf-border);
+  background: var(--lf-surface-2);
+  font-weight: 650;
+  font-size: .72rem;
+}
+.lf-forecast-breakdown[open] > summary { margin-bottom: .65rem; }
+.lf-forecast-breakdown .muted { font-size: .69rem; line-height: 1.5; }
+@media (max-width: 880px) {
+  .lf-related-grid > :is(#purchase-orders, #recurring-actuals, #actuals-invoices) {
+    height: 400px;
+    min-height: 400px;
+    max-height: 400px;
+  }
+}

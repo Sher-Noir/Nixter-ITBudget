@@ -54,7 +54,8 @@ public sealed record BudgetItemWorkspaceSnapshot(
     IReadOnlyList<BudgetItemInvoiceSummary> Invoices,
     IReadOnlyList<BudgetItemActualSummary> Actuals,
     IReadOnlyList<BudgetItemActivitySummary> Activity,
-    bool ActualCorrectionsAllowed);
+    bool ActualCorrectionsAllowed,
+    BudgetItemForecastBreakdown ForecastDetails);
 
 public sealed class BudgetItemWorkspaceService(
     LedgerForgeDbContext dbContext,
@@ -186,7 +187,38 @@ public sealed class BudgetItemWorkspaceService(
                 .SingleOrDefaultAsync(cancellationToken);
         }
 
-        var forecast = publishedForecast ?? Math.Max(currentBudget, committed + actual);
+        // Only unposted months count as forecasted recurring. Every posted
+        // occurrence remains posted even if its actual was later corrected.
+        var recurringSchedules = await dbContext.RecurringActualSchedules.AsNoTracking()
+            .Where(x => x.BudgetItemId == itemId && x.IsActive)
+            .ToListAsync(cancellationToken);
+        var scheduleIds = recurringSchedules.Select(x => x.Id).ToArray();
+        var postedMonths = scheduleIds.Length == 0
+            ? new HashSet<(Guid, int, int)>()
+            : (await dbContext.RecurringActualOccurrences.AsNoTracking()
+                .Where(x => scheduleIds.Contains(x.ScheduleId))
+                .Select(x => new { x.ScheduleId, x.BillingYear, x.BillingMonth })
+                .ToListAsync(cancellationToken))
+                .Select(x => (x.ScheduleId, x.BillingYear, x.BillingMonth))
+                .ToHashSet();
+
+        decimal unpostedRecurring = 0m;
+        foreach (var schedule in recurringSchedules)
+        {
+            var firstMonth = new DateOnly(schedule.StartDate.Year, schedule.StartDate.Month, 1);
+            var finalMonth = new DateOnly(schedule.EndDate.Year, schedule.EndDate.Month, 1);
+            for (var month = firstMonth; month <= finalMonth; month = month.AddMonths(1))
+            {
+                var billingDate = schedule.BillingDate(month.Year, month.Month);
+                if (billingDate >= schedule.StartDate && billingDate <= schedule.EndDate &&
+                    !postedMonths.Contains((schedule.Id, month.Year, month.Month)))
+                    unpostedRecurring += schedule.Amount;
+            }
+        }
+
+        var forecastDetails = BudgetItemForecastCalculator.Calculate(
+            actual, committed, unpostedRecurring, publishedForecast);
+        var forecast = forecastDetails.Total;
 
         return new(
             item,
@@ -199,6 +231,7 @@ public sealed class BudgetItemWorkspaceService(
             invoices,
             actuals,
             activity,
-            actualCorrectionsAllowed);
+            actualCorrectionsAllowed,
+            forecastDetails);
     }
 }
