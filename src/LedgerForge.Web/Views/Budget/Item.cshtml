@@ -1,5 +1,6 @@
 @model LedgerForge.Web.Models.Budgeting.BudgetItemEditViewModel
 @using LedgerForge.Domain.Actuals
+@using LedgerForge.Infrastructure.Actuals
 @using LedgerForge.Domain.Budgeting
 @using LedgerForge.Domain.Procurement
 @using LedgerForge.Infrastructure.Budgeting
@@ -21,6 +22,12 @@
     var submitted = ViewData["Submitted"] as bool? == true;
     var actualSaved = ViewData["ActualSaved"] as bool? == true;
     var actualCorrected = ViewData["ActualCorrected"] as string;
+    var recurringMessage = ViewData["RecurringActualMessage"] as string;
+    var recurringSchedules = ViewData["RecurringSchedules"] as IReadOnlyList<RecurringActualSchedule> ?? [];
+    var recurringToday = ViewData["RecurringToday"] as DateOnly? ?? DateOnly.FromDateTime(DateTime.Today);
+    var recurringFiscal = ViewData["RecurringFiscalDates"] is ValueTuple<DateOnly, DateOnly> fiscal
+        ? fiscal : (recurringToday, recurringToday);
+    var recurringDefaultStart = recurringToday < recurringFiscal.Item1 ? recurringFiscal.Item1 : recurringToday;
     var brandingError = TempData["BudgetItemError"] as string;
     var canEditBranding = (await AuthorizationService.AuthorizeAsync(User, LedgerForge.Web.Security.AuthorizationPolicies.EditPlanningBudget)).Succeeded;
     var resolvedLogo = await BrandingAssets.ResolveBudgetItemLogoAsync(item.Id);
@@ -68,6 +75,10 @@
 @if (!string.IsNullOrWhiteSpace(actualCorrected))
 {
     <div class="card lf-alert lf-alert-success" role="status">@actualCorrected</div>
+}
+@if (!string.IsNullOrWhiteSpace(recurringMessage))
+{
+    <div class="card lf-alert lf-alert-success" role="status">@recurringMessage</div>
 }
 @if (purchasedChanged)
 {
@@ -156,6 +167,7 @@
     <a class="active" href="#overview">Overview</a>
     <a href="#purchase-orders">Purchase Orders (@workspace.PurchaseOrders.Count)</a>
     <a href="#actuals-invoices">Actuals &amp; Invoices (@(workspace.Actuals.Count + workspace.Invoices.Count))</a>
+    <a href="#recurring-actuals">Recurring Actuals (@recurringSchedules.Count)</a>
     <a href="#documents">Documents (@Model.Documents.Count)</a>
     <a href="#approval-history">Approval / Activity (@workspace.Activity.Count)</a>
     <a href="#edit-item">Edit</a>
@@ -211,6 +223,68 @@
                 }
             </section>
 
+            <section id="recurring-actuals" class="lf-card">
+                <div class="lf-panel-header">
+                    <div><h2>Recurring Actuals</h2><p class="muted">Automatically post monthly charges only after their billing date has passed (Eastern Time).</p></div>
+                </div>
+                <p class="muted">Each schedule belongs to this fiscal year only. Future charges are not counted in Actual or Available until posted. To change an individual posted month, use Edit in Actuals &amp; Invoices above. Changing a schedule affects future/unposted months only.</p>
+                @if (Model.CanPostActuals && recurringDefaultStart <= recurringFiscal.Item2 && workspace.ActualCorrectionsAllowed)
+                {
+                    <details class="lf-inline-entry" id="lf-recurring-create">
+                        <summary><strong>＋ Add recurring actual</strong><span>Example: monthly software subscription billed on the last day</span></summary>
+                        <form method="post" action="/budget/items/@item.Id/recurring-actuals" class="lf-form-grid lf-form-grid-3">
+                            @Html.AntiForgeryToken()
+                            <div class="lf-span-all"><label for="recurring-description">Description</label><input id="recurring-description" name="description" placeholder="HYCU monthly subscription" maxlength="500" required /></div>
+                            <div><label for="recurring-amount">Monthly amount</label><input id="recurring-amount" type="number" name="amount" min=".0001" step=".0001" placeholder="1310.40" required /></div>
+                            <div><label for="recurring-day">Day of month (1-31)</label><input id="recurring-day" type="number" name="dayOfMonth" min="1" max="31" value="31" required /></div>
+                            <div class="lf-recurring-checkbox"><label><input type="checkbox" name="lastDayOfMonth" value="true" checked /> Last calendar day of each month</label></div>
+                            <div><label for="recurring-start">Start date</label><input id="recurring-start" name="startDate" type="date" min="@recurringFiscal.Item1.ToString("yyyy-MM-dd")" max="@recurringFiscal.Item2.ToString("yyyy-MM-dd")" value="@recurringDefaultStart.ToString("yyyy-MM-dd")" required /></div>
+                            <div><label for="recurring-end">End date</label><input id="recurring-end" name="endDate" type="date" min="@recurringFiscal.Item1.ToString("yyyy-MM-dd")" max="@recurringFiscal.Item2.ToString("yyyy-MM-dd")" value="@recurringFiscal.Item2.ToString("yyyy-MM-dd")" required /></div>
+                            <div><label for="recurring-reference">Reference (optional)</label><input id="recurring-reference" name="sourceReference" maxlength="200" placeholder="HYCU-MONTHLY" /></div>
+                            <div><label for="recurring-account">Finance account</label><select id="recurring-account" name="financeAccountId"><option value="">Unassigned</option>@foreach (var option in Model.ActualEntryOptions.FinanceAccounts){<option value="@option.Id">@option.Label</option>}</select></div>
+                            <div><label for="recurring-department">Department</label><select id="recurring-department" name="departmentId"><option value="">Unassigned</option>@foreach (var option in Model.ActualEntryOptions.Departments){<option value="@option.Id">@option.Label</option>}</select></div>
+                            <div><label for="recurring-location">Location</label><select id="recurring-location" name="locationId"><option value="">Unassigned</option>@foreach (var option in Model.ActualEntryOptions.Locations){<option value="@option.Id">@option.Label</option>}</select></div>
+                            <div class="lf-span-all"><p class="muted">Backdating the start date automatically posts eligible past billing months. A charge dated Nov 30 is not an Actual until Dec 1. Pausing stops automatic posting; resuming catches up missed months.</p></div>
+                            <div><button class="primary" type="submit">Save recurring schedule</button></div>
+                        </form>
+                    </details>
+                }
+                @if (recurringSchedules.Count == 0)
+                {
+                    <p class="muted">No recurring actual schedules have been configured for this budget item.</p>
+                }
+                @foreach (var schedule in recurringSchedules)
+                {
+                    <details class="lf-recurring-schedule">
+                        <summary><strong>@schedule.Description</strong><span>@schedule.Amount.ToString("C2") / month · @(schedule.LastDayOfMonth ? "Last day" : $"Day {schedule.DayOfMonth}") · @(schedule.IsActive ? "Active" : "Paused")</span></summary>
+                        <div class="lf-recurring-body">
+                            <p class="muted">Applies @schedule.StartDate.ToString("MMM d, yyyy") to @schedule.EndDate.ToString("MMM d, yyyy"). Previously posted months are retained unchanged.</p>
+                            @if (Model.CanPostActuals && workspace.ActualCorrectionsAllowed)
+                            {
+                                <form method="post" action="/budget/items/@item.Id/recurring-actuals/@schedule.Id" class="lf-form-grid lf-form-grid-3">
+                                    @Html.AntiForgeryToken()
+                                    <div class="lf-span-all"><label for="recurring-desc-@schedule.Id">Description</label><input id="recurring-desc-@schedule.Id" name="description" maxlength="500" value="@schedule.Description" required /></div>
+                                    <div><label for="recurring-amt-@schedule.Id">Monthly amount</label><input id="recurring-amt-@schedule.Id" name="amount" type="number" min=".0001" step=".0001" value="@schedule.Amount.ToString("0.####", System.Globalization.CultureInfo.InvariantCulture)" required /></div>
+                                    <div><label for="recurring-dom-@schedule.Id">Day of month</label><input id="recurring-dom-@schedule.Id" name="dayOfMonth" type="number" min="1" max="31" value="@schedule.DayOfMonth" required /></div>
+                                    <div class="lf-recurring-checkbox"><label><input type="checkbox" name="lastDayOfMonth" value="true" checked="@schedule.LastDayOfMonth" /> Last calendar day</label></div>
+                                    <div><label for="recurring-from-@schedule.Id">Start date</label><input id="recurring-from-@schedule.Id" name="startDate" type="date" value="@schedule.StartDate.ToString("yyyy-MM-dd")" min="@recurringFiscal.Item1.ToString("yyyy-MM-dd")" max="@recurringFiscal.Item2.ToString("yyyy-MM-dd")" required /></div>
+                                    <div><label for="recurring-to-@schedule.Id">End date</label><input id="recurring-to-@schedule.Id" name="endDate" type="date" value="@schedule.EndDate.ToString("yyyy-MM-dd")" min="@recurringFiscal.Item1.ToString("yyyy-MM-dd")" max="@recurringFiscal.Item2.ToString("yyyy-MM-dd")" required /></div>
+                                    <div><label for="recurring-ref-@schedule.Id">Reference</label><input id="recurring-ref-@schedule.Id" name="sourceReference" maxlength="200" value="@schedule.SourceReference" /></div>
+                                    <div><label for="recurring-acc-@schedule.Id">Finance account</label><select id="recurring-acc-@schedule.Id" name="financeAccountId"><option value="" selected="@(schedule.FinanceAccountId is null)">Unassigned</option>@foreach (var option in Model.ActualEntryOptions.FinanceAccounts){<option value="@option.Id" selected="@(option.Id == schedule.FinanceAccountId)">@option.Label</option>}</select></div>
+                                    <div><label for="recurring-dept-@schedule.Id">Department</label><select id="recurring-dept-@schedule.Id" name="departmentId"><option value="" selected="@(schedule.DepartmentId is null)">Unassigned</option>@foreach (var option in Model.ActualEntryOptions.Departments){<option value="@option.Id" selected="@(option.Id == schedule.DepartmentId)">@option.Label</option>}</select></div>
+                                    <div><label for="recurring-loc-@schedule.Id">Location</label><select id="recurring-loc-@schedule.Id" name="locationId"><option value="" selected="@(schedule.LocationId is null)">Unassigned</option>@foreach (var option in Model.ActualEntryOptions.Locations){<option value="@option.Id" selected="@(option.Id == schedule.LocationId)">@option.Label</option>}</select></div>
+                                    <div><button class="primary" type="submit">Save schedule changes</button></div>
+                                </form>
+                                <form method="post" class="lf-recurring-toggle" action="/budget/items/@item.Id/recurring-actuals/@schedule.Id/active">
+                                    @Html.AntiForgeryToken()
+                                    <input type="hidden" name="active" value="@(!schedule.IsActive ? "true" : "false")" />
+                                    <button type="submit">@(schedule.IsActive ? "Pause future postings" : "Resume and catch up missed months")</button>
+                                </form>
+                            }
+                        </div>
+                    </details>
+                }
+            </section>
             <section id="actuals-invoices" class="lf-card">
                 <div class="lf-panel-header"><h2>Actuals &amp; Invoices</h2><div class="lf-actual-related-links"><a href="/actuals?fiscalYearId=@item.FiscalYearId">Full actual ledger</a><a href="/invoices">View invoices</a></div></div>
                 @if (Model.CanPostActuals)

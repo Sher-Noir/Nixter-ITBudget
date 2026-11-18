@@ -18,6 +18,7 @@ public sealed class BudgetController(
     BudgetItemWorkspaceService workspaceService,
     BudgetItemActualEntryService actualEntryService,
     ActualLedgerService actualLedgerService,
+    RecurringActualService recurringActualService,
     ApprovalQueueService approvalQueueService,
     IAuthorizationService authorizationService,
     IWebHostEnvironment environment,
@@ -158,6 +159,10 @@ public sealed class BudgetController(
         ViewData["Submitted"] = Request.Query.ContainsKey("submitted");
         ViewData["ActualSaved"] = Request.Query.ContainsKey("actualSaved");
         ViewData["ActualCorrected"] = TempData["ActualCorrected"] as string;
+        ViewData["RecurringActualMessage"] = TempData["RecurringActualMessage"] as string;
+        ViewData["RecurringSchedules"] = await recurringActualService.ListForItemAsync(id, cancellationToken);
+        ViewData["RecurringToday"] = RecurringActualService.EasternToday();
+        ViewData["RecurringFiscalDates"] = await recurringActualService.GetFiscalDatesAsync(id, cancellationToken);
 
         var configuredLimit = configuration.GetValue<long?>("Documents:MaxFileSizeBytes");
         var configuredStoragePath = configuration.GetValue<string>("Documents:StoragePath");
@@ -313,6 +318,80 @@ public sealed class BudgetController(
             TempData["BudgetItemError"] = exception.Message;
             return RedirectToAction(nameof(Item), new { id });
         }
+    }
+
+    [Authorize(Policy = AuthorizationPolicies.PostActuals)]
+    [ValidateAntiForgeryToken]
+    [HttpPost("items/{id:guid}/recurring-actuals")]
+    public async Task<IActionResult> CreateRecurringActual(
+        Guid id, string description, decimal amount, bool lastDayOfMonth, int dayOfMonth,
+        DateOnly startDate, DateOnly endDate, string? sourceReference,
+        Guid? financeAccountId, Guid? departmentId, Guid? locationId,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            _ = RequireActor();
+            await recurringActualService.CreateAsync(id, description, amount, lastDayOfMonth,
+                dayOfMonth, startDate, endDate, sourceReference, financeAccountId,
+                departmentId, locationId, cancellationToken);
+            // Catch up passed billing dates immediately. Future dates never become actuals.
+            await recurringActualService.PostDueAsync(RecurringActualService.EasternToday(), cancellationToken);
+            TempData["RecurringActualMessage"] = "Recurring schedule saved. Eligible past billing dates were posted; future dates are not actuals.";
+        }
+        catch (KeyNotFoundException) { return NotFound(); }
+        catch (Exception exception) when (exception is ArgumentException or InvalidOperationException or OverflowException)
+        {
+            TempData["BudgetItemError"] = exception.Message;
+        }
+        return RedirectToAction(nameof(Item), new { id, section = "recurring-actuals" });
+    }
+
+    [Authorize(Policy = AuthorizationPolicies.PostActuals)]
+    [ValidateAntiForgeryToken]
+    [HttpPost("items/{id:guid}/recurring-actuals/{scheduleId:guid}")]
+    public async Task<IActionResult> UpdateRecurringActual(
+        Guid id, Guid scheduleId, string description, decimal amount,
+        bool lastDayOfMonth, int dayOfMonth, DateOnly startDate, DateOnly endDate,
+        string? sourceReference, Guid? financeAccountId, Guid? departmentId,
+        Guid? locationId, CancellationToken cancellationToken)
+    {
+        try
+        {
+            _ = RequireActor();
+            await recurringActualService.UpdateAsync(id, scheduleId, description, amount,
+                lastDayOfMonth, dayOfMonth, startDate, endDate, sourceReference,
+                financeAccountId, departmentId, locationId, cancellationToken);
+            TempData["RecurringActualMessage"] = "Schedule updated. Already posted actuals were not changed.";
+        }
+        catch (KeyNotFoundException) { return NotFound(); }
+        catch (Exception exception) when (exception is ArgumentException or InvalidOperationException or OverflowException)
+        {
+            TempData["BudgetItemError"] = exception.Message;
+        }
+        return RedirectToAction(nameof(Item), new { id, section = "recurring-actuals" });
+    }
+
+    [Authorize(Policy = AuthorizationPolicies.PostActuals)]
+    [ValidateAntiForgeryToken]
+    [HttpPost("items/{id:guid}/recurring-actuals/{scheduleId:guid}/active")]
+    public async Task<IActionResult> SetRecurringActualActive(
+        Guid id, Guid scheduleId, bool active, CancellationToken cancellationToken)
+    {
+        try
+        {
+            _ = RequireActor();
+            await recurringActualService.SetActiveAsync(id, scheduleId, active, cancellationToken);
+            TempData["RecurringActualMessage"] = active
+                ? "Recurring schedule resumed. Any eligible missed months will be caught up."
+                : "Recurring schedule paused. Posted actuals remain unchanged.";
+        }
+        catch (KeyNotFoundException) { return NotFound(); }
+        catch (Exception exception) when (exception is ArgumentException or InvalidOperationException)
+        {
+            TempData["BudgetItemError"] = exception.Message;
+        }
+        return RedirectToAction(nameof(Item), new { id, section = "recurring-actuals" });
     }
 
     [Authorize(Policy = AuthorizationPolicies.EditPlanningBudget)]

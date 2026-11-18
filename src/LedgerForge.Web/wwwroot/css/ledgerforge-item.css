@@ -274,3 +274,14 @@ button.danger:hover,
   .lf-actual-edit-fields { grid-template-columns: 1fr; }
   .lf-actual-edit-wide { grid-column: auto; }
 }
+
+/* Recurring actual schedules */
+.lf-recurring-schedule { padding: .6rem .8rem; border: 1px solid var(--lf-border); border-radius: var(--lf-radius); margin: .55rem 0; background: var(--lf-surface-2); }
+.lf-recurring-schedule > summary { cursor: pointer; display: flex; flex-wrap: wrap; gap: .3rem .75rem; align-items: center; justify-content: space-between; }
+.lf-recurring-schedule > summary span { color: var(--lf-muted); font-size: .75rem; }
+.lf-recurring-body { padding: .85rem 0 .25rem; }
+.lf-recurring-checkbox { align-self: end; padding: .55rem; }
+.lf-recurring-checkbox label { display: flex; align-items: center; gap: .4rem; }
+.lf-recurring-checkbox input { width: auto; flex: none; }
+.lf-recurring-toggle { margin-top: .75rem; }
+@media (max-width: 620px) { .lf-recurring-schedule > summary { align-items: flex-start; flex-direction: column; } }
