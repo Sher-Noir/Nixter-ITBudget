@@ -17,6 +17,7 @@ public sealed class BudgetController(
     BudgetPlanningService planningService,
     BudgetItemWorkspaceService workspaceService,
     BudgetItemActualEntryService actualEntryService,
+    ActualLedgerService actualLedgerService,
     ApprovalQueueService approvalQueueService,
     IAuthorizationService authorizationService,
     IWebHostEnvironment environment,
@@ -156,6 +157,7 @@ public sealed class BudgetController(
         ViewData["RevisionOpened"] = Request.Query.ContainsKey("reopened");
         ViewData["Submitted"] = Request.Query.ContainsKey("submitted");
         ViewData["ActualSaved"] = Request.Query.ContainsKey("actualSaved");
+        ViewData["ActualCorrected"] = TempData["ActualCorrected"] as string;
 
         var configuredLimit = configuration.GetValue<long?>("Documents:MaxFileSizeBytes");
         var configuredStoragePath = configuration.GetValue<string>("Documents:StoragePath");
@@ -275,6 +277,38 @@ public sealed class BudgetController(
             return NotFound();
         }
         catch (Exception exception) when (exception is ArgumentException or ArgumentOutOfRangeException or InvalidOperationException or OverflowException)
+        {
+            TempData["BudgetItemError"] = exception.Message;
+            return RedirectToAction(nameof(Item), new { id });
+        }
+    }
+
+    [Authorize(Policy = AuthorizationPolicies.PostActuals)]
+    [ValidateAntiForgeryToken]
+    [HttpPost("items/{id:guid}/actuals/{transactionId:guid}/correct")]
+    public async Task<IActionResult> CorrectActual(
+        Guid id, Guid transactionId, DateOnly transactionDate, decimal amount,
+        string description, string? sourceReference, Guid? financeAccountId,
+        Guid? departmentId, Guid? locationId, string reason,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            _ = RequireActor(); // AuditSaveChangesInterceptor records the signed-in actor.
+            await actualLedgerService.CorrectBudgetItemManualAsync(
+                id, transactionId, transactionDate, amount, description,
+                sourceReference, financeAccountId, departmentId, locationId,
+                reason, cancellationToken);
+            TempData["ActualCorrected"] = "Actual corrected. The original, reversal and replacement remain in the audited ledger.";
+            return RedirectToAction(nameof(Item), new { id, corrected = true });
+        }
+        catch (KeyNotFoundException) { return NotFound(); }
+        catch (Microsoft.EntityFrameworkCore.DbUpdateException)
+        {
+            TempData["BudgetItemError"] = "The transaction may have already been corrected. Refresh this item and review its actual history.";
+            return RedirectToAction(nameof(Item), new { id });
+        }
+        catch (Exception exception) when (exception is ArgumentException or InvalidOperationException or OverflowException)
         {
             TempData["BudgetItemError"] = exception.Message;
             return RedirectToAction(nameof(Item), new { id });

@@ -1,3 +1,4 @@
+using LedgerForge.Domain.Actuals;
 using LedgerForge.Domain.Auditing;
 using LedgerForge.Domain.Budgeting;
 using LedgerForge.Domain.Procurement;
@@ -26,7 +27,15 @@ public sealed record BudgetItemActualSummary(
     DateOnly TransactionDate,
     string Description,
     decimal Amount,
-    string? SourceReference);
+    string? SourceReference,
+    ActualTransactionKind Kind,
+    Guid? FinanceAccountId,
+    Guid? DepartmentId,
+    Guid? LocationId,
+    Guid? ReversesTransactionId,
+    string? ReversalReason,
+    bool IsReversed,
+    string CreatedBy);
 
 public sealed record BudgetItemActivitySummary(
     Guid Id,
@@ -44,7 +53,8 @@ public sealed record BudgetItemWorkspaceSnapshot(
     IReadOnlyList<BudgetItemPurchaseOrderSummary> PurchaseOrders,
     IReadOnlyList<BudgetItemInvoiceSummary> Invoices,
     IReadOnlyList<BudgetItemActualSummary> Actuals,
-    IReadOnlyList<BudgetItemActivitySummary> Activity);
+    IReadOnlyList<BudgetItemActivitySummary> Activity,
+    bool ActualCorrectionsAllowed);
 
 public sealed class BudgetItemWorkspaceService(
     LedgerForgeDbContext dbContext,
@@ -123,8 +133,20 @@ public sealed class BudgetItemWorkspaceService(
                 x.TransactionDate,
                 x.Description,
                 x.Amount,
-                x.SourceReference))
+                x.SourceReference,
+                x.Kind,
+                x.FinanceAccountId,
+                x.DepartmentId,
+                x.LocationId,
+                x.ReversesTransactionId,
+                x.ReversalReason,
+                dbContext.ActualTransactions.Any(reversal => reversal.ReversesTransactionId == x.Id),
+                x.CreatedBy))
             .ToListAsync(cancellationToken);
+        var actualCorrectionsAllowed = await dbContext.FiscalYears.AsNoTracking()
+            .AnyAsync(year => year.Id == item.FiscalYearId &&
+                year.Status != FiscalYearStatus.Closed && year.Status != FiscalYearStatus.Archived,
+                cancellationToken);
 
         var activity = await dbContext.AuditEvents.AsNoTracking()
             .Where(x => x.EntityId == itemId && x.EntityType == nameof(BudgetItem))
@@ -176,6 +198,7 @@ public sealed class BudgetItemWorkspaceService(
             purchaseOrders,
             invoices,
             actuals,
-            activity);
+            activity,
+            actualCorrectionsAllowed);
     }
 }

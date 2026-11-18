@@ -228,6 +228,32 @@
         );
     }
 
+    // Per-transaction correction dialogs: native modal focus management and escape key.
+    document.querySelectorAll("[data-edit-actual]").forEach(button => {
+        button.addEventListener("click", () => {
+            const correctionDialog = document.getElementById("lf-edit-actual-" + button.dataset.editActual);
+            if (correctionDialog && !correctionDialog.open) correctionDialog.showModal();
+        });
+    });
+    document.querySelectorAll(".lf-actual-edit-dialog").forEach(correctionDialog => {
+        correctionDialog.querySelector("[data-cancel-actual]")
+            ?.addEventListener("click", () => correctionDialog.close());
+        correctionDialog.addEventListener("click", event => {
+            if (event.target === correctionDialog) correctionDialog.close();
+        });
+        correctionDialog.querySelector(".lf-actual-correction-form")
+            ?.addEventListener("submit", event => {
+                const form = event.currentTarget;
+                if (form.dataset.submitted === "true") {
+                    event.preventDefault();
+                    return;
+                }
+                form.dataset.submitted = "true";
+                const submitButton = form.querySelector('button[type="submit"]');
+                if (submitButton) { submitButton.disabled = true; submitButton.textContent = "Saving…"; }
+            });
+    });
+
     const dialog = document.getElementById("lf-actuals-dialog");
     if (dialog) {
         const content = dialog.querySelector("[data-actuals-content]");
