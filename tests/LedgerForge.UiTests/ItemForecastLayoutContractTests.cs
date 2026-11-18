@@ -18,7 +18,9 @@ public sealed class ItemForecastLayoutContractTests
         Assert.Contains("ForecastDetails.UnpostedRecurring", view, StringComparison.Ordinal);
         Assert.Contains("ForecastDetails.PublishedScenarioTotal", view, StringComparison.Ordinal);
         Assert.Contains("BudgetItemForecastCalculator.Calculate(", svc, StringComparison.Ordinal);
-        Assert.Contains("RecurringActualOccurrences", svc, StringComparison.Ordinal);
+        Assert.Contains("BudgetItemSpendProjectionQuery.GetAsync(", svc, StringComparison.Ordinal);
+        var calculation = Read("src", "LedgerForge.Infrastructure", "Budgeting", "BudgetItemSpendProjectionQuery.cs");
+        Assert.Contains("RecurringActualOccurrences", calculation, StringComparison.Ordinal);
         Assert.Contains("data-open-forecast-breakdown", js, StringComparison.Ordinal);
         Assert.DoesNotContain("<section id=\"documents\" class=\"lf-card\">", view, StringComparison.Ordinal);
         Assert.Contains("href=\"@documentUploadUrl\"", view, StringComparison.Ordinal);
