@@ -28,13 +28,22 @@ public sealed class BudgetSpendPacingCalculatorTests
     }
 
     [Fact]
-    public void PlannedOneTimeExpense_FullyExpectedOnScheduledDate()
+    public void EstimatedPurchaseDate_Alone_DoesNotCreateSpendingPaceSurplus()
     {
         Assert.Equal(0m, BudgetSpendPacingCalculator.ExpectedOneTimeToDate(
             50000m, new DateOnly(2026, 12, 1), BudgetItemStatus.Approved, 0m,
             Start, End, Today));
-        Assert.Equal(50000m, BudgetSpendPacingCalculator.ExpectedOneTimeToDate(
+        Assert.Equal(0m, BudgetSpendPacingCalculator.ExpectedOneTimeToDate(
             50000m, Today, BudgetItemStatus.Approved, 0m,
+            Start, End, Today));
+        Assert.Equal(0m, BudgetSpendPacingCalculator.ExpectedOneTimeToDate(
+            50000m, Today.AddDays(-15), BudgetItemStatus.Approved, 0m,
+            Start, End, Today));
+        Assert.Equal(50000m, BudgetSpendPacingCalculator.ExpectedOneTimeToDate(
+            50000m, Today.AddDays(-15), BudgetItemStatus.Purchased, 0m,
+            Start, End, Today));
+        Assert.Equal(50000m, BudgetSpendPacingCalculator.ExpectedOneTimeToDate(
+            50000m, Today.AddDays(-15), BudgetItemStatus.Approved, 398m,
             Start, End, Today));
     }
 

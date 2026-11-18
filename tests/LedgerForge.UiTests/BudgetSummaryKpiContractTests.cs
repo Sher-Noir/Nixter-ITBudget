@@ -22,7 +22,9 @@ public sealed class BudgetSummaryKpiContractTests
         Assert.DoesNotContain("Must Have", section, StringComparison.Ordinal);
         Assert.DoesNotContain("Open / Proposed", section, StringComparison.Ordinal);
         Assert.DoesNotContain("Approved", section, StringComparison.Ordinal);
-        Assert.Contains("expectedToDate - displayedActual", view, StringComparison.Ordinal);
+        Assert.Contains("varianceContributions.Sum(x => x.Variance)", view, StringComparison.Ordinal);
+        Assert.Contains("BudgetOverUnderCalculator.Calculate(", view, StringComparison.Ordinal);
+        Assert.Contains("actualForVariance", view, StringComparison.Ordinal);
         Assert.Contains("\"-\" + Math.Abs(currentOverUnder)", view, StringComparison.Ordinal);
         Assert.Contains("Expected to date: @expectedToDate", view, StringComparison.Ordinal);
         Assert.Contains("FullYearForecast", planning, StringComparison.Ordinal);
