@@ -1,4 +1,6 @@
 @model LedgerForge.Web.Models.Budgeting.BudgetItemEditViewModel
+@using LedgerForge.Domain.Actuals
+@using LedgerForge.Infrastructure.Actuals
 @using LedgerForge.Domain.Budgeting
 @using LedgerForge.Domain.Procurement
 @using LedgerForge.Infrastructure.Budgeting
@@ -6,11 +8,28 @@
 @inject Microsoft.AspNetCore.Authorization.IAuthorizationService AuthorizationService
 @{
     var workspace = Model.Workspace;
+    var vendorOptions = ViewData["VendorOptions"] as IReadOnlyList<LookupOption>;
     var item = workspace.Item;
     ViewData["Title"] = $"Budget Item {item.ItemNumber}";
     var canSubmit = ViewData["CanSubmit"] as bool? == true;
+    var canReopen = ViewData["CanReopen"] as bool? == true;
+    var directEditWithoutReapproval = ViewData["DirectEditWithoutReapproval"] as bool? == true;
+    var requireReapprovalForEdits = ViewData["RequireReapprovalForBudgetItemEdits"] as bool? == true;
+    var canMarkPurchased = ViewData["CanMarkPurchased"] as bool? == true;
+    var canUndoPurchased = ViewData["CanUndoPurchased"] as bool? == true;
+    var purchasedChanged = ViewData["PurchasedChanged"] as bool? == true;
+    var revisionOpened = ViewData["RevisionOpened"] as bool? == true;
     var submitted = ViewData["Submitted"] as bool? == true;
     var actualSaved = ViewData["ActualSaved"] as bool? == true;
+    var actualCorrected = ViewData["ActualCorrected"] as string;
+    var recurringMessage = ViewData["RecurringActualMessage"] as string;
+    var billingCadenceChanged = ViewData["BillingCadenceChanged"] as string;
+    var exclusionChanged = ViewData["OverUnderExclusionChanged"] as string;
+    var recurringSchedules = ViewData["RecurringSchedules"] as IReadOnlyList<RecurringActualSchedule> ?? [];
+    var recurringToday = ViewData["RecurringToday"] as DateOnly? ?? DateOnly.FromDateTime(DateTime.Today);
+    var recurringFiscal = ViewData["RecurringFiscalDates"] is ValueTuple<DateOnly, DateOnly> fiscal
+        ? fiscal : (recurringToday, recurringToday);
+    var recurringDefaultStart = recurringToday < recurringFiscal.Item1 ? recurringFiscal.Item1 : recurringToday;
     var brandingError = TempData["BudgetItemError"] as string;
     var canEditBranding = (await AuthorizationService.AuthorizeAsync(User, LedgerForge.Web.Security.AuthorizationPolicies.EditPlanningBudget)).Succeeded;
     var resolvedLogo = await BrandingAssets.ResolveBudgetItemLogoAsync(item.Id);
@@ -25,7 +44,7 @@
     var needLevel = OptionName(item.NeedLevels, item.NeedLevelId);
     var category = OptionName(item.InternalCategories, item.InternalCategoryId);
     var frequency = OptionName(item.Frequencies, item.FrequencyId);
-    var vendor = workspace.PurchaseOrders.FirstOrDefault()?.Vendor;
+    var vendor = vendorOptions?.FirstOrDefault(x => x.Id == item.VendorId)?.Name ?? workspace.PurchaseOrders.FirstOrDefault()?.Vendor;
     var variance = workspace.CurrentBudget - workspace.Actual;
     var itemMark = item.ItemNumber.Length >= 2 ? item.ItemNumber[..2].ToUpperInvariant() : "BI";
     var documentUploadUrl = $"/documents?linkedEntityType=BudgetItem&linkedEntityId={item.Id}";
@@ -55,9 +74,33 @@
 {
     <div class="card lf-alert lf-alert-success" role="status">Actual transaction added to this budget item.</div>
 }
+@if (!string.IsNullOrWhiteSpace(exclusionChanged))
+{
+    <div class="card lf-alert lf-alert-success" role="status">@exclusionChanged</div>
+}
+@if (!string.IsNullOrWhiteSpace(billingCadenceChanged))
+{
+    <div class="card lf-alert lf-alert-success" role="status">@billingCadenceChanged</div>
+}
+@if (!string.IsNullOrWhiteSpace(actualCorrected))
+{
+    <div class="card lf-alert lf-alert-success" role="status">@actualCorrected</div>
+}
+@if (!string.IsNullOrWhiteSpace(recurringMessage))
+{
+    <div class="card lf-alert lf-alert-success" role="status">@recurringMessage</div>
+}
+@if (purchasedChanged)
+{
+    <div class="card lf-alert lf-alert-success" role="status">Purchase tracking status updated. Budget approval, POs, invoices and actual amounts were not changed.</div>
+}
 @if (submitted)
 {
-    <div class="card lf-alert lf-alert-success" role="status">Budget item submitted for approval. Planning fields are read-only while the approval is pending.</div>
+    <div class="card lf-alert lf-alert-success" role="status">Budget item submitted for approval. To make another change, select Reopen for editing and resubmit it.</div>
+}
+@if (revisionOpened)
+{
+    <div class="card lf-alert lf-alert-success" role="status">Revision started. Update the item below and submit it for approval again. The previous approved amount remains recorded until the next approval.</div>
 }
 
 <section class="lf-card lf-item-hero">
@@ -71,13 +114,37 @@
             <div class="lf-item-mark" aria-hidden="true">@itemMark</div>
         }
         <div class="lf-item-title">
-            <h1>@item.Description <span class="badge @(item.Status == BudgetItemStatus.Approved ? "lf-badge-success" : "")">@item.Status</span></h1>
+            <h1>@item.Description <span class="badge @(item.Status is BudgetItemStatus.Approved or BudgetItemStatus.Purchased ? "lf-badge-success" : "")">@item.Status</span></h1>
             <p>@item.ItemNumber · <code>@item.StableIdentifier</code></p>
         </div>
-        @if (Model.CanEdit)
-        {
-            <a class="button" href="#edit-item">✎ Edit Item</a>
-        }
+        <div class="lf-item-hero-actions" aria-label="Budget item actions">
+            @if (Model.CanEdit)
+            {
+                <a class="button primary" href="#edit-item">✎ Edit Item</a>
+            }
+            @if (canReopen)
+            {
+                <a class="button primary" href="#edit-item">✎ Revise Item</a>
+            }
+            @if (canMarkPurchased)
+            {
+                <form method="post" action="/budget/items/@item.Id/purchased">
+                    @Html.AntiForgeryToken()
+                    <button class="button" type="submit" title="Tracking status only; does not create a PO, invoice, or actual transaction.">✓ Mark Purchased</button>
+                </form>
+            }
+            @if (canUndoPurchased)
+            {
+                <form method="post" action="/budget/items/@item.Id/undo-purchased">
+                    @Html.AntiForgeryToken()
+                    <button class="button" type="submit">Undo Purchased</button>
+                </form>
+            }
+            @if (Model.CanPostActuals)
+            {
+                <a class="button" href="#lf-actual-entry" data-open-actual-entry>＋ Record Actual</a>
+            }
+        </div>
     </div>
     <div class="lf-item-meta">
         <div><span>Item Number</span><strong>@item.ItemNumber</strong></div>
@@ -103,14 +170,15 @@
     <article class="lf-card lf-kpi"><div class="lf-kpi-icon orange">↔</div><div><div class="lf-card-title">Committed</div><div class="lf-kpi-value">@workspace.Committed.ToString("C2")</div><div class="lf-kpi-note">Issued PO value not yet posted</div></div></article>
     <article class="lf-card lf-kpi"><div class="lf-kpi-icon green">▥</div><div><div class="lf-card-title">Actual</div><div class="lf-kpi-value">@workspace.Actual.ToString("C2")</div><div class="lf-kpi-note">Posted actual transactions</div></div></article>
     <article class="lf-card lf-kpi"><div class="lf-kpi-icon teal">□</div><div><div class="lf-card-title">Available</div><div class="lf-kpi-value">@workspace.Available.ToString("C2")</div><div class="lf-kpi-note">Current less commitments and actuals</div></div></article>
-    <article class="lf-card lf-kpi"><div class="lf-kpi-icon blue">⌁</div><div><div class="lf-card-title">Forecast</div><div class="lf-kpi-value">@workspace.Forecast.ToString("C2")</div><div class="lf-kpi-note">Published line or calculated fallback</div></div></article>
+    <a class="lf-card lf-kpi lf-kpi-forecast" href="#forecast-breakdown" data-open-forecast-breakdown aria-label="View forecast spending breakdown"><div class="lf-kpi-icon blue">⌁</div><div><div class="lf-card-title">Forecast</div><div class="lf-kpi-value">@workspace.Forecast.ToString("C2")</div><div class="lf-kpi-note">Expected fiscal-year spend · View breakdown</div></div></a>
 </section>
 
 <nav class="lf-item-tabs" aria-label="Budget item sections">
     <a class="active" href="#overview">Overview</a>
     <a href="#purchase-orders">Purchase Orders (@workspace.PurchaseOrders.Count)</a>
     <a href="#actuals-invoices">Actuals &amp; Invoices (@(workspace.Actuals.Count + workspace.Invoices.Count))</a>
-    <a href="#documents">Documents (@Model.Documents.Count)</a>
+    <a href="#recurring-actuals">Recurring Actuals (@recurringSchedules.Count)</a>
+    <a href="@documentUploadUrl">Documents (@Model.Documents.Count)</a>
     <a href="#approval-history">Approval / Activity (@workspace.Activity.Count)</a>
     <a href="#edit-item">Edit</a>
 </nav>
@@ -123,13 +191,53 @@
                 <p>@item.Description</p>
                 <h3>Business Justification / Reason &amp; Purpose</h3>
                 <p>@(string.IsNullOrWhiteSpace(item.ReasonPurpose) ? "No business justification has been entered yet." : item.ReasonPurpose)</p>
+                <h3>Notes</h3>
+                <p>@(string.IsNullOrWhiteSpace(item.Notes) ? "No notes added." : item.Notes)</p>
                 <div class="lf-item-facts">
                     <div><span>Purchase Date</span><strong>@(item.EstimatedPurchaseDate?.ToString("MMM d, yyyy") ?? "—")</strong></div>
                     <div><span>Renewal Date</span><strong>@(item.RenewalDate?.ToString("MMM d, yyyy") ?? "—")</strong></div>
                     <div><span>Frequency</span><strong>@(frequency ?? "—")</strong></div>
+                    <div><span>Billing cadence</span><strong>@item.BillingCadence</strong></div>
+                    <div><span>Current Over/Under</span><strong>@(item.ExcludeFromOverUnder ? "Excluded" : "Included")</strong></div>
                     <div><span>Finance Type</span><strong>@(financeType ?? "—")</strong></div>
                     <div><span>Internal Category</span><strong>@(category ?? "—")</strong></div>
                     <div><span>Budget Version</span><strong>@item.BudgetVersionName</strong></div>
+                </div>
+                <div class="lf-variance-exclusion-settings">
+                    <h3>Current Over/Under</h3>
+                    @if (canEditBranding && !item.VersionLocked &&
+                        item.Status is not (BudgetItemStatus.Archived or BudgetItemStatus.Cancelled))
+                    {
+                        <form method="post" action="/budget/items/@item.Id/over-under-exclusion" class="lf-variance-exclusion-form">
+                            @Html.AntiForgeryToken()
+                            <label>
+                                <input type="checkbox" name="excludeFromOverUnder" value="true" checked="@item.ExcludeFromOverUnder" />
+                                <span>Exclude this item from Current Over/Under</span>
+                            </label>
+                            <button type="submit" class="button">Save exclusion</button>
+                        </form>
+                    }
+                    <p class="muted">Use for as-needed/discretionary expenses. This removes both expected and actual amounts from the spending-pace comparison ONLY. Planned Total, Current Actual and Current Forecasted still include this item. You can uncheck it later.</p>
+                </div>
+                <div class="lf-spending-cadence">
+                    <h3>Billing cadence for spending comparisons</h3>
+                    <p class="muted">Independent of Frequency (renewal frequency). This affects expected-to-date comparisons only, not the approved budget or actual transactions.</p>
+                    @if (canEditBranding && !item.VersionLocked &&
+                        item.Status is not (BudgetItemStatus.Archived or BudgetItemStatus.Cancelled))
+                    {
+                        <form method="post" action="/budget/items/@item.Id/billing-cadence" class="lf-spending-cadence-form">
+                            @Html.AntiForgeryToken()
+                            <label for="billingCadence-@item.Id">Billing cadence</label>
+                            <select id="billingCadence-@item.Id" name="billingCadence">
+                                <option value="Automatic" selected="@(item.BillingCadence == BudgetBillingCadence.Automatic)">Automatic (detect three consecutive billed months)</option>
+                                <option value="Monthly" selected="@(item.BillingCadence == BudgetBillingCadence.Monthly)">Monthly (annual budget ÷ 12)</option>
+                                <option value="Quarterly" selected="@(item.BillingCadence == BudgetBillingCadence.Quarterly)">Quarterly (annual budget ÷ 4)</option>
+                                <option value="OneTime" selected="@(item.BillingCadence == BudgetBillingCadence.OneTime)">One-time / annual lump sum</option>
+                            </select>
+                            <button type="submit">Save cadence</button>
+                        </form>
+                    }
+                    <p class="muted">For monthly billing, compare recorded net-positive billing months against annual budget ÷ 12. An unbilled month isn't counted in Over/Under. Undated, unspent one-time purchases are not assumed to be due.</p>
                 </div>
             </div>
             <div>
@@ -140,8 +248,28 @@
                     <div><span>Actual</span><strong>@workspace.Actual.ToString("C2")</strong></div>
                     <div><span>Available</span><strong>@workspace.Available.ToString("C2")</strong></div>
                     <div><span>Forecast</span><strong>@workspace.Forecast.ToString("C2")</strong></div>
+                    <div><span>Expected to date</span><strong>@workspace.SpendProjection.ExpectedToDate.ToString("C2")</strong></div>
+                    <div><span>Spending pace over/under</span><strong>@(item.ExcludeFromOverUnder ? "Excluded" : (workspace.SpendProjection.ExpectedToDate - workspace.Actual < 0m ? "-" : "+") + Math.Abs(workspace.SpendProjection.ExpectedToDate - workspace.Actual).ToString("C2"))</strong></div>
                     <div><span>Variance (Budget vs Actual)</span><strong>@variance.ToString("C2")</strong></div>
                 </div>
+                <details id="forecast-breakdown" class="lf-forecast-breakdown">
+                    <summary>View forecast calculation</summary>
+                    <div class="lf-financial-bars">
+                        <div><span>Posted actuals</span><strong>@workspace.ForecastDetails.PostedActual.ToString("C2")</strong></div>
+                        <div><span>Remaining scheduled/periodic charges</span><strong>@workspace.ForecastDetails.UnpostedRecurring.ToString("C2")</strong></div>
+                        <div><span>Expected billed installments</span><strong>@workspace.SpendProjection.ExpectedInstallmentsToDate.ToString("C2")</strong></div>
+                        <div><span>Billed periods</span><strong>@workspace.SpendProjection.BilledPeriods × @workspace.SpendProjection.BudgetPerBillingPeriod.ToString("C2")</strong></div>
+                        <div><span>Outstanding PO commitments</span><strong>@workspace.ForecastDetails.OutstandingCommitments.ToString("C2")</strong></div>
+                        <div><span>Additional commitments beyond recurring coverage</span><strong>@workspace.ForecastDetails.AdditionalUncoveredCommitments.ToString("C2")</strong></div>
+                        @if (workspace.ForecastDetails.PublishedScenarioTotal is decimal publishedTotal)
+                        {
+                            <div><span>Published scenario total</span><strong>@publishedTotal.ToString("C2")</strong></div>
+                            <div><span>Additional expected from scenario</span><strong>@workspace.ForecastDetails.OtherExpectedFromPublishedScenario.ToString("C2")</strong></div>
+                        }
+                        <div><span><strong>Expected total spending</strong></span><strong>@workspace.Forecast.ToString("C2")</strong></div>
+                    </div>
+                    <p class="muted">Billing comparison basis: @workspace.SpendProjection.ExpectedToDateBasis. Recurring charges not yet posted remain in Forecast, never Actual. As posted months replace projected months, the total updates automatically. Because a PO may already cover future recurring charges, outstanding PO commitments first cover recurring obligations and only the excess is added. If POs cover separate expenses, this conservative estimate may be low until that spend is included in a published forecast scenario. A published scenario is a total estimate, not an additional charge.</p>
+                </details>
             </div>
         </section>
 
@@ -163,11 +291,73 @@
                 }
             </section>
 
+            <section id="recurring-actuals" class="lf-card">
+                <div class="lf-panel-header">
+                    <div><h2>Recurring Actuals</h2><p class="muted">Automatically post monthly charges only after their billing date has passed (Eastern Time).</p></div>
+                </div>
+                <p class="muted">Each schedule belongs to this fiscal year only. Future charges are not counted in Actual or Available until posted. To change an individual posted month, use Edit in Actuals &amp; Invoices above. Changing a schedule affects future/unposted months only.</p>
+                @if (Model.CanPostActuals && recurringDefaultStart <= recurringFiscal.Item2 && workspace.ActualCorrectionsAllowed)
+                {
+                    <details class="lf-inline-entry" id="lf-recurring-create">
+                        <summary><strong>＋ Add recurring actual</strong><span>Example: monthly software subscription billed on the last day</span></summary>
+                        <form method="post" action="/budget/items/@item.Id/recurring-actuals" class="lf-form-grid lf-form-grid-3">
+                            @Html.AntiForgeryToken()
+                            <div class="lf-span-all"><label for="recurring-description">Description</label><input id="recurring-description" name="description" placeholder="HYCU monthly subscription" maxlength="500" required /></div>
+                            <div><label for="recurring-amount">Monthly amount</label><input id="recurring-amount" type="number" name="amount" min=".0001" step=".0001" placeholder="1310.40" required /></div>
+                            <div><label for="recurring-day">Day of month (1-31)</label><input id="recurring-day" type="number" name="dayOfMonth" min="1" max="31" value="31" required /></div>
+                            <div class="lf-recurring-checkbox"><label><input type="checkbox" name="lastDayOfMonth" value="true" checked /> Last calendar day of each month</label></div>
+                            <div><label for="recurring-start">Start date</label><input id="recurring-start" name="startDate" type="date" min="@recurringFiscal.Item1.ToString("yyyy-MM-dd")" max="@recurringFiscal.Item2.ToString("yyyy-MM-dd")" value="@recurringDefaultStart.ToString("yyyy-MM-dd")" required /></div>
+                            <div><label for="recurring-end">End date</label><input id="recurring-end" name="endDate" type="date" min="@recurringFiscal.Item1.ToString("yyyy-MM-dd")" max="@recurringFiscal.Item2.ToString("yyyy-MM-dd")" value="@recurringFiscal.Item2.ToString("yyyy-MM-dd")" required /></div>
+                            <div><label for="recurring-reference">Reference (optional)</label><input id="recurring-reference" name="sourceReference" maxlength="200" placeholder="HYCU-MONTHLY" /></div>
+                            <div><label for="recurring-account">Finance account</label><select id="recurring-account" name="financeAccountId"><option value="">Unassigned</option>@foreach (var option in Model.ActualEntryOptions.FinanceAccounts){<option value="@option.Id">@option.Label</option>}</select></div>
+                            <div><label for="recurring-department">Department</label><select id="recurring-department" name="departmentId"><option value="">Unassigned</option>@foreach (var option in Model.ActualEntryOptions.Departments){<option value="@option.Id">@option.Label</option>}</select></div>
+                            <div><label for="recurring-location">Location</label><select id="recurring-location" name="locationId"><option value="">Unassigned</option>@foreach (var option in Model.ActualEntryOptions.Locations){<option value="@option.Id">@option.Label</option>}</select></div>
+                            <div class="lf-span-all"><p class="muted">Backdating the start date automatically posts eligible past billing months. A charge dated Nov 30 is not an Actual until Dec 1. Pausing stops automatic posting; resuming catches up missed months.</p></div>
+                            <div><button class="primary" type="submit">Save recurring schedule</button></div>
+                        </form>
+                    </details>
+                }
+                @if (recurringSchedules.Count == 0)
+                {
+                    <p class="muted">No recurring actual schedules have been configured for this budget item.</p>
+                }
+                @foreach (var schedule in recurringSchedules)
+                {
+                    <details class="lf-recurring-schedule">
+                        <summary><strong>@schedule.Description</strong><span>@schedule.Amount.ToString("C2") / month · @(schedule.LastDayOfMonth ? "Last day" : $"Day {schedule.DayOfMonth}") · @(schedule.IsActive ? "Active" : "Paused")</span></summary>
+                        <div class="lf-recurring-body">
+                            <p class="muted">Applies @schedule.StartDate.ToString("MMM d, yyyy") to @schedule.EndDate.ToString("MMM d, yyyy"). Previously posted months are retained unchanged.</p>
+                            @if (Model.CanPostActuals && workspace.ActualCorrectionsAllowed)
+                            {
+                                <form method="post" action="/budget/items/@item.Id/recurring-actuals/@schedule.Id" class="lf-form-grid lf-form-grid-3">
+                                    @Html.AntiForgeryToken()
+                                    <div class="lf-span-all"><label for="recurring-desc-@schedule.Id">Description</label><input id="recurring-desc-@schedule.Id" name="description" maxlength="500" value="@schedule.Description" required /></div>
+                                    <div><label for="recurring-amt-@schedule.Id">Monthly amount</label><input id="recurring-amt-@schedule.Id" name="amount" type="number" min=".0001" step=".0001" value="@schedule.Amount.ToString("0.####", System.Globalization.CultureInfo.InvariantCulture)" required /></div>
+                                    <div><label for="recurring-dom-@schedule.Id">Day of month</label><input id="recurring-dom-@schedule.Id" name="dayOfMonth" type="number" min="1" max="31" value="@schedule.DayOfMonth" required /></div>
+                                    <div class="lf-recurring-checkbox"><label><input type="checkbox" name="lastDayOfMonth" value="true" checked="@schedule.LastDayOfMonth" /> Last calendar day</label></div>
+                                    <div><label for="recurring-from-@schedule.Id">Start date</label><input id="recurring-from-@schedule.Id" name="startDate" type="date" value="@schedule.StartDate.ToString("yyyy-MM-dd")" min="@recurringFiscal.Item1.ToString("yyyy-MM-dd")" max="@recurringFiscal.Item2.ToString("yyyy-MM-dd")" required /></div>
+                                    <div><label for="recurring-to-@schedule.Id">End date</label><input id="recurring-to-@schedule.Id" name="endDate" type="date" value="@schedule.EndDate.ToString("yyyy-MM-dd")" min="@recurringFiscal.Item1.ToString("yyyy-MM-dd")" max="@recurringFiscal.Item2.ToString("yyyy-MM-dd")" required /></div>
+                                    <div><label for="recurring-ref-@schedule.Id">Reference</label><input id="recurring-ref-@schedule.Id" name="sourceReference" maxlength="200" value="@schedule.SourceReference" /></div>
+                                    <div><label for="recurring-acc-@schedule.Id">Finance account</label><select id="recurring-acc-@schedule.Id" name="financeAccountId"><option value="" selected="@(schedule.FinanceAccountId is null)">Unassigned</option>@foreach (var option in Model.ActualEntryOptions.FinanceAccounts){<option value="@option.Id" selected="@(option.Id == schedule.FinanceAccountId)">@option.Label</option>}</select></div>
+                                    <div><label for="recurring-dept-@schedule.Id">Department</label><select id="recurring-dept-@schedule.Id" name="departmentId"><option value="" selected="@(schedule.DepartmentId is null)">Unassigned</option>@foreach (var option in Model.ActualEntryOptions.Departments){<option value="@option.Id" selected="@(option.Id == schedule.DepartmentId)">@option.Label</option>}</select></div>
+                                    <div><label for="recurring-loc-@schedule.Id">Location</label><select id="recurring-loc-@schedule.Id" name="locationId"><option value="" selected="@(schedule.LocationId is null)">Unassigned</option>@foreach (var option in Model.ActualEntryOptions.Locations){<option value="@option.Id" selected="@(option.Id == schedule.LocationId)">@option.Label</option>}</select></div>
+                                    <div><button class="primary" type="submit">Save schedule changes</button></div>
+                                </form>
+                                <form method="post" class="lf-recurring-toggle" action="/budget/items/@item.Id/recurring-actuals/@schedule.Id/active">
+                                    @Html.AntiForgeryToken()
+                                    <input type="hidden" name="active" value="@(!schedule.IsActive ? "true" : "false")" />
+                                    <button type="submit">@(schedule.IsActive ? "Pause future postings" : "Resume and catch up missed months")</button>
+                                </form>
+                            }
+                        </div>
+                    </details>
+                }
+            </section>
             <section id="actuals-invoices" class="lf-card">
-                <div class="lf-panel-header"><h2>Actuals &amp; Invoices</h2><a href="/invoices">View invoices</a></div>
+                <div class="lf-panel-header"><h2>Actuals &amp; Invoices</h2><div class="lf-actual-related-links"><a href="/actuals?fiscalYearId=@item.FiscalYearId">Full actual ledger</a><a href="/invoices">View invoices</a></div></div>
                 @if (Model.CanPostActuals)
                 {
-                    <details class="lf-inline-entry" open="@actualSaved">
+                    <details id="lf-actual-entry" class="lf-inline-entry" open="@actualSaved">
                         <summary><strong>Add actual</strong><span>Record spending directly against this budget item.</span></summary>
                         <form method="post" action="/budget/items/@item.Id/actuals" class="lf-form-grid lf-form-grid-3">
                             @Html.AntiForgeryToken()
@@ -188,38 +378,86 @@
                 }
                 else
                 {
-                    <div class="lf-table-wrap"><table class="lf-table"><thead><tr><th>Reference</th><th>Date</th><th>Type / State</th><th class="lf-number">Amount</th></tr></thead><tbody>
-                    @foreach (var invoice in workspace.Invoices.Take(6))
-                    {
-                        <tr><td><a href="/invoices/@invoice.Id"><strong>@invoice.InvoiceNumber</strong></a><div class="muted">@invoice.Vendor</div></td><td>@invoice.InvoiceDate.ToString("MMM d, yyyy")</td><td><span class="badge">Invoice · @invoice.State</span></td><td class="lf-number">@invoice.Amount.ToString("C2")</td></tr>
-                    }
-                    @foreach (var actualRow in workspace.Actuals.Take(6))
-                    {
-                        <tr><td><strong>@(actualRow.SourceReference ?? "Actual")</strong><div class="muted">@actualRow.Description</div></td><td>@actualRow.TransactionDate.ToString("MMM d, yyyy")</td><td><span class="badge lf-badge-success">Actual</span></td><td class="lf-number">@actualRow.Amount.ToString("C2")</td></tr>
-                    }
-                    </tbody></table></div>
-                }
-            </section>
-
-            <section id="documents" class="lf-card">
-                <div class="lf-panel-header"><h2>Documents (@Model.Documents.Count)</h2><a href="@documentUploadUrl">Upload / View all</a></div>
-                @if (Model.Documents.Count == 0)
-                {
-                    <div class="lf-empty-state lf-compact-empty"><p>No documents are linked to this budget item.</p></div>
-                }
-                else
-                {
-                    <div class="lf-document-list">
-                    @foreach (var document in Model.Documents.Take(6))
-                    {
-                        var latestVersion = document.Versions.OrderByDescending(x => x.VersionNumber).FirstOrDefault();
-                        <a href="/documents/@document.Id" class="lf-document-row">
-                            <span class="lf-document-icon">□</span>
-                            <span><strong>@document.Title</strong><small>@(latestVersion?.OriginalFileName ?? "Stored document")</small></span>
-                            <time>@document.CreatedAtUtc.ToLocalTime().ToString("MMM d, yyyy")</time>
-                        </a>
-                    }
-                    </div>
+                    <div class="lf-table-wrap"><table class="lf-table lf-actuals-table">
+                        <thead><tr><th>Reference</th><th>Date</th><th>Type / State</th><th class="lf-number">Amount</th><th>Actions</th></tr></thead>
+                        <tbody>
+                        @foreach (var invoice in workspace.Invoices.Take(6))
+                        {
+                            <tr>
+                                <td><a href="/invoices/@invoice.Id"><strong>@invoice.InvoiceNumber</strong></a><div class="muted">@invoice.Vendor</div></td>
+                                <td>@invoice.InvoiceDate.ToString("MMM d, yyyy")</td>
+                                <td><span class="badge">Invoice · @invoice.State</span></td>
+                                <td class="lf-number">@invoice.Amount.ToString("C2")</td><td class="muted">—</td>
+                            </tr>
+                        }
+                        @foreach (var actualRow in workspace.Actuals)
+                        {
+                            var canCorrect = Model.CanPostActuals && workspace.ActualCorrectionsAllowed &&
+                                actualRow.Kind == ActualTransactionKind.Manual && !actualRow.IsReversed;
+                            <tr>
+                                <td>
+                                    <strong>@(actualRow.SourceReference ?? "Actual")</strong>
+                                    <div class="muted">@actualRow.Description</div>
+                                    @if (actualRow.Kind == ActualTransactionKind.Reversal)
+                                    {
+                                        <small class="lf-actual-history">Reverses @actualRow.ReversesTransactionId · @actualRow.ReversalReason · by @actualRow.CreatedBy</small>
+                                    }
+                                    else if (actualRow.IsReversed)
+                                    {
+                                        <small class="lf-actual-history">Original transaction retained for audit</small>
+                                    }
+                                </td>
+                                <td>@actualRow.TransactionDate.ToString("MMM d, yyyy")</td>
+                                <td>
+                                    @if (actualRow.Kind == ActualTransactionKind.Reversal)
+                                    {
+                                        <span class="badge">Reversal</span>
+                                    }
+                                    else if (actualRow.IsReversed)
+                                    {
+                                        <span class="badge">Reversed</span>
+                                    }
+                                    else
+                                    {
+                                        <span class="badge lf-badge-success">@actualRow.Kind</span>
+                                    }
+                                </td>
+                                <td class="lf-number">@actualRow.Amount.ToString("C2")</td>
+                                <td>
+                                    @if (canCorrect)
+                                    {
+                                        <button type="button" class="lf-actual-edit-trigger" data-edit-actual="@actualRow.Id" aria-haspopup="dialog">Edit</button>
+                                        <dialog id="lf-edit-actual-@actualRow.Id" class="lf-actual-edit-dialog" aria-labelledby="lf-actual-edit-title-@actualRow.Id">
+                                            <form method="post" action="/budget/items/@item.Id/actuals/@actualRow.Id/correct" class="lf-actual-correction-form">
+                                                @Html.AntiForgeryToken()
+                                                <h3 id="lf-actual-edit-title-@actualRow.Id">Edit actual transaction</h3>
+                                                <p class="muted">Saving creates an audited reversal and replacement. The original transaction is retained.</p>
+                                                <div class="lf-actual-edit-fields">
+                                                    <div><label for="correct-date-@actualRow.Id">Transaction date</label><input id="correct-date-@actualRow.Id" name="transactionDate" type="date" value="@actualRow.TransactionDate.ToString("yyyy-MM-dd")" required /></div>
+                                                    <div><label for="correct-amount-@actualRow.Id">Amount</label><input id="correct-amount-@actualRow.Id" name="amount" type="number" min="0.0001" step="0.0001" value="@actualRow.Amount.ToString("0.####", System.Globalization.CultureInfo.InvariantCulture)" required /></div>
+                                                    <div><label for="correct-reference-@actualRow.Id">Reference</label><input id="correct-reference-@actualRow.Id" name="sourceReference" maxlength="200" value="@actualRow.SourceReference" /></div>
+                                                    <div class="lf-actual-edit-wide"><label for="correct-description-@actualRow.Id">Description</label><input id="correct-description-@actualRow.Id" name="description" maxlength="500" value="@actualRow.Description" required /></div>
+                                                    <div><label for="correct-account-@actualRow.Id">Finance account</label><select id="correct-account-@actualRow.Id" name="financeAccountId"><option value="" selected="@(actualRow.FinanceAccountId is null)">Unassigned</option>@foreach (var option in Model.ActualEntryOptions.FinanceAccounts){<option value="@option.Id" selected="@(option.Id == actualRow.FinanceAccountId)">@option.Label</option>}</select></div>
+                                                    <div><label for="correct-department-@actualRow.Id">Department</label><select id="correct-department-@actualRow.Id" name="departmentId"><option value="" selected="@(actualRow.DepartmentId is null)">Unassigned</option>@foreach (var option in Model.ActualEntryOptions.Departments){<option value="@option.Id" selected="@(option.Id == actualRow.DepartmentId)">@option.Label</option>}</select></div>
+                                                    <div><label for="correct-location-@actualRow.Id">Location</label><select id="correct-location-@actualRow.Id" name="locationId"><option value="" selected="@(actualRow.LocationId is null)">Unassigned</option>@foreach (var option in Model.ActualEntryOptions.Locations){<option value="@option.Id" selected="@(option.Id == actualRow.LocationId)">@option.Label</option>}</select></div>
+                                                    <div class="lf-actual-edit-wide"><label for="correct-reason-@actualRow.Id">Correction reason (required)</label><textarea id="correct-reason-@actualRow.Id" name="reason" maxlength="1000" rows="2" required></textarea></div>
+                                                </div>
+                                                <div class="lf-actual-edit-footer">
+                                                    <button type="button" data-cancel-actual>Cancel</button>
+                                                    <button type="submit" class="primary">Save Changes</button>
+                                                </div>
+                                            </form>
+                                        </dialog>
+                                    }
+                                    else
+                                    {
+                                        <span class="muted">—</span>
+                                    }
+                                </td>
+                            </tr>
+                        }
+                        </tbody>
+                    </table></div>
                 }
             </section>
 
@@ -241,8 +479,8 @@
             </section>
         </div>
 
-        <details id="edit-item" class="lf-card lf-item-edit-panel" open="@(Model.CanEdit && (Model.Saved || !string.IsNullOrWhiteSpace(Model.ErrorMessage)))">
-            <summary><strong>Edit planning details</strong><span>Item dimensions, dates, quantity, unit cost, and business justification.</span></summary>
+        <details id="edit-item" class="lf-card lf-item-edit-panel" open="@(Model.CanEdit || canReopen)">
+            <summary><strong>Edit item information</strong><span>@(directEditWithoutReapproval ? "Save changes directly without reopening approval. Every edit is audited." : "Update planning details; submitted items can be reopened, and approved items follow the organization's reapproval policy.")</span></summary>
             <div class="lf-item-edit-body">
                 @if (item.VersionLocked)
                 {
@@ -250,22 +488,35 @@
                 }
                 else if (item.Status == BudgetItemStatus.Submitted)
                 {
-                    <div class="lf-alert lf-alert-info" role="status">This item is awaiting approval and cannot be edited.</div>
+                    <div class="lf-alert lf-alert-info" role="status">This item is awaiting approval. Reopen it to withdraw the pending submission, edit its information, and submit again.</div>
                 }
-                else if (item.Status == BudgetItemStatus.Approved)
+                else if (directEditWithoutReapproval)
                 {
-                    <div class="lf-alert lf-alert-info" role="status">This item has been approved. Use an amendment for post-approval budget changes.</div>
+                    <div class="lf-alert lf-alert-info" role="status">Direct editing is enabled. Save updates without resubmitting the item for approval. Status and prior approval history stay intact; if the planned cost changes, the current revised budget updates automatically. No PO, invoice or actual entry is created.</div>
+                }
+                else if (item.Status == BudgetItemStatus.Approved && requireReapprovalForEdits)
+                {
+                    <div class="lf-alert lf-alert-info" role="status">This organization requires reapproval for edits to approved budget items. Start a revision to edit and submit it again.</div>
+                }
+                @if (canReopen)
+                {
+                    <form method="post" action="/budget/items/@item.Id/reopen" class="lf-secondary-form">
+                        @Html.AntiForgeryToken()
+                        <p><button type="submit" class="button primary">@(item.Status == BudgetItemStatus.Approved ? "Start revision to edit" : "Reopen for editing")</button></p>
+                    </form>
                 }
 
                 <form method="post" action="/budget/items/@item.Id">
                     @Html.AntiForgeryToken()
                     <fieldset disabled="@(!Model.CanEdit)" class="lf-fieldset">
                         <div class="lf-form-grid lf-form-grid-3">
-                            <div><label for="itemNumber"><strong>Item number</strong></label><input id="itemNumber" name="itemNumber" value="@item.ItemNumber" maxlength="64" required /></div>
+                            <input type="hidden" name="itemNumber" value="@item.ItemNumber" />
                             <div><label for="purchaseType"><strong>Purchase type</strong></label><select id="purchaseType" name="purchaseType">@foreach (var purchaseType in Enum.GetValues<PurchaseType>()){<option value="@purchaseType" selected="@(purchaseType == item.PurchaseType)">@purchaseType</option>}</select></div>
                             <div><label for="budgetSectionId"><strong>Budget section</strong></label><select id="budgetSectionId" name="budgetSectionId"><option value="">Unassigned</option>@foreach (var option in item.BudgetSections){<option value="@option.Id" selected="@(option.Id == item.BudgetSectionId)">@option.Code · @option.Name</option>}</select></div>
                             <div class="lf-span-all"><label for="description"><strong>Description</strong></label><input id="description" name="description" value="@item.Description" maxlength="500" required /></div>
                             <div class="lf-span-all"><label for="reasonPurpose"><strong>Reason / purpose</strong></label><textarea id="reasonPurpose" name="reasonPurpose" rows="4" maxlength="2000">@item.ReasonPurpose</textarea></div>
+                            <div class="lf-span-all"><label for="notes"><strong>Notes</strong></label><textarea id="notes" name="notes" rows="3" maxlength="2000">@item.Notes</textarea></div>
+                            <div><label for="vendorId"><strong>Vendor</strong></label><select id="vendorId" name="vendorId"><option value="">Unassigned</option>@if(vendorOptions is not null){foreach(var option in vendorOptions){<option value="@option.Id" selected="@(option.Id == item.VendorId)">@option.Name</option>}}</select></div>
                             <div><label for="financeTypeId"><strong>Finance type</strong></label><select id="financeTypeId" name="financeTypeId"><option value="">Unassigned</option>@foreach (var option in item.FinanceTypes){<option value="@option.Id" selected="@(option.Id == item.FinanceTypeId)">@option.Name</option>}</select></div>
                             <div><label for="departmentId"><strong>Department</strong></label><select id="departmentId" name="departmentId"><option value="">Unassigned</option>@foreach (var option in item.Departments){<option value="@option.Id" selected="@(option.Id == item.DepartmentId)">@option.Code · @option.Name</option>}</select></div>
                             <div><label for="locationId"><strong>Location</strong></label><select id="locationId" name="locationId"><option value="">Unassigned</option>@foreach (var option in item.Locations){<option value="@option.Id" selected="@(option.Id == item.LocationId)">@option.Code · @option.Name</option>}</select></div>
@@ -274,8 +525,9 @@
                             <div><label for="frequencyId"><strong>Frequency</strong></label><select id="frequencyId" name="frequencyId"><option value="">Unassigned</option>@foreach (var option in item.Frequencies){<option value="@option.Id" selected="@(option.Id == item.FrequencyId)">@option.Name</option>}</select></div>
                             <div><label for="estimatedPurchaseDate"><strong>Estimated purchase date</strong></label><input id="estimatedPurchaseDate" name="estimatedPurchaseDate" type="date" value="@(item.EstimatedPurchaseDate?.ToString("yyyy-MM-dd"))" /></div>
                             <div><label for="renewalDate"><strong>Renewal date</strong></label><input id="renewalDate" name="renewalDate" type="date" value="@(item.RenewalDate?.ToString("yyyy-MM-dd"))" /></div>
-                            <div><label for="quantity"><strong>Quantity</strong></label><input id="quantity" name="quantity" type="number" min="0" step="0.0001" value="@item.Quantity.ToString("0.####", System.Globalization.CultureInfo.InvariantCulture)" required /></div>
-                            <div><label for="unitCost"><strong>Unit cost</strong></label><input id="unitCost" name="unitCost" type="number" min="0" step="0.0001" value="@item.UnitCost.ToString("0.####", System.Globalization.CultureInfo.InvariantCulture)" required /></div>
+                            <div><label for="quantity"><strong># of Units</strong></label><input id="quantity" name="quantity" type="number" min="0" step="0.0001" value="@item.Quantity.ToString("0.####", System.Globalization.CultureInfo.InvariantCulture)" required /></div>
+                            <div><label for="unitCost"><strong>Cost per Unit</strong></label><input id="unitCost" name="unitCost" type="number" min="0" step="0.0001" value="@item.UnitCost.ToString("0.####", System.Globalization.CultureInfo.InvariantCulture)" required /></div>
+                            <div><label for="edit-total"><strong>Total Cost (calculated)</strong></label><output id="edit-total">@item.PlannedTotal.ToString("C2")</output></div>
                         </div>
                     </fieldset>
                     @if (Model.CanEdit){<p><button class="primary" type="submit">Save planning item</button></p>}
@@ -284,7 +536,7 @@
                 {
                     <form method="post" action="/budget/items/@item.Id/submit" class="lf-secondary-form">@Html.AntiForgeryToken()<button class="primary" type="submit">Submit for approval</button></form>
                 }
-                @if (Model.CanEdit)
+                @if (Model.CanEdit && item.Status is BudgetItemStatus.Draft or BudgetItemStatus.Proposed or BudgetItemStatus.Deferred)
                 {
                     <form method="post" action="/budget/items/@item.Id/delete" class="lf-danger-zone">
                         @Html.AntiForgeryToken()
@@ -361,7 +613,7 @@
             <div class="lf-item-quick-actions">
                 <a class="button" href="/purchase-orders">Create / View Purchase Order</a>
                 <a class="button" href="/invoices">Record / View Invoice</a>
-                @if (Model.CanPostActuals){<a class="button" href="#actuals-invoices">Add Actual</a>}
+                @if (Model.CanPostActuals){<a class="button" href="#lf-actual-entry" data-open-actual-entry>Add Actual</a>}
                 <a class="button" href="@documentUploadUrl">Upload Document</a>
                 <a class="button" href="/budget/amendments?budgetItemId=@item.Id">Create Amendment</a>
                 <a class="button" href="/renewals">Open Renewal Center</a>

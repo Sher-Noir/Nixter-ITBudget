@@ -54,6 +54,47 @@ public sealed class InvoicesController(
     }
 
     [Authorize(Policy = AuthorizationPolicies.ManageProcurement)]
+    [HttpPost("{id:guid}/edit")]
+    public Task<IActionResult> Edit(
+        Guid id, string invoiceNumber, DateOnly invoiceDate, string description,
+        decimal totalAmount, CancellationToken cancellationToken)
+        => RunTransition(id, () => workflowService.UpdateDraftAsync(
+            id, invoiceNumber, invoiceDate, description, totalAmount, cancellationToken));
+
+    [Authorize(Policy = AuthorizationPolicies.ManageProcurement)]
+    [HttpPost("{id:guid}/delete")]
+    public async Task<IActionResult> Delete(Guid id, string reason, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await workflowService.ArchiveDraftAsync(id, RequireActor(), reason, cancellationToken);
+            return RedirectToAction(nameof(Index), new { saved = true });
+        }
+        catch (KeyNotFoundException) { return NotFound(); }
+        catch (Exception exception) when (exception is ArgumentException or InvalidOperationException)
+        {
+            TempData["InvoiceError"] = exception.Message;
+            return RedirectToAction(nameof(Details), new { id });
+        }
+    }
+
+    [Authorize(Policy = AuthorizationPolicies.ManageProcurement)]
+    [HttpPost("{id:guid}/allocations/{allocationId:guid}/edit")]
+    public Task<IActionResult> EditAllocation(
+        Guid id, Guid allocationId, string description, decimal amount,
+        Guid? budgetItemId, Guid? financeAccountId, Guid? departmentId,
+        Guid? locationId, Guid? fiscalPeriodId, CancellationToken cancellationToken)
+        => RunTransition(id, () => workflowService.UpdateAllocationAsync(
+            id, allocationId, description, amount, budgetItemId, financeAccountId,
+            departmentId, locationId, fiscalPeriodId, cancellationToken));
+
+    [Authorize(Policy = AuthorizationPolicies.ManageProcurement)]
+    [HttpPost("{id:guid}/allocations/{allocationId:guid}/delete")]
+    public Task<IActionResult> DeleteAllocation(
+        Guid id, Guid allocationId, CancellationToken cancellationToken)
+        => RunTransition(id, () => workflowService.DeleteAllocationAsync(id, allocationId, cancellationToken));
+
+    [Authorize(Policy = AuthorizationPolicies.ManageProcurement)]
     [HttpPost("{id:guid}/allocations")]
     public async Task<IActionResult> AddAllocation(
         Guid id, string description, decimal amount, Guid? budgetItemId, Guid? financeAccountId,

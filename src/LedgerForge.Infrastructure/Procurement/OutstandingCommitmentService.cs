@@ -21,7 +21,7 @@ public sealed class OutstandingCommitmentService(LedgerForgeDbContext dbContext)
     {
         var orders = await dbContext.PurchaseOrders
             .AsNoTracking()
-            .Where(x => x.FiscalYearId == fiscalYearId && x.State == PurchaseOrderState.Issued)
+            .Where(x => x.FiscalYearId == fiscalYearId && x.State == PurchaseOrderState.Issued && !x.IsArchived)
             .Select(x => new { x.Id, x.Number, x.VendorId })
             .OrderBy(x => x.Number)
             .ToListAsync(cancellationToken);
@@ -31,7 +31,7 @@ public sealed class OutstandingCommitmentService(LedgerForgeDbContext dbContext)
         var orderIds = orders.Select(x => x.Id).ToArray();
         var grossTotals = await dbContext.PurchaseOrderLines
             .AsNoTracking()
-            .Where(x => orderIds.Contains(x.PurchaseOrderId))
+            .Where(x => orderIds.Contains(x.PurchaseOrderId) && !x.IsArchived)
             .GroupBy(x => x.PurchaseOrderId)
             .Select(group => new { PurchaseOrderId = group.Key, Total = group.Sum(x => x.LineTotal) })
             .ToDictionaryAsync(x => x.PurchaseOrderId, x => x.Total, cancellationToken);

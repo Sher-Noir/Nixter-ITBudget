@@ -13,6 +13,9 @@ public sealed class BrandingAndConfigurationContractTests
         Assert.Contains("ResolveBudgetItemLogoAsync", service, StringComparison.Ordinal);
         Assert.Contains("BrandingLogoSource.BudgetItem", service, StringComparison.Ordinal);
         Assert.Contains("BrandingLogoSource.Vendor", service, StringComparison.Ordinal);
+        Assert.Contains("x.VendorId", service, StringComparison.Ordinal);
+        Assert.Contains("assignedVendorId", service, StringComparison.Ordinal);
+        Assert.Contains("LegacyBudgetItemVendorMatcher.MatchDescriptionPrefix", service, StringComparison.Ordinal);
         Assert.Contains("orderby order.CreatedAtUtc descending", service, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("/branding-assets/budget-items/@item.Id/logo", itemView, StringComparison.Ordinal);
         Assert.Contains("Vendor logo fallback", itemView, StringComparison.Ordinal);
@@ -34,7 +37,7 @@ public sealed class BrandingAndConfigurationContractTests
         Assert.Contains("File content does not match a PNG signature", store, StringComparison.Ordinal);
         Assert.Contains("File content does not match a JPEG signature", store, StringComparison.Ordinal);
         Assert.Contains("AuthorizationPolicies.EditPlanningBudget", controller, StringComparison.Ordinal);
-        Assert.Contains("AuthorizationPolicies.ManageProcurement", controller, StringComparison.Ordinal);
+        Assert.Contains("AuthorizationPolicies.ManageVendors", controller, StringComparison.Ordinal);
         Assert.Contains("AuthorizationPolicies.Administration", controller, StringComparison.Ordinal);
     }
 
@@ -96,9 +99,9 @@ public sealed class BrandingAndConfigurationContractTests
         var controller = Read("src", "LedgerForge.Web", "Controllers", "AdministrationSecurityController.cs");
         var service = Read("src", "LedgerForge.Infrastructure", "Security", "SecurityAdministrationService.cs");
 
-        Assert.Contains("Edit directory mappings", view, StringComparison.Ordinal);
-        Assert.Contains("Edit user exceptions", view, StringComparison.Ordinal);
-        Assert.Contains("Save changes", view, StringComparison.Ordinal);
+        Assert.Contains("Legacy bootstrap / recovery authorization", view, StringComparison.Ordinal);
+        Assert.Contains("Legacy per-user exceptions", view, StringComparison.Ordinal);
+        Assert.Contains(">Save<", view, StringComparison.Ordinal);
         Assert.Contains("class=\"danger\"", view, StringComparison.Ordinal);
         Assert.Contains("DeleteMapping", controller, StringComparison.Ordinal);
         Assert.Contains("DeleteUserException", controller, StringComparison.Ordinal);

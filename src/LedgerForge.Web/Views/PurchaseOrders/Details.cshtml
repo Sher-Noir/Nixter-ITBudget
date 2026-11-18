@@ -55,6 +55,34 @@
     <article class="lf-card lf-kpi"><div class="lf-kpi-icon green">R</div><div><div class="lf-card-title">Receipts</div><div class="lf-kpi-value">@Model.Receipts.Count</div><div class="lf-kpi-note">Recorded receiving events</div></div></article>
 </div>
 
+@if (canManage && isDraft)
+{
+    <section class="lf-card" aria-labelledby="po-maintenance-title">
+        <h2 id="po-maintenance-title">Edit or remove draft purchase order</h2>
+        <p class="lf-muted">Draft metadata and commitment lines can be edited before submission. Removal cancels and archives the draft, preserving an audit trail.</p>
+        <details>
+            <summary>Edit purchase order</summary>
+            <form method="post" action="/purchase-orders/@Model.Order.Id/edit">
+                @Html.AntiForgeryToken()
+                <div class="lf-form-grid">
+                    <div><label for="po-edit-number">PO number</label><input id="po-edit-number" name="number" maxlength="100" required value="@Model.Order.Number" /></div>
+                    <div class="lf-span-all"><label for="po-edit-description">Description</label><input id="po-edit-description" name="description" maxlength="500" required value="@Model.Order.Description" /></div>
+                </div>
+                <p><button class="primary" type="submit">Save purchase order</button></p>
+            </form>
+        </details>
+        <details>
+            <summary>Delete draft purchase order</summary>
+            <form method="post" action="/purchase-orders/@Model.Order.Id/delete">
+                @Html.AntiForgeryToken()
+                <p><label for="po-delete-reason">Reason for removal</label><input id="po-delete-reason" name="reason" maxlength="1000" required placeholder="Duplicate or entered in error" /></p>
+                <p class="lf-muted">Only an unlinked draft can be removed. Receipts, invoices, and change orders are protected.</p>
+                <button type="submit">Delete draft</button>
+            </form>
+        </details>
+    </section>
+}
+
 @if (canManage || canApprove)
 {
     <section class="lf-card" aria-labelledby="workflow-title">

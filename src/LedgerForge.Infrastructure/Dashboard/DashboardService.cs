@@ -314,6 +314,7 @@ public sealed class DashboardService(
             join order in dbContext.PurchaseOrders.AsNoTracking() on line.PurchaseOrderId equals order.Id
             where order.FiscalYearId == fiscalYearId &&
                   order.State == PurchaseOrderState.Issued &&
+                  !order.IsArchived && !line.IsArchived &&
                   line.BudgetItemId != null &&
                   ids.Contains(line.BudgetItemId.Value)
             select (decimal?)line.LineTotal)
@@ -324,6 +325,7 @@ public sealed class DashboardService(
             join invoice in dbContext.Invoices.AsNoTracking() on allocation.InvoiceId equals invoice.Id
             where invoice.FiscalYearId == fiscalYearId &&
                   invoice.State == InvoiceState.Posted &&
+                  !invoice.IsArchived && !allocation.IsArchived &&
                   allocation.BudgetItemId != null &&
                   ids.Contains(allocation.BudgetItemId.Value)
             select (decimal?)allocation.Amount)
@@ -424,7 +426,7 @@ public sealed class DashboardService(
         CancellationToken cancellationToken)
     {
         var orders = await dbContext.PurchaseOrders.AsNoTracking()
-            .Where(x => x.FiscalYearId == fiscalYearId &&
+            .Where(x => x.FiscalYearId == fiscalYearId && !x.IsArchived &&
                         x.State != PurchaseOrderState.Closed &&
                         x.State != PurchaseOrderState.Cancelled &&
                         x.State != PurchaseOrderState.Rejected)
@@ -435,7 +437,7 @@ public sealed class DashboardService(
 
         var orderIds = orders.Select(x => x.Id).ToArray();
         var lines = await dbContext.PurchaseOrderLines.AsNoTracking()
-            .Where(x => orderIds.Contains(x.PurchaseOrderId))
+            .Where(x => orderIds.Contains(x.PurchaseOrderId) && !x.IsArchived)
             .Select(x => new { x.PurchaseOrderId, x.LineTotal, x.BudgetItemId, x.LocationId })
             .ToListAsync(cancellationToken);
         if (isDimensionFiltered)

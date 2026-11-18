@@ -127,6 +127,164 @@ namespace LedgerForge.Infrastructure.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("LedgerForge.Domain.Actuals.RecurringActualOccurrence", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("ActualTransactionId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateOnly>("BillingDate")
+                        .HasColumnType("date");
+
+                    b.Property<int>("BillingMonth")
+                        .HasColumnType("int");
+
+                    b.Property<int>("BillingYear")
+                        .HasColumnType("int");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("CreatedBy")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<bool>("IsArchived")
+                        .HasColumnType("bit");
+
+                    b.Property<DateTimeOffset?>("ModifiedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("ModifiedBy")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<Guid>("ScheduleId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ActualTransactionId")
+                        .IsUnique();
+
+                    b.HasIndex("ScheduleId", "BillingYear", "BillingMonth")
+                        .IsUnique();
+
+                    b.ToTable("RecurringActualOccurrence", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_RecurringActualOccurrence_Month", "[BillingMonth] BETWEEN 1 AND 12");
+
+                            t.HasCheckConstraint("CK_RecurringActualOccurrence_Year", "[BillingYear] BETWEEN 2000 AND 9999");
+                        });
+                });
+
+            modelBuilder.Entity("LedgerForge.Domain.Actuals.RecurringActualSchedule", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<decimal>("Amount")
+                        .HasPrecision(19, 4)
+                        .HasColumnType("decimal(19,4)");
+
+                    b.Property<Guid>("BudgetItemId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("CreatedBy")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<int>("DayOfMonth")
+                        .HasColumnType("int");
+
+                    b.Property<Guid?>("DepartmentId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Description")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<DateOnly>("EndDate")
+                        .HasColumnType("date");
+
+                    b.Property<Guid?>("FinanceAccountId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("FiscalYearId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("IsArchived")
+                        .HasColumnType("bit");
+
+                    b.Property<DateTimeOffset?>("ModifiedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("ModifiedBy")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<bool>("LastDayOfMonth")
+                        .HasColumnType("bit");
+
+                    b.Property<Guid?>("LocationId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<string>("SourceReference")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<DateOnly>("StartDate")
+                        .HasColumnType("date");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("BudgetItemId");
+
+                    b.HasIndex("DepartmentId");
+
+                    b.HasIndex("FinanceAccountId");
+
+                    b.HasIndex("FiscalYearId");
+
+                    b.HasIndex("LocationId");
+
+                    b.HasIndex("IsActive", "StartDate");
+
+                    b.ToTable("RecurringActualSchedule", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_RecurringActualSchedule_Amount", "[Amount] > 0");
+
+                            t.HasCheckConstraint("CK_RecurringActualSchedule_Dates", "[EndDate] >= [StartDate]");
+
+                            t.HasCheckConstraint("CK_RecurringActualSchedule_Day", "[DayOfMonth] BETWEEN 1 AND 31");
+                        });
+                });
+
             modelBuilder.Entity("LedgerForge.Domain.Auditing.AuditEvent", b =>
                 {
                     b.Property<Guid>("Id")
@@ -304,6 +462,11 @@ namespace LedgerForge.Infrastructure.Persistence.Migrations
                         .HasPrecision(19, 4)
                         .HasColumnType("decimal(19,4)");
 
+                    b.Property<int>("BillingCadence")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int")
+                        .HasDefaultValue(0);
+
                     b.Property<Guid?>("BudgetSectionId")
                         .HasColumnType("uniqueidentifier");
 
@@ -339,6 +502,11 @@ namespace LedgerForge.Infrastructure.Persistence.Migrations
 
                     b.Property<DateOnly?>("EstimatedPurchaseDate")
                         .HasColumnType("date");
+
+                    b.Property<bool>("ExcludeFromOverUnder")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(false);
 
                     b.Property<Guid?>("FinanceTypeId")
                         .HasColumnType("uniqueidentifier");
@@ -388,6 +556,10 @@ namespace LedgerForge.Infrastructure.Persistence.Migrations
                         .HasMaxLength(2000)
                         .HasColumnType("nvarchar(2000)");
 
+                    b.Property<string>("Notes")
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)");
+
                     b.Property<DateOnly?>("RenewalDate")
                         .HasColumnType("date");
 
@@ -420,6 +592,9 @@ namespace LedgerForge.Infrastructure.Persistence.Migrations
                         .HasPrecision(19, 4)
                         .HasColumnType("decimal(19,4)");
 
+                    b.Property<Guid?>("VendorId")
+                        .HasColumnType("uniqueidentifier");
+
                     b.HasKey("Id");
 
                     b.HasIndex("BudgetSectionId");
@@ -438,6 +613,8 @@ namespace LedgerForge.Infrastructure.Persistence.Migrations
 
                     b.HasIndex("NeedLevelId");
 
+                    b.HasIndex("VendorId");
+
                     b.HasIndex("StableIdentifier");
 
                     b.HasIndex("Status");
@@ -449,6 +626,8 @@ namespace LedgerForge.Infrastructure.Persistence.Migrations
 
                     b.ToTable("BudgetItem", null, t =>
                         {
+                            t.HasCheckConstraint("CK_BudgetItem_BillingCadence", "[BillingCadence] BETWEEN 0 AND 3");
+
                             t.HasCheckConstraint("CK_BudgetItem_ApprovedTotal", "[ApprovedTotal] IS NULL OR [ApprovedTotal] >= 0");
 
                             t.HasCheckConstraint("CK_BudgetItem_PlannedTotal", "[PlannedTotal] >= 0");
@@ -2517,6 +2696,51 @@ namespace LedgerForge.Infrastructure.Persistence.Migrations
                         .OnDelete(DeleteBehavior.Restrict);
                 });
 
+            modelBuilder.Entity("LedgerForge.Domain.Actuals.RecurringActualOccurrence", b =>
+                {
+                    b.HasOne("LedgerForge.Domain.Actuals.ActualTransaction", null)
+                        .WithMany()
+                        .HasForeignKey("ActualTransactionId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("LedgerForge.Domain.Actuals.RecurringActualSchedule", null)
+                        .WithMany()
+                        .HasForeignKey("ScheduleId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("LedgerForge.Domain.Actuals.RecurringActualSchedule", b =>
+                {
+                    b.HasOne("LedgerForge.Domain.Budgeting.BudgetItem", null)
+                        .WithMany()
+                        .HasForeignKey("BudgetItemId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("LedgerForge.Domain.MasterData.Department", null)
+                        .WithMany()
+                        .HasForeignKey("DepartmentId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("LedgerForge.Domain.MasterData.FinanceAccount", null)
+                        .WithMany()
+                        .HasForeignKey("FinanceAccountId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("LedgerForge.Domain.Budgeting.FiscalYear", null)
+                        .WithMany()
+                        .HasForeignKey("FiscalYearId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("LedgerForge.Domain.MasterData.Location", null)
+                        .WithMany()
+                        .HasForeignKey("LocationId")
+                        .OnDelete(DeleteBehavior.Restrict);
+                });
+
             modelBuilder.Entity("LedgerForge.Domain.Budgeting.BudgetAmendment", b =>
                 {
                     b.HasOne("LedgerForge.Domain.Budgeting.BudgetItem", null)
@@ -2585,6 +2809,11 @@ namespace LedgerForge.Infrastructure.Persistence.Migrations
                     b.HasOne("LedgerForge.Domain.MasterData.NeedLevel", null)
                         .WithMany()
                         .HasForeignKey("NeedLevelId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("LedgerForge.Domain.Procurement.Vendor", null)
+                        .WithMany()
+                        .HasForeignKey("VendorId")
                         .OnDelete(DeleteBehavior.Restrict);
                 });
 

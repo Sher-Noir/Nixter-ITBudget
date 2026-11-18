@@ -126,7 +126,8 @@ public sealed class OrganizationSettingsStore
             FooterText = NormalizeOptional(value.FooterText),
             TimeZone = value.TimeZone.Trim(),
             DefaultFiscalYearLabel = value.DefaultFiscalYearLabel.Trim(),
-            DefaultTheme = theme
+            DefaultTheme = theme,
+            RequireReapprovalForBudgetItemEdits = value.RequireReapprovalForBudgetItemEdits
         };
     }
 
@@ -156,7 +157,8 @@ public sealed class OrganizationSettingsStore
         FooterText = source.FooterText,
         TimeZone = source.TimeZone,
         DefaultFiscalYearLabel = source.DefaultFiscalYearLabel,
-        DefaultTheme = source.DefaultTheme
+        DefaultTheme = source.DefaultTheme,
+        RequireReapprovalForBudgetItemEdits = source.RequireReapprovalForBudgetItemEdits
     };
 
     private static string NormalizeOptional(string? value)

@@ -1,3 +1,4 @@
+using LedgerForge.Domain.Budgeting;
 using LedgerForge.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 
@@ -55,10 +56,24 @@ public sealed class BrandingAssetService
         Guid budgetItemId,
         CancellationToken cancellationToken = default)
     {
-        var itemLogo = await GetEntityLogoAsync(nameof(BrandingLogoSource.BudgetItem), budgetItemId, BrandingLogoSource.BudgetItem, cancellationToken);
+        // An explicit item logo always takes priority over vendor branding.
+        var itemLogo = await GetEntityLogoAsync(
+            nameof(BrandingLogoSource.BudgetItem), budgetItemId, BrandingLogoSource.BudgetItem, cancellationToken);
         if (itemLogo is not null) return itemLogo;
 
-        var vendorId = await (
+        var item = await _dbContext.BudgetItems.AsNoTracking()
+            .Where(x => x.Id == budgetItemId)
+            .Select(x => new { x.VendorId, x.Description })
+            .SingleOrDefaultAsync(cancellationToken);
+        if (item is null) return null;
+
+        // Vendor selected in the Budget wizard or Full Item editor is authoritative,
+        // even for a budget item with no purchase order.
+        if (item.VendorId is Guid assignedVendorId)
+            return await GetEntityLogoAsync(
+                nameof(BrandingLogoSource.Vendor), assignedVendorId, BrandingLogoSource.Vendor, cancellationToken);
+
+        var purchaseOrderVendorId = await (
             from line in _dbContext.PurchaseOrderLines.AsNoTracking()
             join order in _dbContext.PurchaseOrders.AsNoTracking() on line.PurchaseOrderId equals order.Id
             where line.BudgetItemId == budgetItemId
@@ -66,9 +81,22 @@ public sealed class BrandingAssetService
             select (Guid?)order.VendorId)
             .FirstOrDefaultAsync(cancellationToken);
 
-        return vendorId is null
-            ? null
-            : await GetEntityLogoAsync(nameof(BrandingLogoSource.Vendor), vendorId.Value, BrandingLogoSource.Vendor, cancellationToken);
+        if (purchaseOrderVendorId is Guid linkedVendorId)
+            return await GetEntityLogoAsync(
+                nameof(BrandingLogoSource.Vendor), linkedVendorId, BrandingLogoSource.Vendor, cancellationToken);
+
+        // Imported or already-approved legacy items may have no VendorId or PO.
+        // Recognize only an exact, unique "Vendor - Item" prefix. This is display-only;
+        // avoid silently modifying approved financial records or guessing loosely.
+        var directory = await _dbContext.Vendors.AsNoTracking()
+            .Select(vendor => new LegacyBudgetItemVendorMatcher.VendorIdentity(
+                vendor.Id, vendor.Code, vendor.Name))
+            .ToListAsync(cancellationToken);
+        var legacyVendorId = LegacyBudgetItemVendorMatcher.MatchDescriptionPrefix(item.Description, directory);
+        return legacyVendorId is Guid matchingVendorId
+            ? await GetEntityLogoAsync(
+                nameof(BrandingLogoSource.Vendor), matchingVendorId, BrandingLogoSource.Vendor, cancellationToken)
+            : null;
     }
 
     public Task<BrandingLogoReference?> GetBudgetItemLogoAsync(Guid budgetItemId, CancellationToken cancellationToken = default)

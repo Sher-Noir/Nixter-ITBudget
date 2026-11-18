@@ -21,6 +21,8 @@ public sealed class LedgerForgeDbContext(DbContextOptions<LedgerForgeDbContext> 
     public DbSet<ForecastScenario> ForecastScenarios => Set<ForecastScenario>();
     public DbSet<ForecastLine> ForecastLines => Set<ForecastLine>();
     public DbSet<ActualTransaction> ActualTransactions => Set<ActualTransaction>();
+    public DbSet<RecurringActualSchedule> RecurringActualSchedules => Set<RecurringActualSchedule>();
+    public DbSet<RecurringActualOccurrence> RecurringActualOccurrences => Set<RecurringActualOccurrence>();
     public DbSet<Vendor> Vendors => Set<Vendor>();
     public DbSet<PurchaseOrder> PurchaseOrders => Set<PurchaseOrder>();
     public DbSet<PurchaseOrderLine> PurchaseOrderLines => Set<PurchaseOrderLine>();
@@ -119,6 +121,7 @@ public sealed class LedgerForgeDbContext(DbContextOptions<LedgerForgeDbContext> 
             entity.ToTable("BudgetItem", table =>
             {
                 table.HasCheckConstraint("CK_BudgetItem_Quantity", "[Quantity] >= 0");
+                table.HasCheckConstraint("CK_BudgetItem_BillingCadence", "[BillingCadence] BETWEEN 0 AND 3");
                 table.HasCheckConstraint("CK_BudgetItem_UnitCost", "[UnitCost] >= 0");
                 table.HasCheckConstraint("CK_BudgetItem_PlannedTotal", "[PlannedTotal] >= 0");
                 table.HasCheckConstraint("CK_BudgetItem_ApprovedTotal", "[ApprovedTotal] IS NULL OR [ApprovedTotal] >= 0");
@@ -129,12 +132,15 @@ public sealed class LedgerForgeDbContext(DbContextOptions<LedgerForgeDbContext> 
             entity.Property(x => x.ItemNumber).HasMaxLength(64).IsRequired();
             entity.Property(x => x.Description).HasMaxLength(500).IsRequired();
             entity.Property(x => x.ReasonPurpose).HasMaxLength(2000);
+            entity.Property(x => x.Notes).HasMaxLength(2000);
             entity.Property(x => x.SubmittedBy).HasMaxLength(256);
             entity.Property(x => x.DecisionBy).HasMaxLength(256);
             entity.Property(x => x.DecisionNote).HasMaxLength(2000);
             entity.Property(x => x.Quantity).HasPrecision(19, 4);
             entity.Property(x => x.UnitCost).HasPrecision(19, 4);
             entity.Property(x => x.PlannedTotal).HasPrecision(19, 4);
+            entity.Property(x => x.BillingCadence).HasDefaultValue(BudgetBillingCadence.Automatic);
+            entity.Property(x => x.ExcludeFromOverUnder).HasDefaultValue(false);
             entity.Property(x => x.ApprovedTotal).HasPrecision(19, 4);
             entity.Property(x => x.RevisedTotal).HasPrecision(19, 4);
             entity.Property(x => x.RowVersion).IsRowVersion();
@@ -149,6 +155,7 @@ public sealed class LedgerForgeDbContext(DbContextOptions<LedgerForgeDbContext> 
             entity.HasIndex(x => x.NeedLevelId);
             entity.HasIndex(x => x.InternalCategoryId);
             entity.HasIndex(x => x.FrequencyId);
+            entity.HasIndex(x => x.VendorId);
             entity.HasOne<FiscalYear>().WithMany().HasForeignKey(x => x.FiscalYearId).OnDelete(DeleteBehavior.Restrict);
             entity.HasOne<BudgetVersion>().WithMany().HasForeignKey(x => x.BudgetVersionId).OnDelete(DeleteBehavior.Restrict);
             entity.HasOne<BudgetSection>().WithMany().HasForeignKey(x => x.BudgetSectionId).OnDelete(DeleteBehavior.Restrict);
@@ -158,6 +165,7 @@ public sealed class LedgerForgeDbContext(DbContextOptions<LedgerForgeDbContext> 
             entity.HasOne<NeedLevel>().WithMany().HasForeignKey(x => x.NeedLevelId).OnDelete(DeleteBehavior.Restrict);
             entity.HasOne<InternalCategory>().WithMany().HasForeignKey(x => x.InternalCategoryId).OnDelete(DeleteBehavior.Restrict);
             entity.HasOne<Frequency>().WithMany().HasForeignKey(x => x.FrequencyId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<Vendor>().WithMany().HasForeignKey(x => x.VendorId).OnDelete(DeleteBehavior.Restrict);
         });
 
         modelBuilder.Entity<BudgetItemAllocation>(entity =>
@@ -235,6 +243,47 @@ public sealed class LedgerForgeDbContext(DbContextOptions<LedgerForgeDbContext> 
 
     private static void ConfigureActuals(ModelBuilder modelBuilder)
     {
+        modelBuilder.Entity<RecurringActualSchedule>(entity =>
+        {
+            entity.ToTable("RecurringActualSchedule", table =>
+            {
+                table.HasCheckConstraint("CK_RecurringActualSchedule_Amount", "[Amount] > 0");
+                table.HasCheckConstraint("CK_RecurringActualSchedule_Day", "[DayOfMonth] BETWEEN 1 AND 31");
+                table.HasCheckConstraint("CK_RecurringActualSchedule_Dates", "[EndDate] >= [StartDate]");
+            });
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.Description).HasMaxLength(500).IsRequired();
+            entity.Property(x => x.Amount).HasPrecision(19, 4);
+            entity.Property(x => x.SourceReference).HasMaxLength(200);
+            entity.Property(x => x.RowVersion).IsRowVersion();
+            entity.HasIndex(x => new { x.IsActive, x.StartDate });
+            entity.HasIndex(x => x.BudgetItemId);
+            entity.HasIndex(x => x.FiscalYearId);
+            entity.HasIndex(x => x.FinanceAccountId);
+            entity.HasIndex(x => x.DepartmentId);
+            entity.HasIndex(x => x.LocationId);
+            entity.HasOne<FiscalYear>().WithMany().HasForeignKey(x => x.FiscalYearId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<BudgetItem>().WithMany().HasForeignKey(x => x.BudgetItemId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<FinanceAccount>().WithMany().HasForeignKey(x => x.FinanceAccountId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<Department>().WithMany().HasForeignKey(x => x.DepartmentId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<Location>().WithMany().HasForeignKey(x => x.LocationId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<RecurringActualOccurrence>(entity =>
+        {
+            entity.ToTable("RecurringActualOccurrence", table =>
+            {
+                table.HasCheckConstraint("CK_RecurringActualOccurrence_Year", "[BillingYear] BETWEEN 2000 AND 9999");
+                table.HasCheckConstraint("CK_RecurringActualOccurrence_Month", "[BillingMonth] BETWEEN 1 AND 12");
+            });
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.RowVersion).IsRowVersion();
+            entity.HasIndex(x => new { x.ScheduleId, x.BillingYear, x.BillingMonth }).IsUnique();
+            entity.HasIndex(x => x.ActualTransactionId).IsUnique();
+            entity.HasOne<RecurringActualSchedule>().WithMany().HasForeignKey(x => x.ScheduleId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<ActualTransaction>().WithMany().HasForeignKey(x => x.ActualTransactionId).OnDelete(DeleteBehavior.Restrict);
+        });
+
         modelBuilder.Entity<ActualTransaction>(entity =>
         {
             entity.ToTable("ActualTransaction", table =>

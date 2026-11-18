@@ -1,3 +1,4 @@
+using System.Data;
 using LedgerForge.Domain.Actuals;
 using LedgerForge.Domain.Budgeting;
 using LedgerForge.Domain.MasterData;
@@ -23,7 +24,11 @@ public sealed record ActualTransactionSummary(
     string? FiscalPeriod,
     Guid? ReversesTransactionId,
     string? ReversalReason,
-    bool CanReverse);
+    bool CanReverse,
+    Guid? BudgetItemId = null,
+    Guid? FinanceAccountId = null,
+    Guid? DepartmentId = null,
+    Guid? LocationId = null);
 
 public sealed record ActualLedgerSnapshot(
     IReadOnlyList<ActualFiscalYearOption> FiscalYears,
@@ -147,7 +152,8 @@ public sealed class ActualLedgerService(LedgerForgeDbContext dbContext)
             null,
             x.ReversesTransactionId,
             x.ReversalReason,
-            x.Kind != ActualTransactionKind.Reversal && !reversedIds.Contains(x.Id)))
+            x.Kind != ActualTransactionKind.Reversal && !reversedIds.Contains(x.Id),
+            x.BudgetItemId, x.FinanceAccountId, x.DepartmentId, x.LocationId))
             .ToArray();
 
         return new(
@@ -238,6 +244,84 @@ public sealed class ActualLedgerService(LedgerForgeDbContext dbContext)
         dbContext.ActualTransactions.Add(reversal);
         await dbContext.SaveChangesAsync(cancellationToken);
         return reversal.Id;
+    }
+
+    /// <summary>
+    /// Correct an actual from a Budget Item without moving it to another item.
+    /// A null allocation explicitly means Unassigned in this workflow.
+    /// </summary>
+    public Task<Guid> CorrectBudgetItemManualAsync(
+        Guid budgetItemId, Guid transactionId, DateOnly transactionDate, decimal amount,
+        string description, string? sourceReference, Guid? financeAccountId,
+        Guid? departmentId, Guid? locationId, string reason,
+        CancellationToken cancellationToken = default)
+    {
+        if (budgetItemId == Guid.Empty)
+            throw new ArgumentException("Budget item ID is required.", nameof(budgetItemId));
+        return CorrectManualAsync(
+            transactionId, transactionDate, amount, description, sourceReference,
+            budgetItemId, financeAccountId, departmentId, locationId, reason,
+            cancellationToken, replaceAllocations: true, expectedBudgetItemId: budgetItemId);
+    }
+
+    /// <summary>
+    /// An edit to a posted manual actual is an atomic reversal and replacement.
+    /// Serializable isolation and the unique ReversesTransactionId index prevent
+    /// duplicate corrections, including concurrent requests and form resubmission.
+    /// </summary>
+    public async Task<Guid> CorrectManualAsync(
+        Guid transactionId, DateOnly transactionDate, decimal amount, string description,
+        string? sourceReference, Guid? budgetItemId, Guid? financeAccountId,
+        Guid? departmentId, Guid? locationId, string reason,
+        CancellationToken cancellationToken = default,
+        bool replaceAllocations = false, Guid? expectedBudgetItemId = null)
+    {
+        if (transactionId == Guid.Empty)
+            throw new ArgumentException("Actual transaction ID is required.", nameof(transactionId));
+        if (string.IsNullOrWhiteSpace(reason))
+            throw new ArgumentException("A correction reason is required.", nameof(reason));
+
+        // Take the serializable lock before reading the original/reversal state.
+        await using var databaseTransaction = await dbContext.Database.BeginTransactionAsync(
+            IsolationLevel.Serializable, cancellationToken);
+        try
+        {
+            var original = await dbContext.ActualTransactions.AsNoTracking()
+                .SingleOrDefaultAsync(x => x.Id == transactionId, cancellationToken)
+                ?? throw new KeyNotFoundException("Actual transaction was not found.");
+            if (original.Kind != ActualTransactionKind.Manual || original.InvoiceId is not null)
+                throw new InvalidOperationException("Only manually posted actuals can be corrected.");
+            if (expectedBudgetItemId is not null && original.BudgetItemId != expectedBudgetItemId)
+                throw new InvalidOperationException("This actual does not belong to the selected budget item.");
+            if (await dbContext.ActualTransactions.AsNoTracking().AnyAsync(
+                x => x.ReversesTransactionId == transactionId, cancellationToken))
+                throw new InvalidOperationException("This actual was already reversed or corrected.");
+
+            // The budget item cannot be reassigned from the item detail page.
+            // Preserve the legacy ledger's 'Keep current' semantics when requested.
+            if (!replaceAllocations)
+            {
+                budgetItemId ??= original.BudgetItemId;
+                financeAccountId ??= original.FinanceAccountId;
+                departmentId ??= original.DepartmentId;
+                locationId ??= original.LocationId;
+            }
+
+            // Reverse on the original transaction date so a correction never
+            // changes fiscal-year totals outside the original year.
+            await ReverseAsync(original.Id, original.TransactionDate, reason, cancellationToken);
+            var replacementId = await PostManualAsync(
+                original.FiscalYearId, transactionDate, amount, description,
+                sourceReference, budgetItemId, financeAccountId, departmentId,
+                locationId, fiscalPeriodId: null, cancellationToken);
+            await databaseTransaction.CommitAsync(cancellationToken);
+            return replacementId;
+        }
+        catch
+        {
+            await databaseTransaction.RollbackAsync(cancellationToken);
+            throw;
+        }
     }
 
     private async Task<FiscalYear> RequireFiscalYearAsync(

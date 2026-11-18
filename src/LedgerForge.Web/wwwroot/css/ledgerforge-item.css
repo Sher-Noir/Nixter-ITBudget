@@ -32,7 +32,7 @@
   gap: .65rem;
   margin-top: .65rem;
 }
-.lf-related-grid > section:last-child { grid-column: 1 / -1; }
+.lf-related-grid > #approval-history { grid-column: 1 / -1; }
 .lf-compact-empty { min-height: 125px; padding: 1rem; }
 .lf-document-list { display: grid; }
 .lf-document-row {
@@ -121,6 +121,23 @@
   font-weight: 800;
   font-size: 1.1rem;
 }
+/* Uploaded vendor logos render edge-to-edge instead of inside a padded white badge.
+   Original image pixels are retained; logos that include their own white margin
+   need to be replaced with a tightly cropped transparent source. */
+.lf-vendor-table .lf-logo-tile:has(img),
+.lf-vendor-branding-header .lf-logo-tile:has(img) {
+  padding: 0;
+  background: transparent;
+  border: 0;
+}
+.lf-vendor-table .lf-logo-tile img,
+.lf-vendor-branding-header .lf-logo-tile img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  border-radius: inherit;
+}
+
 .lf-logo-tile-small { width: 48px; height: 48px; min-width: 48px; border-radius: 8px; font-size: .9rem; }
 .lf-logo-tile-tiny { width: 30px; height: 30px; min-width: 30px; border-radius: 6px; padding: .2rem; font-size: .7rem; }
 .lf-branding-preview,
@@ -181,14 +198,14 @@ button.danger:hover,
 }
 @media (max-width: 1220px) {
   .lf-related-grid { grid-template-columns: repeat(2,minmax(0,1fr)); }
-  .lf-related-grid > section:last-child { grid-column: 1 / -1; }
+  .lf-related-grid > #approval-history { grid-column: 1 / -1; }
 }
 @media (max-width: 1080px) {
   .lf-form-grid-3 { grid-template-columns: repeat(2,minmax(0,1fr)); }
 }
 @media (max-width: 880px) {
   .lf-related-grid { grid-template-columns: 1fr; }
-  .lf-related-grid > section:last-child { grid-column: auto; }
+  .lf-related-grid > #approval-history { grid-column: auto; }
   .lf-item-kpis { grid-template-columns: repeat(2,minmax(0,1fr)); }
 }
 @media (max-width: 620px) {
@@ -199,3 +216,187 @@ button.danger:hover,
 @media (max-width: 560px) {
   .lf-item-kpis { grid-template-columns: 1fr; }
 }
+
+/* Item header buttons are one grid child; actions must not auto-flow into the hero grid. */
+.lf-item-hero-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: .5rem;
+  min-width: 0;
+}
+.lf-item-hero-actions form { display: inline-flex; flex: 0 0 auto; margin: 0; }
+.lf-item-hero-actions .button,
+.lf-item-hero-actions button {
+  min-height: 38px;
+  width: auto;
+  flex: 0 0 auto;
+  padding: .5rem .75rem;
+  white-space: nowrap;
+  text-align: center;
+}
+.lf-actual-related-links { display: flex; flex-wrap: wrap; gap: .75rem; }
+.lf-actuals-table { min-width: 610px; }
+.lf-actuals-table td:last-child { white-space: nowrap; }
+.lf-actual-history { display: block; margin-top: .2rem; color: var(--lf-muted); white-space: normal; }
+.lf-actual-edit-trigger { min-height: 32px; padding: .3rem .65rem; }
+.lf-actual-edit-dialog {
+  position: fixed;
+  inset: 0;
+  margin: auto;
+  width: min(680px, calc(100% - 2rem));
+  max-height: min(88vh, 850px);
+  overflow-y: auto;
+  padding: 1.25rem;
+  border: 1px solid var(--lf-border-strong);
+  border-radius: var(--lf-radius);
+  background: var(--lf-surface);
+  color: var(--lf-text);
+  box-shadow: var(--lf-shadow);
+  white-space: normal;
+}
+.lf-actual-edit-dialog::backdrop { background: rgba(0,0,0,.65); }
+.lf-actual-edit-dialog h3 { margin: 0; font-size: 1.2rem; }
+.lf-actual-edit-dialog p { margin: .35rem 0 1rem; }
+.lf-actual-edit-fields { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: .75rem; }
+.lf-actual-edit-fields > div { min-width: 0; }
+.lf-actual-edit-fields label { display: block; margin-bottom: .25rem; font-weight: 600; }
+.lf-actual-edit-wide { grid-column: 1 / -1; }
+.lf-actual-edit-footer { display: flex; justify-content: flex-end; gap: .5rem; margin-top: 1rem; }
+@media (max-width: 1250px) {
+  .lf-item-hero-top { grid-template-columns: 58px minmax(0,1fr); }
+  .lf-item-hero-actions { grid-column: 2; justify-content: flex-start; }
+}
+@media (max-width: 620px) {
+  .lf-item-hero-actions { grid-column: 1 / -1; justify-content: flex-start; }
+  .lf-item-hero-actions .button, .lf-item-hero-actions button { min-height: 40px; }
+  .lf-actual-edit-fields { grid-template-columns: 1fr; }
+  .lf-actual-edit-wide { grid-column: auto; }
+}
+
+/* Recurring actual schedules */
+.lf-recurring-schedule { padding: .6rem .8rem; border: 1px solid var(--lf-border); border-radius: var(--lf-radius); margin: .55rem 0; background: var(--lf-surface-2); }
+.lf-recurring-schedule > summary { cursor: pointer; display: flex; flex-wrap: wrap; gap: .3rem .75rem; align-items: center; justify-content: space-between; }
+.lf-recurring-schedule > summary span { color: var(--lf-muted); font-size: .75rem; }
+.lf-recurring-body { padding: .85rem 0 .25rem; }
+.lf-recurring-checkbox { align-self: end; padding: .55rem; }
+.lf-recurring-checkbox label { display: flex; align-items: center; gap: .4rem; }
+.lf-recurring-checkbox input { width: auto; flex: none; }
+.lf-recurring-toggle { margin-top: .75rem; }
+@media (max-width: 620px) { .lf-recurring-schedule > summary { align-items: flex-start; flex-direction: column; } }
+
+/* Equal-height Purchase Orders, Recurring Actuals and Actuals & Invoices. */
+.lf-related-grid > :is(#purchase-orders, #recurring-actuals, #actuals-invoices) {
+  box-sizing: border-box;
+  height: 440px;
+  min-height: 440px;
+  max-height: 440px;
+  min-width: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+}
+.lf-related-grid > #approval-history { min-width: 0; }
+.lf-kpi-forecast { color: inherit; text-decoration: none; }
+.lf-kpi-forecast:hover,
+.lf-kpi-forecast:focus-visible { border-color: var(--lf-primary); text-decoration: none; }
+.lf-forecast-breakdown { margin-top: .65rem; }
+.lf-forecast-breakdown > summary {
+  cursor: pointer;
+  padding: .5rem .65rem;
+  border-radius: var(--lf-radius);
+  border: 1px solid var(--lf-border);
+  background: var(--lf-surface-2);
+  font-weight: 650;
+  font-size: .72rem;
+}
+.lf-forecast-breakdown[open] > summary { margin-bottom: .65rem; }
+.lf-forecast-breakdown .muted { font-size: .69rem; line-height: 1.5; }
+@media (max-width: 880px) {
+  .lf-related-grid > :is(#purchase-orders, #recurring-actuals, #actuals-invoices) {
+    height: 400px;
+    min-height: 400px;
+    max-height: 400px;
+  }
+}
+
+/* Item-detail buttons: aligned, predictable widths, no text wrapping. */
+.lf-item-hero-actions { align-self: start; width: max-content; max-width: 100%; }
+.lf-item-hero-actions > .button,
+.lf-item-hero-actions > form > .button {
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: .4rem;
+  min-width: 132px;
+  height: 40px;
+  min-height: 40px;
+  padding: .5rem .85rem;
+  font-size: .76rem;
+  font-weight: 650;
+  line-height: 1.2;
+  white-space: nowrap;
+  text-decoration: none;
+}
+.lf-item-hero-actions > form { align-self: stretch; }
+@media (max-width: 1250px) {
+  .lf-item-hero-actions {
+    grid-column: 1 / -1;
+    justify-content: flex-start;
+    width: auto;
+  }
+}
+@media (max-width: 620px) {
+  .lf-item-hero-actions { width: 100%; }
+  .lf-item-hero-actions > .button,
+  .lf-item-hero-actions > form { flex: 1 1 150px; }
+  .lf-item-hero-actions > form > .button { width: 100%; }
+}
+
+/* Per-item billing cadence settings remain independent of renewal frequency. */
+.lf-spending-cadence {
+  margin-top: 1rem;
+  padding: .8rem;
+  background: var(--lf-surface-2);
+  border: 1px solid var(--lf-border);
+  border-radius: var(--lf-radius);
+}
+.lf-spending-cadence h3 { margin: 0 0 .35rem; font-size: .84rem; }
+.lf-spending-cadence .muted { margin: .45rem 0; font-size: .72rem; line-height: 1.5; }
+.lf-spending-cadence-form {
+  margin: .65rem 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: .6rem;
+}
+.lf-spending-cadence-form label { flex-basis: 100%; font-size: .72rem; font-weight: 650; }
+.lf-spending-cadence-form select { flex: 1 1 250px; width: auto; min-width: 0; }
+.lf-spending-cadence-form button { flex: 0 0 auto; white-space: nowrap; }
+@media(max-width: 620px) {
+  .lf-spending-cadence-form button { flex: 1 1 100%; }
+}
+
+.lf-variance-exclusion-settings {
+  margin-top: 1rem;
+  padding: .8rem;
+  background: var(--lf-surface-2);
+  border: 1px solid var(--lf-border);
+  border-radius: var(--lf-radius);
+}
+.lf-variance-exclusion-settings h3 { margin: 0 0 .4rem; font-size: .84rem; }
+.lf-variance-exclusion-settings .muted { font-size: .72rem; line-height: 1.5; margin: .5rem 0; }
+.lf-variance-exclusion-form input[type="checkbox"] {
+  width: 17px;
+  min-width: 17px;
+  height: 17px;
+  min-height: 17px;
+  margin: 0;
+  flex: 0 0 17px;
+  accent-color: var(--lf-primary);
+}
+.lf-variance-exclusion-form label { display: inline-flex; align-items: center; gap: .5rem; }
+.lf-variance-exclusion-form { display: flex; flex-wrap: wrap; gap: .65rem; align-items: center; }
+.lf-variance-exclusion-form button { width: auto; min-height: 36px; }

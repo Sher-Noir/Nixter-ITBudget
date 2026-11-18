@@ -52,10 +52,13 @@ Mutable host configuration is stored under a protected `.ledgerforge` directory 
     "FooterText": "LedgerForge — free and open-source budget management.",
     "TimeZone": "UTC",
     "DefaultFiscalYearLabel": "Current FY",
-    "DefaultTheme": "system"
+    "DefaultTheme": "system",
+    "RequireReapprovalForBudgetItemEdits": false
   }
 }
 ```
+
+Budget-item editing has an organization-level workflow policy available at **Administration → Organization & Appearance**. By default, `RequireReapprovalForBudgetItemEdits` is `false`: authorized budget editors can update **Approved**, **Active**, and **Purchased** items in an unlocked version without withdrawing approval or resubmitting. The item retains its status, original approval decision, audit history and posted financial records. A change to quantity or unit cost updates the current `RevisedTotal`; `ApprovedTotal` remains the historical approved amount. Items awaiting approval, denied/cancelled/archived items, and locked budget versions remain protected. Set the option to `true` to require reopening and reapproval for edits to approved items.
 
 Administrators can upload an organization logo and browser icon directly. Uploaded branding overrides the advanced `LogoPath` / `IconPath` fallback. Do not commit adopter-specific branding, production identities, internal finance mappings, or mutable host configuration to the upstream project.
 

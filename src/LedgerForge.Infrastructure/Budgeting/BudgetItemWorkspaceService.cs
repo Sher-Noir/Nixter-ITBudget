@@ -1,3 +1,4 @@
+using LedgerForge.Domain.Actuals;
 using LedgerForge.Domain.Auditing;
 using LedgerForge.Domain.Budgeting;
 using LedgerForge.Domain.Procurement;
@@ -26,7 +27,15 @@ public sealed record BudgetItemActualSummary(
     DateOnly TransactionDate,
     string Description,
     decimal Amount,
-    string? SourceReference);
+    string? SourceReference,
+    ActualTransactionKind Kind,
+    Guid? FinanceAccountId,
+    Guid? DepartmentId,
+    Guid? LocationId,
+    Guid? ReversesTransactionId,
+    string? ReversalReason,
+    bool IsReversed,
+    string CreatedBy);
 
 public sealed record BudgetItemActivitySummary(
     Guid Id,
@@ -44,7 +53,10 @@ public sealed record BudgetItemWorkspaceSnapshot(
     IReadOnlyList<BudgetItemPurchaseOrderSummary> PurchaseOrders,
     IReadOnlyList<BudgetItemInvoiceSummary> Invoices,
     IReadOnlyList<BudgetItemActualSummary> Actuals,
-    IReadOnlyList<BudgetItemActivitySummary> Activity);
+    IReadOnlyList<BudgetItemActivitySummary> Activity,
+    bool ActualCorrectionsAllowed,
+    BudgetItemForecastBreakdown ForecastDetails,
+    BudgetItemSpendProjection SpendProjection);
 
 public sealed class BudgetItemWorkspaceService(
     LedgerForgeDbContext dbContext,
@@ -61,7 +73,7 @@ public sealed class BudgetItemWorkspaceService(
             from line in dbContext.PurchaseOrderLines.AsNoTracking()
             join order in dbContext.PurchaseOrders.AsNoTracking() on line.PurchaseOrderId equals order.Id
             join vendor in dbContext.Vendors.AsNoTracking() on order.VendorId equals vendor.Id
-            where line.BudgetItemId == itemId
+            where line.BudgetItemId == itemId && !line.IsArchived && !order.IsArchived
             select new
             {
                 order.Id,
@@ -88,7 +100,7 @@ public sealed class BudgetItemWorkspaceService(
             from allocation in dbContext.InvoiceAllocations.AsNoTracking()
             join invoice in dbContext.Invoices.AsNoTracking() on allocation.InvoiceId equals invoice.Id
             join vendor in dbContext.Vendors.AsNoTracking() on invoice.VendorId equals vendor.Id
-            where allocation.BudgetItemId == itemId
+            where allocation.BudgetItemId == itemId && !allocation.IsArchived && !invoice.IsArchived
             select new
             {
                 invoice.Id,
@@ -123,8 +135,20 @@ public sealed class BudgetItemWorkspaceService(
                 x.TransactionDate,
                 x.Description,
                 x.Amount,
-                x.SourceReference))
+                x.SourceReference,
+                x.Kind,
+                x.FinanceAccountId,
+                x.DepartmentId,
+                x.LocationId,
+                x.ReversesTransactionId,
+                x.ReversalReason,
+                dbContext.ActualTransactions.Any(reversal => reversal.ReversesTransactionId == x.Id),
+                x.CreatedBy))
             .ToListAsync(cancellationToken);
+        var actualCorrectionsAllowed = await dbContext.FiscalYears.AsNoTracking()
+            .AnyAsync(year => year.Id == item.FiscalYearId &&
+                year.Status != FiscalYearStatus.Closed && year.Status != FiscalYearStatus.Archived,
+                cancellationToken);
 
         var activity = await dbContext.AuditEvents.AsNoTracking()
             .Where(x => x.EntityId == itemId && x.EntityType == nameof(BudgetItem))
@@ -146,25 +170,18 @@ public sealed class BudgetItemWorkspaceService(
             .SumAsync(x => (decimal?)x.Amount, cancellationToken) ?? 0m;
         var available = currentBudget - committed - actual;
 
-        var publishedScenarioId = await dbContext.ForecastScenarios.AsNoTracking()
-            .Where(x => x.FiscalYearId == item.FiscalYearId &&
-                        x.BudgetVersionId == item.BudgetVersionId &&
-                        x.State == ForecastScenarioState.Published)
-            .OrderByDescending(x => x.PublishedAtUtc)
-            .ThenByDescending(x => x.AsOfDate)
-            .Select(x => (Guid?)x.Id)
-            .FirstOrDefaultAsync(cancellationToken);
-
-        decimal? publishedForecast = null;
-        if (publishedScenarioId is not null)
-        {
-            publishedForecast = await dbContext.ForecastLines.AsNoTracking()
-                .Where(x => x.ForecastScenarioId == publishedScenarioId.Value && x.BudgetItemId == itemId)
-                .Select(x => (decimal?)x.ForecastTotal)
-                .SingleOrDefaultAsync(cancellationToken);
-        }
-
-        var forecast = publishedForecast ?? Math.Max(currentBudget, committed + actual);
+        // Share exactly the same monthly/installment projection with the Budget
+        // page and detailed CSV export.
+        var projections = await BudgetItemSpendProjectionQuery.GetAsync(
+            dbContext, item.FiscalYearId, item.BudgetVersionId,
+            [new BudgetItemSpendInput(
+                itemId, item.EstimatedPurchaseDate, currentBudget,
+                item.Status, item.BillingCadence)],
+            new Dictionary<Guid, decimal> { [itemId] = actual }, cancellationToken);
+        var projection = projections[itemId];
+        var forecastDetails = BudgetItemForecastCalculator.Calculate(
+            actual, committed, projection.UnpostedRecurring, projection.ForecastFloor);
+        var forecast = projection.FullYearForecast;
 
         return new(
             item,
@@ -176,6 +193,9 @@ public sealed class BudgetItemWorkspaceService(
             purchaseOrders,
             invoices,
             actuals,
-            activity);
+            activity,
+            actualCorrectionsAllowed,
+            forecastDetails,
+            projection);
     }
 }

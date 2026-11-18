@@ -76,6 +76,26 @@ public sealed class PurchaseOrder : AuditableEntity
         Description = description.Trim();
     }
 
+    public void UpdateDraft(string number, string description)
+    {
+        if (State != PurchaseOrderState.Draft || IsArchived)
+            throw new InvalidOperationException("Only active draft purchase orders can be edited.");
+        if (string.IsNullOrWhiteSpace(number) || number.Trim().Length > 100)
+            throw new ArgumentException("Purchase order number is required and must be at most 100 characters.", nameof(number));
+        UpdateDescription(description);
+        Number = number.Trim();
+    }
+
+    // Deleting a draft archives its record and cancels it in the workflow.
+    // The audit history and linked line details remain available in storage.
+    public void ArchiveDraft(string actor, string reason, DateTimeOffset atUtc)
+    {
+        if (State != PurchaseOrderState.Draft || IsArchived)
+            throw new InvalidOperationException("Only active draft purchase orders can be removed.");
+        Cancel(actor, reason, atUtc);
+        IsArchived = true;
+    }
+
     public void Submit(string actor, DateTimeOffset atUtc)
     {
         RequireState(PurchaseOrderState.Draft, "submitted");
@@ -201,6 +221,12 @@ public sealed class PurchaseOrderLine : AuditableEntity
         FinanceAccountId = NormalizeId(financeAccountId, nameof(financeAccountId));
         DepartmentId = NormalizeId(departmentId, nameof(departmentId));
         LocationId = NormalizeId(locationId, nameof(locationId));
+    }
+
+    public void ArchiveDraftLine()
+    {
+        if (IsArchived) throw new InvalidOperationException("This purchase order line is already removed.");
+        IsArchived = true;
     }
 
     private static Guid? NormalizeId(Guid? value, string parameterName)

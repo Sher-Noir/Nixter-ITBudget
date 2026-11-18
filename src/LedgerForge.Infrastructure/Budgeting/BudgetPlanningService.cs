@@ -1,3 +1,4 @@
+using System.Data;
 using LedgerForge.Domain.Budgeting;
 using LedgerForge.Domain.MasterData;
 using LedgerForge.Infrastructure.Persistence;
@@ -34,7 +35,32 @@ public sealed record BudgetItemSummary(
     string? InternalCategoryName,
     Guid? FrequencyId,
     string? FrequencyName,
-    string? VendorName);
+    string? VendorName,
+    Guid? VendorId = null,
+    string? Notes = null,
+    decimal Actual = 0m,
+    decimal Forecast = 0m,
+    decimal ExpectedToDate = 0m,
+    decimal ExpectedRecurringToDate = 0m,
+    decimal ExpectedDatedPurchaseToDate = 0m,
+    decimal ExpectedUndatedSpentToDate = 0m,
+    decimal ExpectedUndatedPacedToDate = 0m,
+    decimal UnpostedRecurring = 0m,
+    decimal OutstandingCommitments = 0m,
+    decimal AdditionalUncoveredCommitments = 0m,
+    decimal? PublishedScenarioTotal = null,
+    decimal? ForecastFloor = null,
+    decimal AdditionalExpectedFromForecastFloor = 0m,
+    string ExpectedToDateBasis = "",
+    string RecurringScheduleDetails = "",
+    BudgetBillingCadence BillingCadence = BudgetBillingCadence.Automatic,
+    BudgetBillingCadence EffectiveBillingCadence = BudgetBillingCadence.OneTime,
+    int BilledPeriods = 0,
+    decimal BudgetPerBillingPeriod = 0m,
+    decimal ExpectedInstallmentsToDate = 0m,
+    decimal RemainingInstallmentAllowance = 0m,
+    string BillingCadenceBasis = "",
+    bool ExcludeFromOverUnder = false);
 
 public sealed record BudgetPlanningSnapshot(
     IReadOnlyList<FiscalYearSummary> FiscalYears,
@@ -82,7 +108,21 @@ public sealed record BudgetItemEditSnapshot(
     IReadOnlyList<LookupOption> Locations,
     IReadOnlyList<LookupOption> NeedLevels,
     IReadOnlyList<LookupOption> InternalCategories,
-    IReadOnlyList<LookupOption> Frequencies);
+    IReadOnlyList<LookupOption> Frequencies,
+    Guid? VendorId = null,
+    string? Notes = null,
+    BudgetBillingCadence BillingCadence = BudgetBillingCadence.Automatic,
+    bool ExcludeFromOverUnder = false);
+
+public sealed record BudgetItemCreateOptions(
+    IReadOnlyList<LookupOption> BudgetSections,
+    IReadOnlyList<LookupOption> FinanceTypes,
+    IReadOnlyList<LookupOption> Departments,
+    IReadOnlyList<LookupOption> Locations,
+    IReadOnlyList<LookupOption> NeedLevels,
+    IReadOnlyList<LookupOption> InternalCategories,
+    IReadOnlyList<LookupOption> Frequencies,
+    IReadOnlyList<LookupOption> Vendors);
 
 public sealed class BudgetPlanningService(
     LedgerForgeDbContext dbContext,
@@ -130,7 +170,11 @@ public sealed class BudgetPlanningService(
                 x.LocationId,
                 x.NeedLevelId,
                 x.InternalCategoryId,
-                x.FrequencyId
+                x.FrequencyId,
+                x.BillingCadence,
+                x.ExcludeFromOverUnder,
+                x.VendorId,
+                x.Notes
             })
             .ToListAsync(cancellationToken);
 
@@ -146,11 +190,26 @@ public sealed class BudgetPlanningService(
         var frequencies = await dbContext.Frequencies.AsNoTracking().ToDictionaryAsync(x => x.Id, x => x.Name, cancellationToken);
 
         var itemIds = itemRows.Select(x => x.Id).ToArray();
+        // Net posted actuals, including reversals, for items in this selected
+        // budget version. Do not use the all-fiscal-year total for a version table.
+        var actualTotals = await dbContext.ActualTransactions.AsNoTracking()
+            .Where(x => x.BudgetItemId != null && itemIds.Contains(x.BudgetItemId.Value))
+            .GroupBy(x => x.BudgetItemId!.Value)
+            .Select(group => new { BudgetItemId = group.Key, Total = group.Sum(x => x.Amount) })
+            .ToDictionaryAsync(x => x.BudgetItemId, x => x.Total, cancellationToken);
+
+        var projections = await BudgetItemSpendProjectionQuery.GetAsync(
+            dbContext, selectedFiscalYearId.Value, selectedVersion.Id,
+            itemRows.Select(x => new BudgetItemSpendInput(
+                x.Id, x.EstimatedPurchaseDate,
+                x.RevisedTotal ?? x.ApprovedTotal ?? x.PlannedTotal, x.Status, x.BillingCadence))
+                .ToArray(), actualTotals, cancellationToken);
+
         var vendorLinks = await (
             from line in dbContext.PurchaseOrderLines.AsNoTracking()
             join order in dbContext.PurchaseOrders.AsNoTracking() on line.PurchaseOrderId equals order.Id
             join vendor in dbContext.Vendors.AsNoTracking() on order.VendorId equals vendor.Id
-            where line.BudgetItemId != null && itemIds.Contains(line.BudgetItemId.Value)
+            where !line.IsArchived && !order.IsArchived && line.BudgetItemId != null && itemIds.Contains(line.BudgetItemId.Value)
             select new { BudgetItemId = line.BudgetItemId!.Value, VendorName = vendor.Name, order.CreatedAtUtc })
             .ToListAsync(cancellationToken);
 
@@ -159,6 +218,12 @@ public sealed class BudgetPlanningService(
             .ToDictionary(
                 group => group.Key,
                 group => group.OrderByDescending(x => x.CreatedAtUtc).Select(x => x.VendorName).First());
+
+        var directVendorIds = itemRows.Where(x => x.VendorId.HasValue)
+            .Select(x => x.VendorId!.Value).Distinct().ToArray();
+        var directVendors = await dbContext.Vendors.AsNoTracking()
+            .Where(x => directVendorIds.Contains(x.Id))
+            .ToDictionaryAsync(x => x.Id, x => x.Name, cancellationToken);
 
         var items = itemRows.Select(x => new BudgetItemSummary(
             x.Id,
@@ -189,7 +254,33 @@ public sealed class BudgetPlanningService(
             NameFor(x.InternalCategoryId, categories),
             x.FrequencyId,
             NameFor(x.FrequencyId, frequencies),
-            vendorsByItem.GetValueOrDefault(x.Id)))
+            x.VendorId is Guid vendorId && directVendors.TryGetValue(vendorId, out var directName)
+                ? directName : vendorsByItem.GetValueOrDefault(x.Id),
+            x.VendorId,
+            x.Notes,
+            actualTotals.GetValueOrDefault(x.Id),
+            projections.GetValueOrDefault(x.Id)?.FullYearForecast ?? 0m,
+            projections.GetValueOrDefault(x.Id)?.ExpectedToDate ?? 0m,
+            projections.GetValueOrDefault(x.Id)?.ExpectedRecurringToDate ?? 0m,
+            projections.GetValueOrDefault(x.Id)?.ExpectedDatedPurchaseToDate ?? 0m,
+            projections.GetValueOrDefault(x.Id)?.ExpectedUndatedSpentToDate ?? 0m,
+            projections.GetValueOrDefault(x.Id)?.ExpectedUndatedPacedToDate ?? 0m,
+            projections.GetValueOrDefault(x.Id)?.UnpostedRecurring ?? 0m,
+            projections.GetValueOrDefault(x.Id)?.OutstandingCommitments ?? 0m,
+            projections.GetValueOrDefault(x.Id)?.AdditionalUncoveredCommitments ?? 0m,
+            projections.GetValueOrDefault(x.Id)?.PublishedScenarioTotal,
+            projections.GetValueOrDefault(x.Id)?.ForecastFloor,
+            projections.GetValueOrDefault(x.Id)?.AdditionalExpectedFromForecastFloor ?? 0m,
+            projections.GetValueOrDefault(x.Id)?.ExpectedToDateBasis ?? "",
+            projections.GetValueOrDefault(x.Id)?.RecurringScheduleDetails ?? "",
+            x.BillingCadence,
+            projections.GetValueOrDefault(x.Id)?.EffectiveBillingCadence ?? BudgetBillingCadence.OneTime,
+            projections.GetValueOrDefault(x.Id)?.BilledPeriods ?? 0,
+            projections.GetValueOrDefault(x.Id)?.BudgetPerBillingPeriod ?? 0m,
+            projections.GetValueOrDefault(x.Id)?.ExpectedInstallmentsToDate ?? 0m,
+            projections.GetValueOrDefault(x.Id)?.RemainingInstallmentAllowance ?? 0m,
+            projections.GetValueOrDefault(x.Id)?.BillingCadenceBasis ?? "",
+            x.ExcludeFromOverUnder))
             .ToArray();
 
         return new(
@@ -263,7 +354,66 @@ public sealed class BudgetPlanningService(
             locations,
             needLevels,
             categories,
-            frequencies);
+            frequencies,
+            item.VendorId,
+            item.Notes,
+            item.BillingCadence,
+            item.ExcludeFromOverUnder);
+    }
+
+    public async Task<BudgetItemCreateOptions> GetCreateOptionsAsync(CancellationToken cancellationToken = default)
+        => new(
+            await LoadOptionsAsync(dbContext.BudgetSections, cancellationToken),
+            await LoadOptionsAsync(dbContext.FinanceTypes, cancellationToken),
+            await LoadOptionsAsync(dbContext.Departments, cancellationToken),
+            await LoadOptionsAsync(dbContext.Locations, cancellationToken),
+            await LoadOptionsAsync(dbContext.NeedLevels, cancellationToken),
+            await LoadOptionsAsync(dbContext.InternalCategories, cancellationToken),
+            await LoadOptionsAsync(dbContext.Frequencies, cancellationToken),
+            await dbContext.Vendors.AsNoTracking().Where(x => x.IsActive)
+                .OrderBy(x => x.Name).Select(x => new LookupOption(x.Id, x.Code, x.Name)).ToListAsync(cancellationToken));
+
+    public async Task<IReadOnlyList<LookupOption>> GetEditVendorOptionsAsync(
+        Guid? selectedVendorId, CancellationToken cancellationToken = default)
+        => await dbContext.Vendors.AsNoTracking()
+            .Where(x => x.IsActive || x.Id == selectedVendorId)
+            .OrderBy(x => x.Name)
+            .Select(x => new LookupOption(
+                x.Id, x.Code, x.IsActive ? x.Name : x.Name + " (retired)"))
+            .ToListAsync(cancellationToken);
+
+    public async Task<Guid> CreateDetailedItemAsync(
+        Guid fiscalYearId, Guid versionId, string description,
+        string? reasonPurpose, PurchaseType purchaseType, decimal quantity, decimal unitCost,
+        Guid? budgetSectionId, Guid? financeTypeId, Guid? departmentId, Guid? locationId,
+        Guid? needLevelId, Guid? internalCategoryId, Guid? frequencyId,
+        CancellationToken cancellationToken = default, Guid? vendorId = null, string? notes = null)
+    {
+        // Serializable isolation prevents concurrent wizard requests from allocating
+        // the same item number. The database's unique index is the final safeguard.
+        await using var transaction = await dbContext.Database.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken);
+        var existingNumbers = await dbContext.BudgetItems.AsNoTracking()
+            .Where(x => x.FiscalYearId == fiscalYearId && x.BudgetVersionId == versionId)
+            .Select(x => x.ItemNumber)
+            .ToListAsync(cancellationToken);
+        var highestNumber = 0L;
+        foreach (var number in existingNumbers)
+        {
+            if (long.TryParse(number, System.Globalization.NumberStyles.None,
+                    System.Globalization.CultureInfo.InvariantCulture, out var parsed) &&
+                parsed > highestNumber)
+                highestNumber = parsed;
+        }
+        if (highestNumber == long.MaxValue)
+            throw new InvalidOperationException("No more automatic item numbers are available.");
+        var itemNumber = (highestNumber + 1).ToString(System.Globalization.CultureInfo.InvariantCulture);
+        var id = await AddItemAsync(fiscalYearId, versionId, itemNumber, description, quantity, unitCost, cancellationToken);
+        await UpdateItemAsync(id, itemNumber, description, reasonPurpose, purchaseType,
+            quantity, unitCost, null, null, budgetSectionId, financeTypeId,
+            departmentId, locationId, needLevelId, internalCategoryId, frequencyId, cancellationToken,
+            vendorId: vendorId, notes: notes, updateVendorAndNotes: true);
+        await transaction.CommitAsync(cancellationToken);
+        return id;
     }
 
     public async Task<Guid> AddItemAsync(
@@ -317,7 +467,11 @@ public sealed class BudgetPlanningService(
         Guid? needLevelId,
         Guid? internalCategoryId,
         Guid? frequencyId,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        Guid? vendorId = null,
+        string? notes = null,
+        bool updateVendorAndNotes = false,
+        bool allowDirectApprovedEdits = false)
     {
         var item = await dbContext.BudgetItems
             .SingleOrDefaultAsync(x => x.Id == itemId, cancellationToken)
@@ -343,7 +497,7 @@ public sealed class BudgetPlanningService(
         await ValidateLookupAsync(dbContext.InternalCategories, internalCategoryId, "Internal category", cancellationToken);
         await ValidateLookupAsync(dbContext.Frequencies, frequencyId, "Frequency", cancellationToken);
 
-        item.ChangeCost(quantity, unitCost);
+        item.ChangeCost(quantity, unitCost, allowDirectApprovedEdits);
         item.UpdatePlanningDetails(
             normalizedNumber,
             description,
@@ -357,8 +511,46 @@ public sealed class BudgetPlanningService(
             locationId,
             needLevelId,
             internalCategoryId,
-            frequencyId);
+            frequencyId,
+            allowDirectApprovedEdits);
+        if (updateVendorAndNotes)
+        {
+            if (vendorId is not null && vendorId != item.VendorId &&
+                !await dbContext.Vendors.AnyAsync(x => x.Id == vendorId && x.IsActive, cancellationToken))
+                throw new InvalidOperationException("Selected vendor is not active.");
+            item.UpdateVendorAndNotes(vendorId, notes, allowDirectApprovedEdits);
+        }
 
+        await dbContext.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task SetOverUnderExclusionAsync(
+        Guid itemId, bool excluded, CancellationToken cancellationToken = default)
+    {
+        var item = await dbContext.BudgetItems
+            .SingleOrDefaultAsync(x => x.Id == itemId, cancellationToken)
+            ?? throw new KeyNotFoundException("Budget item was not found.");
+        await GetEditableVersionAsync(item.FiscalYearId, item.BudgetVersionId, cancellationToken);
+        var year = await dbContext.FiscalYears.AsNoTracking()
+            .SingleAsync(x => x.Id == item.FiscalYearId, cancellationToken);
+        if (year.Status is FiscalYearStatus.Closed or FiscalYearStatus.Archived || year.IsLocked)
+            throw new InvalidOperationException("Cannot adjust spending comparison exclusions for a locked or closed fiscal year.");
+        item.SetOverUnderExclusion(excluded);
+        await dbContext.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task SetBillingCadenceAsync(
+        Guid itemId, BudgetBillingCadence cadence, CancellationToken cancellationToken = default)
+    {
+        var item = await dbContext.BudgetItems
+            .SingleOrDefaultAsync(x => x.Id == itemId, cancellationToken)
+            ?? throw new KeyNotFoundException("Budget item was not found.");
+        await GetEditableVersionAsync(item.FiscalYearId, item.BudgetVersionId, cancellationToken);
+        var year = await dbContext.FiscalYears.AsNoTracking()
+            .SingleAsync(x => x.Id == item.FiscalYearId, cancellationToken);
+        if (year.Status is FiscalYearStatus.Closed or FiscalYearStatus.Archived || year.IsLocked)
+            throw new InvalidOperationException("Cannot edit billing cadence in a locked or closed fiscal year.");
+        item.SetBillingCadence(cadence);
         await dbContext.SaveChangesAsync(cancellationToken);
     }
 

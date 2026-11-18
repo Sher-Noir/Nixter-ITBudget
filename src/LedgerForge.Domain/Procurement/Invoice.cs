@@ -65,6 +65,29 @@ public sealed class Invoice : AuditableEntity
     public DateTimeOffset? CancelledAtUtc { get; private set; }
     public string? CancellationReason { get; private set; }
 
+    public void UpdateDraft(string invoiceNumber, DateOnly invoiceDate, string description, decimal totalAmount)
+    {
+        if (State != InvoiceState.Draft || IsArchived)
+            throw new InvalidOperationException("Only active draft invoices can be edited.");
+        if (string.IsNullOrWhiteSpace(invoiceNumber) || invoiceNumber.Trim().Length > 100)
+            throw new ArgumentException("Invoice number is required and must be at most 100 characters.", nameof(invoiceNumber));
+        if (string.IsNullOrWhiteSpace(description) || description.Trim().Length > 500)
+            throw new ArgumentException("Description is required and must be at most 500 characters.", nameof(description));
+        if (totalAmount <= 0m) throw new ArgumentOutOfRangeException(nameof(totalAmount));
+        InvoiceNumber = invoiceNumber.Trim();
+        InvoiceDate = invoiceDate;
+        Description = description.Trim();
+        TotalAmount = totalAmount;
+    }
+
+    public void ArchiveDraft(string actor, string reason, DateTimeOffset atUtc)
+    {
+        if (State != InvoiceState.Draft || IsArchived)
+            throw new InvalidOperationException("Only active draft invoices can be removed.");
+        Cancel(actor, reason, atUtc);
+        IsArchived = true;
+    }
+
     public void Submit(string actor, DateTimeOffset atUtc)
     {
         RequireState(InvoiceState.Draft, "submitted");
@@ -171,6 +194,30 @@ public sealed class InvoiceAllocation : AuditableEntity
     public Guid? DepartmentId { get; private set; }
     public Guid? LocationId { get; private set; }
     public Guid? FiscalPeriodId { get; private set; }
+
+    public void UpdateDraft(
+        string description, decimal amount, Guid? budgetItemId,
+        Guid? financeAccountId, Guid? departmentId, Guid? locationId,
+        Guid? fiscalPeriodId)
+    {
+        if (IsArchived) throw new InvalidOperationException("This allocation is already removed.");
+        if (string.IsNullOrWhiteSpace(description) || description.Trim().Length > 500)
+            throw new ArgumentException("Allocation description is required and must be at most 500 characters.", nameof(description));
+        if (amount <= 0m) throw new ArgumentOutOfRangeException(nameof(amount));
+        Description = description.Trim();
+        Amount = amount;
+        BudgetItemId = NormalizeId(budgetItemId, nameof(budgetItemId));
+        FinanceAccountId = NormalizeId(financeAccountId, nameof(financeAccountId));
+        DepartmentId = NormalizeId(departmentId, nameof(departmentId));
+        LocationId = NormalizeId(locationId, nameof(locationId));
+        FiscalPeriodId = NormalizeId(fiscalPeriodId, nameof(fiscalPeriodId));
+    }
+
+    public void ArchiveDraftAllocation()
+    {
+        if (IsArchived) throw new InvalidOperationException("This allocation is already removed.");
+        IsArchived = true;
+    }
 
     public void AssignFiscalPeriod(Guid fiscalPeriodId)
     {

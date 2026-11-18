@@ -2,6 +2,7 @@ using LedgerForge.Domain.Budgeting;
 using LedgerForge.Infrastructure.Actuals;
 using LedgerForge.Infrastructure.Approvals;
 using LedgerForge.Infrastructure.Budgeting;
+using LedgerForge.Web.Configuration;
 using LedgerForge.Web.Documents;
 using LedgerForge.Web.Models.Budgeting;
 using LedgerForge.Web.Security;
@@ -16,10 +17,13 @@ public sealed class BudgetController(
     BudgetPlanningService planningService,
     BudgetItemWorkspaceService workspaceService,
     BudgetItemActualEntryService actualEntryService,
+    ActualLedgerService actualLedgerService,
+    RecurringActualService recurringActualService,
     ApprovalQueueService approvalQueueService,
     IAuthorizationService authorizationService,
     IWebHostEnvironment environment,
-    IConfiguration configuration) : Controller
+    IConfiguration configuration,
+    OrganizationSettingsStore organizationSettingsStore) : Controller
 {
     [HttpGet("")]
     public async Task<IActionResult> Index(
@@ -29,6 +33,9 @@ public sealed class BudgetController(
     {
         var snapshot = await planningService.GetSnapshotAsync(fiscalYearId, versionId, cancellationToken);
         var canEdit = (await authorizationService.AuthorizeAsync(User, AuthorizationPolicies.EditPlanningBudget)).Succeeded;
+        ViewData["CanPostActuals"] = (await authorizationService.AuthorizeAsync(User, AuthorizationPolicies.PostActuals)).Succeeded;
+        if (canEdit && !snapshot.SelectedVersionLocked && snapshot.SelectedVersionId is not null)
+            ViewData["CreateOptions"] = await planningService.GetCreateOptionsAsync(cancellationToken);
         ViewData["CanManageImports"] = (await authorizationService.AuthorizeAsync(User, AuthorizationPolicies.ManageImports)).Succeeded;
         var errorMessage = TempData["BudgetError"] as string;
 
@@ -37,6 +44,56 @@ public sealed class BudgetController(
             canEdit,
             errorMessage,
             Request.Query.ContainsKey("saved")));
+    }
+
+    [Authorize(Policy = AuthorizationPolicies.EditPlanningBudget)]
+    [HttpPost("bulk-submit")]
+    public async Task<IActionResult> BulkSubmit(
+        Guid fiscalYearId, Guid versionId, Guid[] selectedItemIds, bool confirmSelection,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            if (!confirmSelection)
+                throw new ArgumentException("Review the selected items and confirm before submitting.");
+            await approvalQueueService.SubmitBudgetItemsAsync(
+                fiscalYearId, versionId, selectedItemIds, RequireActor(), cancellationToken);
+            return RedirectToAction(nameof(Index), new
+            {
+                fiscalYearId, versionId, bulkSubmitted = selectedItemIds.Length
+            });
+        }
+        catch (Exception exception) when (exception is ArgumentException or InvalidOperationException or KeyNotFoundException)
+        {
+            TempData["BudgetError"] = exception.Message;
+            return RedirectToAction(nameof(Index), new { fiscalYearId, versionId });
+        }
+    }
+
+    [Authorize(Policy = AuthorizationPolicies.EditPlanningBudget)]
+    [HttpPost("create")]
+    public async Task<IActionResult> Create(
+        Guid fiscalYearId, Guid versionId, string description,
+        string? reasonPurpose, PurchaseType purchaseType, decimal quantity, decimal unitCost,
+        Guid? budgetSectionId, Guid? financeTypeId, Guid? departmentId, Guid? locationId,
+        Guid? needLevelId, Guid? internalCategoryId, Guid? frequencyId,
+        Guid? vendorId, string? notes,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var id = await planningService.CreateDetailedItemAsync(
+                fiscalYearId, versionId, description, reasonPurpose, purchaseType,
+                quantity, unitCost, budgetSectionId, financeTypeId, departmentId, locationId,
+                needLevelId, internalCategoryId, frequencyId, cancellationToken, vendorId, notes);
+            return RedirectToAction(nameof(Index), new { fiscalYearId, versionId, saved = true });
+        }
+        catch (KeyNotFoundException) { return NotFound(); }
+        catch (Exception exception) when (exception is ArgumentException or InvalidOperationException or OverflowException)
+        {
+            TempData["BudgetError"] = exception.Message;
+            return RedirectToAction(nameof(Index), new { fiscalYearId, versionId });
+        }
     }
 
     [Authorize(Policy = AuthorizationPolicies.EditPlanningBudget)]
@@ -84,9 +141,30 @@ public sealed class BudgetController(
         var canEditRole = (await authorizationService.AuthorizeAsync(User, AuthorizationPolicies.EditPlanningBudget)).Succeeded;
         var canPostActuals = (await authorizationService.AuthorizeAsync(User, AuthorizationPolicies.PostActuals)).Succeeded;
         var workflowEditable = snapshot.Status is BudgetItemStatus.Draft or BudgetItemStatus.Proposed or BudgetItemStatus.Deferred;
+        var requireReapproval = (await organizationSettingsStore.GetAsync(cancellationToken)).RequireReapprovalForBudgetItemEdits;
+        var directEditable = !requireReapproval &&
+            snapshot.Status is BudgetItemStatus.Approved or BudgetItemStatus.Active or BudgetItemStatus.Purchased;
+        ViewData["DirectEditWithoutReapproval"] = canEditRole && !snapshot.VersionLocked && directEditable;
+        ViewData["RequireReapprovalForBudgetItemEdits"] = requireReapproval;
         ViewData["CanSubmit"] = canEditRole && !snapshot.VersionLocked && workflowEditable;
+        ViewData["CanMarkPurchased"] = canEditRole &&
+            snapshot.Status is BudgetItemStatus.Draft or BudgetItemStatus.Proposed or
+                BudgetItemStatus.Deferred or BudgetItemStatus.Approved or BudgetItemStatus.Active;
+        ViewData["CanUndoPurchased"] = canEditRole && snapshot.Status == BudgetItemStatus.Purchased;
+        ViewData["PurchasedChanged"] = Request.Query.ContainsKey("purchasedChanged");
+        ViewData["CanReopen"] = canEditRole && !snapshot.VersionLocked &&
+            (snapshot.Status == BudgetItemStatus.Submitted ||
+                (requireReapproval && snapshot.Status == BudgetItemStatus.Approved));
+        ViewData["RevisionOpened"] = Request.Query.ContainsKey("reopened");
         ViewData["Submitted"] = Request.Query.ContainsKey("submitted");
         ViewData["ActualSaved"] = Request.Query.ContainsKey("actualSaved");
+        ViewData["ActualCorrected"] = TempData["ActualCorrected"] as string;
+        ViewData["RecurringActualMessage"] = TempData["RecurringActualMessage"] as string;
+        ViewData["RecurringSchedules"] = await recurringActualService.ListForItemAsync(id, cancellationToken);
+        ViewData["RecurringToday"] = RecurringActualService.EasternToday();
+        ViewData["RecurringFiscalDates"] = await recurringActualService.GetFiscalDatesAsync(id, cancellationToken);
+        ViewData["BillingCadenceChanged"] = TempData["BillingCadenceChanged"] as string;
+        ViewData["OverUnderExclusionChanged"] = TempData["OverUnderExclusionChanged"] as string;
 
         var configuredLimit = configuration.GetValue<long?>("Documents:MaxFileSizeBytes");
         var configuredStoragePath = configuration.GetValue<string>("Documents:StoragePath");
@@ -99,11 +177,12 @@ public sealed class BudgetController(
             .OrderByDescending(x => x.CreatedAtUtc)
             .ToArray();
         var actualOptions = await actualEntryService.GetOptionsAsync(cancellationToken);
+        ViewData["VendorOptions"] = await planningService.GetEditVendorOptionsAsync(snapshot.VendorId, cancellationToken);
 
         return View("Item", new BudgetItemEditViewModel(
             workspace,
             documents,
-            canEditRole && !snapshot.VersionLocked && workflowEditable,
+            canEditRole && !snapshot.VersionLocked && (workflowEditable || directEditable),
             canPostActuals,
             actualOptions,
             TempData["BudgetItemError"] as string,
@@ -129,10 +208,14 @@ public sealed class BudgetController(
         Guid? needLevelId,
         Guid? internalCategoryId,
         Guid? frequencyId,
+        Guid? vendorId,
+        string? notes,
         CancellationToken cancellationToken)
     {
         try
         {
+            var allowDirectApprovedEdits =
+                !(await organizationSettingsStore.GetAsync(cancellationToken)).RequireReapprovalForBudgetItemEdits;
             await planningService.UpdateItemAsync(
                 id,
                 itemNumber,
@@ -150,7 +233,11 @@ public sealed class BudgetController(
                 needLevelId,
                 internalCategoryId,
                 frequencyId,
-                cancellationToken);
+                cancellationToken,
+                vendorId: vendorId,
+                notes: notes,
+                updateVendorAndNotes: true,
+                allowDirectApprovedEdits: allowDirectApprovedEdits);
 
             return RedirectToAction(nameof(Item), new { id, saved = true });
         }
@@ -163,6 +250,53 @@ public sealed class BudgetController(
             TempData["BudgetItemError"] = exception.Message;
             return RedirectToAction(nameof(Item), new { id });
         }
+    }
+
+    [Authorize(Policy = AuthorizationPolicies.EditPlanningBudget)]
+    [ValidateAntiForgeryToken]
+    [HttpPost("items/{id:guid}/over-under-exclusion")]
+    public async Task<IActionResult> SetOverUnderExclusion(
+        Guid id, bool excludeFromOverUnder, string? returnUrl,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            _ = RequireActor();
+            await planningService.SetOverUnderExclusionAsync(
+                id, excludeFromOverUnder, cancellationToken);
+            TempData["OverUnderExclusionChanged"] = excludeFromOverUnder
+                ? "Excluded from Current Over/Under. Budget, Actual and Forecast remain unchanged."
+                : "Included in Current Over/Under again.";
+        }
+        catch (KeyNotFoundException) { return NotFound(); }
+        catch (Exception exception) when (exception is InvalidOperationException or ArgumentException)
+        {
+            TempData["BudgetItemError"] = exception.Message;
+        }
+
+        if (!string.IsNullOrWhiteSpace(returnUrl) && Url.IsLocalUrl(returnUrl))
+            return LocalRedirect(returnUrl);
+        return RedirectToAction(nameof(Item), new { id, section = "overview" });
+    }
+
+    [Authorize(Policy = AuthorizationPolicies.EditPlanningBudget)]
+    [ValidateAntiForgeryToken]
+    [HttpPost("items/{id:guid}/billing-cadence")]
+    public async Task<IActionResult> SetBillingCadence(
+        Guid id, BudgetBillingCadence billingCadence, CancellationToken cancellationToken)
+    {
+        try
+        {
+            _ = RequireActor();
+            await planningService.SetBillingCadenceAsync(id, billingCadence, cancellationToken);
+            TempData["BillingCadenceChanged"] = "Billing cadence updated. Actual ledger transactions and approved budget remain unchanged.";
+        }
+        catch (KeyNotFoundException) { return NotFound(); }
+        catch (Exception exception) when (exception is InvalidOperationException or ArgumentException)
+        {
+            TempData["BudgetItemError"] = exception.Message;
+        }
+        return RedirectToAction(nameof(Item), new { id, section = "overview" });
     }
 
     [Authorize(Policy = AuthorizationPolicies.PostActuals)]
@@ -197,6 +331,168 @@ public sealed class BudgetController(
             return NotFound();
         }
         catch (Exception exception) when (exception is ArgumentException or ArgumentOutOfRangeException or InvalidOperationException or OverflowException)
+        {
+            TempData["BudgetItemError"] = exception.Message;
+            return RedirectToAction(nameof(Item), new { id });
+        }
+    }
+
+    [Authorize(Policy = AuthorizationPolicies.PostActuals)]
+    [ValidateAntiForgeryToken]
+    [HttpPost("items/{id:guid}/actuals/{transactionId:guid}/correct")]
+    public async Task<IActionResult> CorrectActual(
+        Guid id, Guid transactionId, DateOnly transactionDate, decimal amount,
+        string description, string? sourceReference, Guid? financeAccountId,
+        Guid? departmentId, Guid? locationId, string reason,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            _ = RequireActor(); // AuditSaveChangesInterceptor records the signed-in actor.
+            await actualLedgerService.CorrectBudgetItemManualAsync(
+                id, transactionId, transactionDate, amount, description,
+                sourceReference, financeAccountId, departmentId, locationId,
+                reason, cancellationToken);
+            TempData["ActualCorrected"] = "Actual corrected. The original, reversal and replacement remain in the audited ledger.";
+            return RedirectToAction(nameof(Item), new { id, corrected = true });
+        }
+        catch (KeyNotFoundException) { return NotFound(); }
+        catch (Microsoft.EntityFrameworkCore.DbUpdateException)
+        {
+            TempData["BudgetItemError"] = "The transaction may have already been corrected. Refresh this item and review its actual history.";
+            return RedirectToAction(nameof(Item), new { id });
+        }
+        catch (Exception exception) when (exception is ArgumentException or InvalidOperationException or OverflowException)
+        {
+            TempData["BudgetItemError"] = exception.Message;
+            return RedirectToAction(nameof(Item), new { id });
+        }
+    }
+
+    [Authorize(Policy = AuthorizationPolicies.PostActuals)]
+    [ValidateAntiForgeryToken]
+    [HttpPost("items/{id:guid}/recurring-actuals")]
+    public async Task<IActionResult> CreateRecurringActual(
+        Guid id, string description, decimal amount, bool lastDayOfMonth, int dayOfMonth,
+        DateOnly startDate, DateOnly endDate, string? sourceReference,
+        Guid? financeAccountId, Guid? departmentId, Guid? locationId,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            _ = RequireActor();
+            var newScheduleId = await recurringActualService.CreateAsync(id, description, amount, lastDayOfMonth,
+                dayOfMonth, startDate, endDate, sourceReference, financeAccountId,
+                departmentId, locationId, cancellationToken);
+            // Catch up passed billing dates immediately. Future dates never become actuals.
+            await recurringActualService.PostDueForScheduleAsync(newScheduleId, RecurringActualService.EasternToday(), cancellationToken);
+            TempData["RecurringActualMessage"] = "Recurring schedule saved. Eligible past billing dates were posted; future dates are not actuals.";
+        }
+        catch (KeyNotFoundException) { return NotFound(); }
+        catch (Exception exception) when (exception is ArgumentException or InvalidOperationException or OverflowException)
+        {
+            TempData["BudgetItemError"] = exception.Message;
+        }
+        return RedirectToAction(nameof(Item), new { id, section = "recurring-actuals" });
+    }
+
+    [Authorize(Policy = AuthorizationPolicies.PostActuals)]
+    [ValidateAntiForgeryToken]
+    [HttpPost("items/{id:guid}/recurring-actuals/{scheduleId:guid}")]
+    public async Task<IActionResult> UpdateRecurringActual(
+        Guid id, Guid scheduleId, string description, decimal amount,
+        bool lastDayOfMonth, int dayOfMonth, DateOnly startDate, DateOnly endDate,
+        string? sourceReference, Guid? financeAccountId, Guid? departmentId,
+        Guid? locationId, CancellationToken cancellationToken)
+    {
+        try
+        {
+            _ = RequireActor();
+            await recurringActualService.UpdateAsync(id, scheduleId, description, amount,
+                lastDayOfMonth, dayOfMonth, startDate, endDate, sourceReference,
+                financeAccountId, departmentId, locationId, cancellationToken);
+            TempData["RecurringActualMessage"] = "Schedule updated. Already posted actuals were not changed.";
+        }
+        catch (KeyNotFoundException) { return NotFound(); }
+        catch (Exception exception) when (exception is ArgumentException or InvalidOperationException or OverflowException)
+        {
+            TempData["BudgetItemError"] = exception.Message;
+        }
+        return RedirectToAction(nameof(Item), new { id, section = "recurring-actuals" });
+    }
+
+    [Authorize(Policy = AuthorizationPolicies.PostActuals)]
+    [ValidateAntiForgeryToken]
+    [HttpPost("items/{id:guid}/recurring-actuals/{scheduleId:guid}/active")]
+    public async Task<IActionResult> SetRecurringActualActive(
+        Guid id, Guid scheduleId, bool active, CancellationToken cancellationToken)
+    {
+        try
+        {
+            _ = RequireActor();
+            await recurringActualService.SetActiveAsync(id, scheduleId, active, cancellationToken);
+            TempData["RecurringActualMessage"] = active
+                ? "Recurring schedule resumed. Any eligible missed months will be caught up."
+                : "Recurring schedule paused. Posted actuals remain unchanged.";
+        }
+        catch (KeyNotFoundException) { return NotFound(); }
+        catch (Exception exception) when (exception is ArgumentException or InvalidOperationException)
+        {
+            TempData["BudgetItemError"] = exception.Message;
+        }
+        return RedirectToAction(nameof(Item), new { id, section = "recurring-actuals" });
+    }
+
+    [Authorize(Policy = AuthorizationPolicies.EditPlanningBudget)]
+    [HttpPost("items/{id:guid}/purchased")]
+    public Task<IActionResult> MarkPurchased(
+        Guid id, bool returnToBudget, Guid? fiscalYearId, Guid? versionId,
+        CancellationToken cancellationToken)
+        => ChangePurchasedStatus(id, true, returnToBudget, fiscalYearId, versionId, cancellationToken);
+
+    [Authorize(Policy = AuthorizationPolicies.EditPlanningBudget)]
+    [HttpPost("items/{id:guid}/undo-purchased")]
+    public Task<IActionResult> UndoPurchased(
+        Guid id, bool returnToBudget, Guid? fiscalYearId, Guid? versionId,
+        CancellationToken cancellationToken)
+        => ChangePurchasedStatus(id, false, returnToBudget, fiscalYearId, versionId, cancellationToken);
+
+    private async Task<IActionResult> ChangePurchasedStatus(
+        Guid id, bool purchased, bool returnToBudget, Guid? fiscalYearId,
+        Guid? versionId, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await approvalQueueService.SetBudgetItemPurchasedAsync(
+                id, RequireActor(), purchased, cancellationToken);
+            return returnToBudget
+                ? RedirectToAction(nameof(Index), new { fiscalYearId, versionId, purchasedChanged = true })
+                : RedirectToAction(nameof(Item), new { id, purchasedChanged = true });
+        }
+        catch (KeyNotFoundException) { return NotFound(); }
+        catch (Exception exception) when (exception is ArgumentException or InvalidOperationException)
+        {
+            TempData[returnToBudget ? "BudgetError" : "BudgetItemError"] = exception.Message;
+            return returnToBudget
+                ? RedirectToAction(nameof(Index), new { fiscalYearId, versionId })
+                : RedirectToAction(nameof(Item), new { id });
+        }
+    }
+
+    [Authorize(Policy = AuthorizationPolicies.EditPlanningBudget)]
+    [HttpPost("items/{id:guid}/reopen")]
+    public async Task<IActionResult> ReopenItem(Guid id, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await approvalQueueService.ReopenBudgetItemForRevisionAsync(id, RequireActor(), cancellationToken);
+            return RedirectToAction(nameof(Item), new { id, reopened = true });
+        }
+        catch (KeyNotFoundException)
+        {
+            return NotFound();
+        }
+        catch (Exception exception) when (exception is ArgumentException or InvalidOperationException)
         {
             TempData["BudgetItemError"] = exception.Message;
             return RedirectToAction(nameof(Item), new { id });

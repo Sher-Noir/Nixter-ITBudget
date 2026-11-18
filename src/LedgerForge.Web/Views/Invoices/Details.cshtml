@@ -51,6 +51,36 @@
 
 @if (canManage && Model.Invoice.State == InvoiceState.Draft)
 {
+    <section class="lf-card" aria-labelledby="invoice-maintenance-title">
+        <h2 id="invoice-maintenance-title">Edit or remove draft invoice</h2>
+        <p class="lf-muted">Draft invoices can be revised before approval. Posted invoices remain immutable and require financial corrections instead.</p>
+        <details>
+            <summary>Edit invoice</summary>
+            <form method="post" action="/invoices/@Model.Invoice.Id/edit">
+                @Html.AntiForgeryToken()
+                <div class="lf-form-grid">
+                    <div><label for="invoice-edit-number">Invoice number</label><input id="invoice-edit-number" name="invoiceNumber" maxlength="100" required value="@Model.Invoice.InvoiceNumber" /></div>
+                    <div><label for="invoice-edit-date">Invoice date</label><input id="invoice-edit-date" name="invoiceDate" type="date" required value="@Model.Invoice.InvoiceDate.ToString("yyyy-MM-dd")" /></div>
+                    <div class="lf-span-all"><label for="invoice-edit-description">Description</label><input id="invoice-edit-description" name="description" maxlength="500" required value="@Model.Invoice.Description" /></div>
+                    <div><label for="invoice-edit-total">Total amount</label><input id="invoice-edit-total" name="totalAmount" type="number" min="0.0001" step="0.0001" required value="@Model.Invoice.TotalAmount.ToString("0.####", System.Globalization.CultureInfo.InvariantCulture)" /></div>
+                </div>
+                <p><button type="submit" class="primary">Save invoice</button></p>
+            </form>
+        </details>
+        <details>
+            <summary>Delete draft invoice</summary>
+            <form method="post" action="/invoices/@Model.Invoice.Id/delete">
+                @Html.AntiForgeryToken()
+                <p><label for="invoice-delete-reason">Reason for removal</label><input id="invoice-delete-reason" name="reason" maxlength="1000" required placeholder="Duplicate or entered in error" /></p>
+                <p class="lf-muted">This archives and cancels the draft. Posted actuals are never deleted.</p>
+                <button type="submit">Delete draft</button>
+            </form>
+        </details>
+    </section>
+}
+
+@if (canManage && Model.Invoice.State == InvoiceState.Draft)
+{
     <section class="lf-card" aria-labelledby="allocation-title">
         <h2 id="allocation-title">Add allocation</h2>
         <form method="post" action="/invoices/@Model.Invoice.Id/allocations">
@@ -140,3 +170,34 @@
         </div>
     }
 </section>
+
+@if (canManage && Model.Invoice.State == InvoiceState.Draft && Model.Allocations.Count > 0)
+{
+    <section class="lf-card" aria-labelledby="allocation-maintenance-title">
+        <h2 id="allocation-maintenance-title">Edit or delete draft allocations</h2>
+        <p class="lf-muted">Dimension fields left blank keep their current assignment. Removed allocations remain in the audit record but no longer count toward the invoice total.</p>
+        @foreach (var allocation in Model.Allocations)
+        {
+            <details>
+                <summary>Line @allocation.LineNumber · @allocation.Description · @allocation.Amount.ToString("C2")</summary>
+                <form method="post" action="/invoices/@Model.Invoice.Id/allocations/@allocation.Id/edit">
+                    @Html.AntiForgeryToken()
+                    <div class="lf-form-grid">
+                        <div class="lf-span-all"><label>Description<input name="description" maxlength="500" required value="@allocation.Description" /></label></div>
+                        <div><label>Amount<input name="amount" type="number" min="0.0001" step="0.0001" required value="@allocation.Amount.ToString("0.####", System.Globalization.CultureInfo.InvariantCulture)" /></label></div>
+                        <div><label>Budget item<select name="budgetItemId"><option value="">Keep current</option>@foreach (var option in Model.BudgetItems) { <option value="@option.Id">@option.Label</option> }</select></label></div>
+                        <div><label>Finance account<select name="financeAccountId"><option value="">Keep current</option>@foreach (var option in Model.FinanceAccounts) { <option value="@option.Id">@option.Label</option> }</select></label></div>
+                        <div><label>Department<select name="departmentId"><option value="">Keep current</option>@foreach (var option in Model.Departments) { <option value="@option.Id">@option.Label</option> }</select></label></div>
+                        <div><label>Location<select name="locationId"><option value="">Keep current</option>@foreach (var option in Model.Locations) { <option value="@option.Id">@option.Label</option> }</select></label></div>
+                    </div>
+                    <p><button type="submit">Save allocation</button></p>
+                </form>
+                <form method="post" action="/invoices/@Model.Invoice.Id/allocations/@allocation.Id/delete">
+                    @Html.AntiForgeryToken()
+                    <button type="submit">Delete draft allocation</button>
+                </form>
+            </details>
+        }
+    </section>
+}
+

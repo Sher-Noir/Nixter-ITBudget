@@ -16,6 +16,18 @@
         if (menuButton) document.documentElement.classList.toggle("lf-nav-open");
     });
 
+    // Select-all is scoped to the visible table/page. Individual checkboxes
+    // remain the form source of truth; the server validates every selected ID.
+    document.addEventListener("change", event => {
+        const control = event.target.closest("[data-bulk-select-all]");
+        if (!control) return;
+        const target = control.getAttribute("data-bulk-select-all");
+        document.querySelectorAll("[data-bulk-item]").forEach(input => {
+            if (input.getAttribute("data-bulk-item") === target && !input.disabled)
+                input.checked = control.checked;
+        });
+    });
+
     const showUpdateNotice = async (attempt = 0) => {
         const actions = document.querySelector(".lf-top-actions");
         if (!actions || actions.querySelector("[data-ledgerforge-update]")) return;

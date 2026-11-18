@@ -167,6 +167,14 @@
                     </select>
                     <small class="muted">Individual users can still toggle their own theme in the header.</small>
                 </div>
+                <div class="full">
+                    <label for="RequireReapprovalForBudgetItemEdits"><strong>Budget item editing approval policy</strong></label>
+                    <select id="RequireReapprovalForBudgetItemEdits" name="RequireReapprovalForBudgetItemEdits">
+                        <option value="false" selected="@(!Model.RequireReapprovalForBudgetItemEdits)">Allow direct edits without resubmitting for approval</option>
+                        <option value="true" selected="@(Model.RequireReapprovalForBudgetItemEdits)">Require reapproval when editing approved items</option>
+                    </select>
+                    <small class="muted">Direct editing lets users with budget-edit permission update Approved, Active and Purchased items in an unlocked budget version without reopening and resubmitting. Changes are audited; the original approved amount and decision remain in history. Changes to planned cost become the current revised budget. Pending approval, cancelled, denied, archived or locked items remain protected.</small>
+                </div>
                 <div>
                     <label for="LogoPath"><strong>Advanced logo path fallback</strong></label>
                     <input id="LogoPath" name="LogoPath" value="@Model.LogoPath" maxlength="260" placeholder="/images/ledgerforge-logo.png" />

@@ -39,6 +39,78 @@ public sealed class InvoiceWorkflowService(LedgerForgeDbContext dbContext)
         return invoice.Id;
     }
 
+    public async Task UpdateDraftAsync(
+        Guid id, string invoiceNumber, DateOnly invoiceDate, string description,
+        decimal totalAmount, CancellationToken cancellationToken = default)
+    {
+        var invoice = await RequireInvoice(id, cancellationToken);
+        if (invoice.State != InvoiceState.Draft)
+            throw new InvalidOperationException("Only draft invoices can be edited.");
+        var year = await dbContext.FiscalYears.AsNoTracking()
+            .SingleAsync(x => x.Id == invoice.FiscalYearId, cancellationToken);
+        if (invoiceDate < year.StartDate || invoiceDate > year.EndDate)
+            throw new InvalidOperationException("Invoice date must be within its fiscal year.");
+        var normalizedNumber = invoiceNumber?.Trim() ?? string.Empty;
+        if (await dbContext.Invoices.AsNoTracking().AnyAsync(x =>
+            x.Id != id && x.FiscalYearId == invoice.FiscalYearId &&
+            x.VendorId == invoice.VendorId && x.InvoiceNumber == normalizedNumber, cancellationToken))
+            throw new InvalidOperationException("That vendor invoice number already exists in this fiscal year.");
+        var allocated = await AllocationTotal(id, cancellationToken);
+        if (totalAmount < allocated)
+            throw new InvalidOperationException("Invoice total cannot be less than its existing allocations.");
+        invoice.UpdateDraft(normalizedNumber, invoiceDate, description, totalAmount);
+        await dbContext.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task ArchiveDraftAsync(
+        Guid id, string actor, string reason, CancellationToken cancellationToken = default)
+    {
+        var invoice = await RequireInvoice(id, cancellationToken);
+        if (await dbContext.ActualTransactions.AsNoTracking().AnyAsync(x => x.InvoiceId == id, cancellationToken))
+            throw new InvalidOperationException("An invoice with ledger transactions cannot be removed.");
+        invoice.ArchiveDraft(actor, reason, DateTimeOffset.UtcNow);
+        await dbContext.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task UpdateAllocationAsync(
+        Guid invoiceId, Guid allocationId, string description, decimal amount,
+        Guid? budgetItemId, Guid? financeAccountId, Guid? departmentId,
+        Guid? locationId, Guid? fiscalPeriodId,
+        CancellationToken cancellationToken = default)
+    {
+        var invoice = await RequireInvoice(invoiceId, cancellationToken);
+        if (invoice.State != InvoiceState.Draft)
+            throw new InvalidOperationException("Only draft invoice allocations can be edited.");
+        var allocation = await dbContext.InvoiceAllocations.SingleOrDefaultAsync(
+            x => x.Id == allocationId && x.InvoiceId == invoiceId && !x.IsArchived, cancellationToken)
+            ?? throw new KeyNotFoundException("Invoice allocation was not found.");
+        budgetItemId ??= allocation.BudgetItemId;
+        financeAccountId ??= allocation.FinanceAccountId;
+        departmentId ??= allocation.DepartmentId;
+        locationId ??= allocation.LocationId;
+        fiscalPeriodId ??= allocation.FiscalPeriodId;
+        await ValidateDimensions(invoice, budgetItemId, financeAccountId, departmentId, locationId, cancellationToken);
+        if (fiscalPeriodId is Guid periodId)
+            await RequireInvoicePeriod(invoice, periodId, requireOpen: false, cancellationToken);
+        var allocated = await AllocationTotal(invoiceId, cancellationToken);
+        if (allocated - allocation.Amount + amount > invoice.TotalAmount)
+            throw new InvalidOperationException("Invoice allocations cannot exceed the invoice total.");
+        allocation.UpdateDraft(description, amount, budgetItemId, financeAccountId, departmentId, locationId, fiscalPeriodId);
+        await dbContext.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task DeleteAllocationAsync(Guid invoiceId, Guid allocationId, CancellationToken cancellationToken = default)
+    {
+        var invoice = await RequireInvoice(invoiceId, cancellationToken);
+        if (invoice.State != InvoiceState.Draft)
+            throw new InvalidOperationException("Only draft invoice allocations can be removed.");
+        var allocation = await dbContext.InvoiceAllocations.SingleOrDefaultAsync(
+            x => x.Id == allocationId && x.InvoiceId == invoiceId && !x.IsArchived, cancellationToken)
+            ?? throw new KeyNotFoundException("Invoice allocation was not found.");
+        allocation.ArchiveDraftAllocation();
+        await dbContext.SaveChangesAsync(cancellationToken);
+    }
+
     public async Task AddAllocationAsync(
         Guid invoiceId,
         string description,
@@ -110,7 +182,7 @@ public sealed class InvoiceWorkflowService(LedgerForgeDbContext dbContext)
             throw new InvalidOperationException("This invoice already has posted actual transactions.");
 
         var allocations = await dbContext.InvoiceAllocations
-            .Where(x => x.InvoiceId == id).OrderBy(x => x.LineNumber).ToListAsync(cancellationToken);
+            .Where(x => x.InvoiceId == id && !x.IsArchived).OrderBy(x => x.LineNumber).ToListAsync(cancellationToken);
         if (allocations.Count == 0 || allocations.Sum(x => x.Amount) != invoice.TotalAmount)
             throw new InvalidOperationException("Invoice allocations must equal the invoice total before posting.");
 
@@ -209,12 +281,12 @@ public sealed class InvoiceWorkflowService(LedgerForgeDbContext dbContext)
     private async Task<Invoice> RequireInvoice(Guid id, CancellationToken cancellationToken)
     {
         if (id == Guid.Empty) throw new ArgumentException("Invoice ID is required.", nameof(id));
-        return await dbContext.Invoices.SingleOrDefaultAsync(x => x.Id == id, cancellationToken)
+        return await dbContext.Invoices.SingleOrDefaultAsync(x => x.Id == id && !x.IsArchived, cancellationToken)
             ?? throw new KeyNotFoundException("Invoice was not found.");
     }
 
     private async Task<decimal> AllocationTotal(Guid id, CancellationToken cancellationToken)
-        => await dbContext.InvoiceAllocations.Where(x => x.InvoiceId == id)
+        => await dbContext.InvoiceAllocations.Where(x => x.InvoiceId == id && !x.IsArchived)
             .SumAsync(x => (decimal?)x.Amount, cancellationToken) ?? 0m;
 
     private static async Task RequireActiveLookup<TEntity>(DbSet<TEntity> set, Guid? id, string label, CancellationToken cancellationToken)
