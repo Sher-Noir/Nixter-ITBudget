@@ -163,6 +163,7 @@ public sealed class BudgetController(
         ViewData["RecurringSchedules"] = await recurringActualService.ListForItemAsync(id, cancellationToken);
         ViewData["RecurringToday"] = RecurringActualService.EasternToday();
         ViewData["RecurringFiscalDates"] = await recurringActualService.GetFiscalDatesAsync(id, cancellationToken);
+        ViewData["BillingCadenceChanged"] = TempData["BillingCadenceChanged"] as string;
 
         var configuredLimit = configuration.GetValue<long?>("Documents:MaxFileSizeBytes");
         var configuredStoragePath = configuration.GetValue<string>("Documents:StoragePath");
@@ -248,6 +249,26 @@ public sealed class BudgetController(
             TempData["BudgetItemError"] = exception.Message;
             return RedirectToAction(nameof(Item), new { id });
         }
+    }
+
+    [Authorize(Policy = AuthorizationPolicies.EditPlanningBudget)]
+    [ValidateAntiForgeryToken]
+    [HttpPost("items/{id:guid}/billing-cadence")]
+    public async Task<IActionResult> SetBillingCadence(
+        Guid id, BudgetBillingCadence billingCadence, CancellationToken cancellationToken)
+    {
+        try
+        {
+            _ = RequireActor();
+            await planningService.SetBillingCadenceAsync(id, billingCadence, cancellationToken);
+            TempData["BillingCadenceChanged"] = "Billing cadence updated. Actual ledger transactions and approved budget remain unchanged.";
+        }
+        catch (KeyNotFoundException) { return NotFound(); }
+        catch (Exception exception) when (exception is InvalidOperationException or ArgumentException)
+        {
+            TempData["BudgetItemError"] = exception.Message;
+        }
+        return RedirectToAction(nameof(Item), new { id, section = "overview" });
     }
 
     [Authorize(Policy = AuthorizationPolicies.PostActuals)]

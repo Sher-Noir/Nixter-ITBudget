@@ -23,6 +23,7 @@
     var actualSaved = ViewData["ActualSaved"] as bool? == true;
     var actualCorrected = ViewData["ActualCorrected"] as string;
     var recurringMessage = ViewData["RecurringActualMessage"] as string;
+    var billingCadenceChanged = ViewData["BillingCadenceChanged"] as string;
     var recurringSchedules = ViewData["RecurringSchedules"] as IReadOnlyList<RecurringActualSchedule> ?? [];
     var recurringToday = ViewData["RecurringToday"] as DateOnly? ?? DateOnly.FromDateTime(DateTime.Today);
     var recurringFiscal = ViewData["RecurringFiscalDates"] is ValueTuple<DateOnly, DateOnly> fiscal
@@ -71,6 +72,10 @@
 @if (actualSaved)
 {
     <div class="card lf-alert lf-alert-success" role="status">Actual transaction added to this budget item.</div>
+}
+@if (!string.IsNullOrWhiteSpace(billingCadenceChanged))
+{
+    <div class="card lf-alert lf-alert-success" role="status">@billingCadenceChanged</div>
 }
 @if (!string.IsNullOrWhiteSpace(actualCorrected))
 {
@@ -187,9 +192,30 @@
                     <div><span>Purchase Date</span><strong>@(item.EstimatedPurchaseDate?.ToString("MMM d, yyyy") ?? "—")</strong></div>
                     <div><span>Renewal Date</span><strong>@(item.RenewalDate?.ToString("MMM d, yyyy") ?? "—")</strong></div>
                     <div><span>Frequency</span><strong>@(frequency ?? "—")</strong></div>
+                    <div><span>Billing cadence</span><strong>@item.BillingCadence</strong></div>
                     <div><span>Finance Type</span><strong>@(financeType ?? "—")</strong></div>
                     <div><span>Internal Category</span><strong>@(category ?? "—")</strong></div>
                     <div><span>Budget Version</span><strong>@item.BudgetVersionName</strong></div>
+                </div>
+                <div class="lf-spending-cadence">
+                    <h3>Billing cadence for spending comparisons</h3>
+                    <p class="muted">This is separate from the item's Frequency/renewal setting. It changes only how year-to-date expected spending is compared with posted actuals—not the approved budget or actual transactions.</p>
+                    @if (canEditBranding && !item.VersionLocked &&
+                        item.Status is not (BudgetItemStatus.Archived or BudgetItemStatus.Cancelled))
+                    {
+                        <form method="post" action="/budget/items/@item.Id/billing-cadence" class="lf-spending-cadence-form">
+                            @Html.AntiForgeryToken()
+                            <label for="billingCadence-@item.Id">Billing cadence</label>
+                            <select id="billingCadence-@item.Id" name="billingCadence">
+                                <option value="Automatic" selected="@(item.BillingCadence == BudgetBillingCadence.Automatic)">Automatic (detect 3 consecutive billed months)</option>
+                                <option value="Monthly" selected="@(item.BillingCadence == BudgetBillingCadence.Monthly)">Monthly (annual budget ÷ 12)</option>
+                                <option value="Quarterly" selected="@(item.BillingCadence == BudgetBillingCadence.Quarterly)">Quarterly (annual budget ÷ 4)</option>
+                                <option value="OneTime" selected="@(item.BillingCadence == BudgetBillingCadence.OneTime)">One-time / annual lump-sum</option>
+                            </select>
+                            <button type="submit">Save cadence</button>
+                        </form>
+                    }
+                    <p class="muted">For monthly charges, the budgeted amount for each billing month is annual budget ÷ 12. Only months with recorded net-positive actuals count as billed; an unbilled November isn't compared yet. For undated one-time purchases with no actual, no spending is assumed due.</p>
                 </div>
             </div>
             <div>

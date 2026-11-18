@@ -70,6 +70,7 @@
     var expectedDatedToDate = filteredItems.Sum(x => x.ExpectedDatedPurchaseToDate);
     var expectedUndatedSpentToDate = filteredItems.Sum(x => x.ExpectedUndatedSpentToDate);
     var expectedUndatedPacedToDate = filteredItems.Sum(x => x.ExpectedUndatedPacedToDate);
+    var expectedInstallmentsToDate = filteredItems.Sum(x => x.ExpectedInstallmentsToDate);
     // Positive = below the expected spending pace; negative = overspent.
     var currentOverUnder = expectedToDate - displayedActual;
     var overUnderDisplay = currentOverUnder < 0m
@@ -239,13 +240,14 @@
                         <dl class="lf-budget-variance-breakdown">
                             <div><dt>Recurring bills scheduled through today</dt><dd>@expectedRecurringToDate.ToString("C2")</dd></div>
                             <div><dt>One-time items with purchase dates reached</dt><dd>@expectedDatedToDate.ToString("C2")</dd></div>
-                            <div><dt>Undated items with spending or marked purchased</dt><dd>@expectedUndatedSpentToDate.ToString("C2")</dd></div>
-                            <div><dt>Remaining undated items (fiscal-year pacing estimate)</dt><dd>@expectedUndatedPacedToDate.ToString("C2")</dd></div>
+                            <div><dt>Monthly/quarterly billed periods</dt><dd>@expectedInstallmentsToDate.ToString("C2")</dd></div>
+                            <div><dt>Undated one-time items with spending or marked purchased</dt><dd>@expectedUndatedSpentToDate.ToString("C2")</dd></div>
+                            <div><dt>Unscheduled one-time items (not assumed due)</dt><dd>@expectedUndatedPacedToDate.ToString("C2")</dd></div>
                             <div><dt>Expected spending to date</dt><dd><strong>@expectedToDate.ToString("C2")</strong></dd></div>
                             <div><dt>Actual spending to date</dt><dd><strong>@displayedActual.ToString("C2")</strong></dd></div>
                             <div><dt>Over/Under (positive = under, negative = over)</dt><dd><strong>@overUnderDisplay</strong></dd></div>
                         </dl>
-                        <p class="muted">Undated items with actual spending or marked Purchased count their current budget as expected. Other undated items are estimated evenly across the selected fiscal year. These are pacing assumptions, not payment commitments. Add purchase dates or recurring schedules for a more accurate comparison. Totals respect the filters above and include all matching budget items, not only the current table page.</p>
+                        <p class="muted">Monthly and quarterly billing uses annual budget ÷ 12 or ÷ 4, multiplied by distinct posted billing periods. Automatic detection requires at least three consecutive billed months. Undated one-time items with no recorded spend are not prorated. Add purchase dates, set Billing cadence, or configure recurring actual schedules for a more accurate comparison. Totals respect the filters above and include all matching budget items, not only the current table page.</p>
                     </div>
                 </details>
 
@@ -495,6 +497,9 @@
                     <div><span>Approved</span><strong>@(selectedItem.ApprovedTotal?.ToString("C2") ?? "$0.00")</strong></div>
                     <div><span>Revised</span><strong>@(selectedItem.RevisedTotal?.ToString("C2") ?? selectedItem.ApprovedTotal?.ToString("C2") ?? selectedItem.PlannedTotal.ToString("C2"))</strong></div>
                     <div><span>Current Actual</span><strong>@selectedItem.Actual.ToString("C2")</strong></div>
+                    <div><span>Billing cadence</span><strong>@selectedItem.BillingCadence @(selectedItem.BillingCadence == BudgetBillingCadence.Automatic ? $"→ {selectedItem.EffectiveBillingCadence}" : "")</strong></div>
+                    <div><span>Billed periods</span><strong>@selectedItem.BilledPeriods × @selectedItem.BudgetPerBillingPeriod.ToString("C2")</strong></div>
+                    <div><span>Expected billing installments</span><strong>@selectedItem.ExpectedInstallmentsToDate.ToString("C2")</strong></div>
                     <div><span>Full-year Forecast</span><strong>@selectedItem.Forecast.ToString("C2")</strong></div>
                     <div><span>Expected to Date</span><strong>@selectedItem.ExpectedToDate.ToString("C2")</strong></div>
                     <div><span>Current Over/Under</span><strong>@(selectedItem.ExpectedToDate - selectedItem.Actual < 0m ? "-" : selectedItem.ExpectedToDate - selectedItem.Actual > 0m ? "+" : "")@Math.Abs(selectedItem.ExpectedToDate - selectedItem.Actual).ToString("C2")</strong></div>

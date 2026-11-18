@@ -67,7 +67,11 @@ public sealed class ExportsController(
             "Additional PO Commitments Beyond Recurring",
             "Published Forecast Scenario Total", "Effective Forecast Floor",
             "Additional Expected From Forecast Floor",
-            "Recurring Schedules (Description | Monthly Amount | Billing Day | Dates | Status)"
+            "Recurring Schedules (Description | Monthly Amount | Billing Day | Dates | Status)",
+            "Billing Cadence Setting", "Effective Billing Cadence",
+            "Recorded Billing Periods", "Per-Period Budget",
+            "Expected Billing Installments To Date",
+            "Remaining Year Billing Allowance", "Billing Cadence Basis"
         };
 
         object?[] ItemRow(BudgetItemSummary x) =>
@@ -91,7 +95,11 @@ public sealed class ExportsController(
             x.UnpostedRecurring, x.OutstandingCommitments,
             x.AdditionalUncoveredCommitments, x.PublishedScenarioTotal,
             x.ForecastFloor, x.AdditionalExpectedFromForecastFloor,
-            x.RecurringScheduleDetails
+            x.RecurringScheduleDetails,
+            x.BillingCadence.ToString(), x.EffectiveBillingCadence.ToString(),
+            x.BilledPeriods, x.BudgetPerBillingPeriod,
+            x.ExpectedInstallmentsToDate, x.RemainingInstallmentAllowance,
+            x.BillingCadenceBasis
         ];
 
         // All numeric totals use the exact same filtered items as the Budget KPIs.
@@ -107,7 +115,8 @@ public sealed class ExportsController(
         foreach (var index in new[]
         {
             7, 8, 9, 27, 28, 29, 30, 31, 32, 33,
-            34, 35, 36, 37, 39, 40, 41, 42, 43, 44
+            34, 35, 36, 37, 39, 40, 41, 42, 43, 44,
+            49, 50, 51
         })
         {
             totals[index] = itemRows.Sum(row =>

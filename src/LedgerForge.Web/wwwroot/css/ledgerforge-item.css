@@ -354,3 +354,27 @@ button.danger:hover,
   .lf-item-hero-actions > form { flex: 1 1 150px; }
   .lf-item-hero-actions > form > .button { width: 100%; }
 }
+
+/* Per-item billing cadence settings remain independent of renewal frequency. */
+.lf-spending-cadence {
+  margin-top: 1rem;
+  padding: .8rem;
+  background: var(--lf-surface-2);
+  border: 1px solid var(--lf-border);
+  border-radius: var(--lf-radius);
+}
+.lf-spending-cadence h3 { margin: 0 0 .35rem; font-size: .84rem; }
+.lf-spending-cadence .muted { margin: .45rem 0; font-size: .72rem; line-height: 1.5; }
+.lf-spending-cadence-form {
+  margin: .65rem 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: .6rem;
+}
+.lf-spending-cadence-form label { flex-basis: 100%; font-size: .72rem; font-weight: 650; }
+.lf-spending-cadence-form select { flex: 1 1 250px; width: auto; min-width: 0; }
+.lf-spending-cadence-form button { flex: 0 0 auto; white-space: nowrap; }
+@media(max-width: 620px) {
+  .lf-spending-cadence-form button { flex: 1 1 100%; }
+}
