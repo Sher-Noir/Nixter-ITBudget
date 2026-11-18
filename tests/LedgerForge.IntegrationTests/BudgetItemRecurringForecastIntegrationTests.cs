@@ -8,6 +8,7 @@ using Xunit;
 
 namespace LedgerForge.IntegrationTests;
 
+[Collection("RecurringActualPosting")]
 public sealed class BudgetItemRecurringForecastIntegrationTests
 {
     [Fact]
@@ -32,7 +33,7 @@ public sealed class BudgetItemRecurringForecastIntegrationTests
         await db.SaveChangesAsync();
 
         var recurring = new RecurringActualService(db);
-        await recurring.CreateAsync(item.Id, "HYCU", 1310.40m, true, 31,
+        var recurringId = await recurring.CreateAsync(item.Id, "HYCU", 1310.40m, true, 31,
             new DateOnly(2039, 1, 1), new DateOnly(2039, 3, 31),
             "HYCU-MONTHLY", null, null, null);
 
@@ -45,7 +46,7 @@ public sealed class BudgetItemRecurringForecastIntegrationTests
         Assert.Equal(3931.20m, before.ForecastDetails.UnpostedRecurring);
         Assert.Equal(3931.20m, before.Forecast);
 
-        Assert.Equal(1, await recurring.PostDueAsync(new DateOnly(2039, 2, 1)));
+        Assert.Equal(1, await recurring.PostDueForScheduleAsync(recurringId, new DateOnly(2039, 2, 1)));
         var after = await workspaceService.GetAsync(item.Id);
         Assert.NotNull(after);
         Assert.Equal(1310.40m, after.Actual);

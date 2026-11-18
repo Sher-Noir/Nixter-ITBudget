@@ -332,11 +332,11 @@ public sealed class BudgetController(
         try
         {
             _ = RequireActor();
-            await recurringActualService.CreateAsync(id, description, amount, lastDayOfMonth,
+            var newScheduleId = await recurringActualService.CreateAsync(id, description, amount, lastDayOfMonth,
                 dayOfMonth, startDate, endDate, sourceReference, financeAccountId,
                 departmentId, locationId, cancellationToken);
             // Catch up passed billing dates immediately. Future dates never become actuals.
-            await recurringActualService.PostDueAsync(RecurringActualService.EasternToday(), cancellationToken);
+            await recurringActualService.PostDueForScheduleAsync(newScheduleId, RecurringActualService.EasternToday(), cancellationToken);
             TempData["RecurringActualMessage"] = "Recurring schedule saved. Eligible past billing dates were posted; future dates are not actuals.";
         }
         catch (KeyNotFoundException) { return NotFound(); }

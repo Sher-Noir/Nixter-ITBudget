@@ -7,6 +7,7 @@ using Xunit;
 
 namespace LedgerForge.IntegrationTests;
 
+[Collection("RecurringActualPosting")]
 public sealed class RecurringActualPostingIntegrationTests
 {
     [Fact]
@@ -34,11 +35,11 @@ public sealed class RecurringActualPostingIntegrationTests
             new DateOnly(2039, 1, 1), new DateOnly(2039, 3, 31), "HYCU-MONTHLY",
             null, null, null);
 
-        Assert.Equal(0, await service.PostDueAsync(new DateOnly(2039, 1, 31)));
+        Assert.Equal(0, await service.PostDueForScheduleAsync(ruleId, new DateOnly(2039, 1, 31)));
         Assert.Empty(await db.ActualTransactions.Where(x => x.FiscalYearId == fy.Id).ToListAsync());
 
-        Assert.Equal(1, await service.PostDueAsync(new DateOnly(2039, 2, 1)));
-        Assert.Equal(0, await service.PostDueAsync(new DateOnly(2039, 2, 1)));
+        Assert.Equal(1, await service.PostDueForScheduleAsync(ruleId, new DateOnly(2039, 2, 1)));
+        Assert.Equal(0, await service.PostDueForScheduleAsync(ruleId, new DateOnly(2039, 2, 1)));
         Assert.Equal(1, await db.RecurringActualOccurrences.CountAsync(x => x.ScheduleId == ruleId));
         var jan = await db.ActualTransactions.SingleAsync(x => x.FiscalYearId == fy.Id);
         Assert.Equal(new DateOnly(2039, 1, 31), jan.TransactionDate);
@@ -47,8 +48,8 @@ public sealed class RecurringActualPostingIntegrationTests
         await service.UpdateAsync(item.Id, ruleId, "HYCU", 1410.40m, true, 31,
             new DateOnly(2039, 1, 1), new DateOnly(2039, 3, 31),
             "HYCU-MONTHLY", null, null, null);
-        Assert.Equal(0, await service.PostDueAsync(new DateOnly(2039, 2, 28)));
-        Assert.Equal(1, await service.PostDueAsync(new DateOnly(2039, 3, 1)));
+        Assert.Equal(0, await service.PostDueForScheduleAsync(ruleId, new DateOnly(2039, 2, 28)));
+        Assert.Equal(1, await service.PostDueForScheduleAsync(ruleId, new DateOnly(2039, 3, 1)));
         Assert.Equal(2, await db.RecurringActualOccurrences.CountAsync(x => x.ScheduleId == ruleId));
         var feb = await db.ActualTransactions.SingleAsync(x => x.FiscalYearId == fy.Id && x.TransactionDate == new DateOnly(2039, 2, 28));
         Assert.Equal(1410.40m, feb.Amount);
@@ -56,10 +57,10 @@ public sealed class RecurringActualPostingIntegrationTests
         Assert.Equal(2720.80m, await db.ActualTransactions.Where(x => x.FiscalYearId == fy.Id).SumAsync(x => x.Amount));
 
         await service.SetActiveAsync(item.Id, ruleId, false);
-        Assert.Equal(0, await service.PostDueAsync(new DateOnly(2039, 4, 1)));
+        Assert.Equal(0, await service.PostDueForScheduleAsync(ruleId, new DateOnly(2039, 4, 1)));
         await service.SetActiveAsync(item.Id, ruleId, true);
-        Assert.Equal(1, await service.PostDueAsync(new DateOnly(2039, 4, 1)));
-        Assert.Equal(0, await service.PostDueAsync(new DateOnly(2039, 4, 1)));
+        Assert.Equal(1, await service.PostDueForScheduleAsync(ruleId, new DateOnly(2039, 4, 1)));
+        Assert.Equal(0, await service.PostDueForScheduleAsync(ruleId, new DateOnly(2039, 4, 1)));
         Assert.Equal(3, await db.RecurringActualOccurrences.CountAsync(x => x.ScheduleId == ruleId));
 
         // Correct a posted month: only that month's amount changes in the ledger net.
@@ -97,7 +98,7 @@ public sealed class RecurringActualPostingIntegrationTests
             fy.StartDate, fy.EndDate, null, null, null, null);
         fy.Close(DateTimeOffset.UtcNow);
         await db.SaveChangesAsync();
-        Assert.Equal(0, await service.PostDueAsync(new DateOnly(2041, 1, 1)));
+        Assert.Equal(0, await service.PostDueForScheduleAsync(id, new DateOnly(2041, 1, 1)));
         Assert.Equal(0, await db.RecurringActualOccurrences.CountAsync(x => x.ScheduleId == id));
     }
 }

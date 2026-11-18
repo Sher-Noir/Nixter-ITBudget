@@ -75,10 +75,16 @@ public sealed class RecurringActualService(LedgerForgeDbContext db)
     /// At startup and hourly, backfills only already-passed bill dates.
     /// Each billing month is claimed once, even after schedule edits or restarts.
     /// </summary>
-    public async Task<int> PostDueAsync(DateOnly localToday, CancellationToken ct = default)
+    public Task<int> PostDueForScheduleAsync(
+        Guid scheduleId, DateOnly localToday, CancellationToken ct = default) =>
+        PostDueAsync(localToday, ct, scheduleId);
+
+    public async Task<int> PostDueAsync(
+        DateOnly localToday, CancellationToken ct = default, Guid? scheduleFilterId = null)
     {
         var ids = await db.RecurringActualSchedules.AsNoTracking()
-            .Where(x => x.IsActive && x.StartDate < localToday)
+            .Where(x => x.IsActive && x.StartDate < localToday &&
+                (scheduleFilterId == null || x.Id == scheduleFilterId.Value))
             .OrderBy(x => x.Id)
             .Select(x => x.Id)
             .ToListAsync(ct);
