@@ -1,4 +1,6 @@
 using LedgerForge.Infrastructure.Reporting;
+using LedgerForge.Infrastructure.Budgeting;
+using LedgerForge.Infrastructure.Actuals;
 using LedgerForge.Web.Exporting;
 using LedgerForge.Web.Security;
 using Microsoft.AspNetCore.Authorization;
@@ -10,6 +12,7 @@ namespace LedgerForge.Web.Controllers;
 [Route("exports")]
 public sealed class ExportsController(
     ReportingService reportingService,
+    BudgetPlanningService planningService,
     FinanceExportService financeExportService,
     IConfiguration configuration) : Controller
 {
@@ -17,21 +20,108 @@ public sealed class ExportsController(
     public IActionResult Index() => RedirectToAction("Index", "Reports");
 
     [HttpGet("budget.csv")]
-    public async Task<IActionResult> Budget(Guid fiscalYearId, CancellationToken cancellationToken)
+    public async Task<IActionResult> Budget(
+        Guid fiscalYearId, Guid? versionId,
+        string? section, string? category, string? location, string? vendor,
+        string? need, string? status, string? q,
+        CancellationToken cancellationToken)
     {
-        try
+        if (fiscalYearId == Guid.Empty) return NotFound();
+        var snapshot = await planningService.GetSnapshotAsync(
+            fiscalYearId, versionId, cancellationToken);
+
+        // Never silently export a different fiscal year or version than requested.
+        if (snapshot.SelectedFiscalYearId != fiscalYearId ||
+            (versionId.HasValue && snapshot.SelectedVersionId != versionId))
+            return NotFound();
+
+        var fiscal = snapshot.FiscalYears.Single(x => x.Id == fiscalYearId);
+        var version = snapshot.Versions.FirstOrDefault(x => x.Id == snapshot.SelectedVersionId);
+        var items = BudgetItemFilters.Apply(snapshot.Items,
+            new BudgetItemFilterOptions(section, category, location, vendor, need, status, q));
+        var asOf = RecurringActualService.EasternToday();
+
+        var headers = new[]
         {
-            var rows = await reportingService.GetBudgetExportAsync(fiscalYearId, cancellationToken);
-            var bytes = CsvExportWriter.Write(
-                ["Fiscal Year", "Budget Version", "Item Number", "Description", "Status", "Quantity", "Unit Cost", "Planned Total", "Approved Total", "Revised Total", "Estimated Purchase Date", "Renewal Date"],
-                rows.Select(x => (IReadOnlyList<object?>)new object?[]
-                {
-                    x.FiscalYear, x.Version, x.ItemNumber, x.Description, x.Status, x.Quantity, x.UnitCost,
-                    x.PlannedTotal, x.ApprovedTotal, x.RevisedTotal, x.EstimatedPurchaseDate, x.RenewalDate
-                }));
-            return File(bytes, "text/csv; charset=utf-8", "ledgerforge-budget.csv");
+            // Preserve the original twelve budget-export columns.
+            "Fiscal Year", "Budget Version", "Item Number", "Description", "Status",
+            "Quantity", "Unit Cost", "Planned Total", "Approved Total", "Revised Total",
+            "Estimated Purchase Date", "Renewal Date",
+            // Identification, grouping and source assumptions.
+            "Budget Item Id", "Vendor", "Budget Section", "Internal Category",
+            "Finance Type", "Department", "Location", "Need Level", "Frequency",
+            "Purchase Type", "Reason Purpose", "Notes",
+            "As Of Date (Eastern)", "Fiscal Year Start", "Fiscal Year End",
+            // Dashboard reconciliation: signed numeric over/under.
+            "Current Budget", "Current Actual", "Current Forecasted (Full Year)",
+            "Expected To Date", "Current Over Under (Expected Minus Actual)",
+            "Current Budget Minus Actual", "Forecast Minus Current Budget",
+            // Audit of where Expected To Date came from.
+            "Expected Recurring To Date",
+            "Expected Dated Purchases To Date",
+            "Expected Undated Spent Or Purchased To Date",
+            "Expected Undated Fiscal Pacing To Date",
+            "Expected To Date Basis",
+            // Annual forecast assumptions.
+            "Remaining Unposted Recurring", "Outstanding PO Commitments",
+            "Additional PO Commitments Beyond Recurring",
+            "Published Forecast Scenario Total", "Effective Forecast Floor",
+            "Additional Expected From Forecast Floor",
+            "Recurring Schedules (Description | Monthly Amount | Billing Day | Dates | Status)"
+        };
+
+        object?[] ItemRow(BudgetItemSummary x) =>
+        [
+            fiscal.DisplayName, version?.Name, x.ItemNumber, x.Description, x.Status.ToString(),
+            x.Quantity, x.UnitCost, x.PlannedTotal, x.ApprovedTotal, x.RevisedTotal,
+            x.EstimatedPurchaseDate, x.RenewalDate,
+            x.Id, x.VendorName, x.BudgetSectionName, x.InternalCategoryName,
+            x.FinanceTypeName, x.DepartmentName, x.LocationName, x.NeedLevelName,
+            x.FrequencyName, x.PurchaseType.ToString(), x.ReasonPurpose, x.Notes,
+            asOf, fiscal.StartDate, fiscal.EndDate,
+            x.RevisedTotal ?? x.ApprovedTotal ?? x.PlannedTotal,
+            x.Actual, x.Forecast, x.ExpectedToDate, x.ExpectedToDate - x.Actual,
+            (x.RevisedTotal ?? x.ApprovedTotal ?? x.PlannedTotal) - x.Actual,
+            x.Forecast - (x.RevisedTotal ?? x.ApprovedTotal ?? x.PlannedTotal),
+            x.ExpectedRecurringToDate,
+            x.ExpectedDatedPurchaseToDate,
+            x.ExpectedUndatedSpentToDate,
+            x.ExpectedUndatedPacedToDate,
+            x.ExpectedToDateBasis,
+            x.UnpostedRecurring, x.OutstandingCommitments,
+            x.AdditionalUncoveredCommitments, x.PublishedScenarioTotal,
+            x.ForecastFloor, x.AdditionalExpectedFromForecastFloor,
+            x.RecurringScheduleDetails
+        ];
+
+        // All numeric totals use the exact same filtered items as the Budget KPIs.
+        // A total row allows Excel users to reconcile with the dashboard instantly.
+        var totals = new object?[headers.Length];
+        totals[0] = fiscal.DisplayName;
+        totals[1] = version?.Name;
+        totals[2] = $"TOTAL ({items.Length} filtered items)";
+        totals[24] = asOf;
+        totals[25] = fiscal.StartDate;
+        totals[26] = fiscal.EndDate;
+        var itemRows = items.Select(ItemRow).ToArray();
+        foreach (var index in new[]
+        {
+            7, 8, 9, 27, 28, 29, 30, 31, 32, 33,
+            34, 35, 36, 37, 39, 40, 41, 42, 43, 44
+        })
+        {
+            totals[index] = itemRows.Sum(row =>
+                row[index] is decimal number ? number : 0m);
         }
-        catch (KeyNotFoundException) { return NotFound(); }
+        totals[38] = "TOTAL: Expected To Date minus Current Actual (negative = over expected pace)";
+        // Published scenario is optional per item; retain the raw sum for reconciliation.
+        var csvRows = itemRows
+            .Select(row => (IReadOnlyList<object?>)row)
+            .Append(totals)
+            .ToArray();
+        var bytes = CsvExportWriter.Write(headers, csvRows);
+        return File(bytes, "text/csv; charset=utf-8",
+            "ledgerforge-budget-detailed-" + asOf.ToString("yyyyMMdd") + ".csv");
     }
 
     [HttpGet("actuals.csv")]

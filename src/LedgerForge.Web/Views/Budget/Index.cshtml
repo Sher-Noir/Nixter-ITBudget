@@ -17,18 +17,9 @@
     var statusFilter = Context.Request.Query["status"].ToString();
     var searchFilter = Context.Request.Query["q"].ToString();
 
-    var filteredItems = snapshot.Items
-        .Where(x => string.IsNullOrWhiteSpace(sectionFilter) || string.Equals(x.BudgetSectionName, sectionFilter, StringComparison.OrdinalIgnoreCase))
-        .Where(x => string.IsNullOrWhiteSpace(categoryFilter) || string.Equals(x.InternalCategoryName, categoryFilter, StringComparison.OrdinalIgnoreCase))
-        .Where(x => string.IsNullOrWhiteSpace(locationFilter) || string.Equals(x.LocationName, locationFilter, StringComparison.OrdinalIgnoreCase))
-        .Where(x => string.IsNullOrWhiteSpace(vendorFilter) || string.Equals(x.VendorName, vendorFilter, StringComparison.OrdinalIgnoreCase))
-        .Where(x => string.IsNullOrWhiteSpace(needFilter) || string.Equals(x.NeedLevelName, needFilter, StringComparison.OrdinalIgnoreCase))
-        .Where(x => string.IsNullOrWhiteSpace(statusFilter) || string.Equals(x.Status.ToString(), statusFilter, StringComparison.OrdinalIgnoreCase))
-        .Where(x => string.IsNullOrWhiteSpace(searchFilter) ||
-            x.ItemNumber.Contains(searchFilter, StringComparison.OrdinalIgnoreCase) ||
-            x.Description.Contains(searchFilter, StringComparison.OrdinalIgnoreCase) ||
-            (x.ReasonPurpose?.Contains(searchFilter, StringComparison.OrdinalIgnoreCase) ?? false))
-        .ToArray();
+    var filteredItems = BudgetItemFilters.Apply(snapshot.Items,
+        new BudgetItemFilterOptions(sectionFilter, categoryFilter, locationFilter,
+            vendorFilter, needFilter, statusFilter, searchFilter));
 
     var requestedPage = int.TryParse(Context.Request.Query["page"].ToString(), out var parsedPage) ? parsedPage : 1;
     var requestedSize = int.TryParse(Context.Request.Query["pageSize"].ToString(), out var parsedSize) ? parsedSize : BudgetItemTable.DefaultPageSize;
@@ -202,7 +193,12 @@
                     }
                     @if (snapshot.SelectedFiscalYearId is not null)
                     {
-                        <a class="button" href="/exports/budget.csv?fiscalYearId=@snapshot.SelectedFiscalYearId"><span aria-hidden="true">⇩</span> Export</a>
+                        <a class="button" href="@Url.Action("Budget", "Exports", new {
+                            fiscalYearId = snapshot.SelectedFiscalYearId,
+                            versionId = snapshot.SelectedVersionId,
+                            section = sectionFilter, category = categoryFilter, location = locationFilter,
+                            vendor = vendorFilter, need = needFilter, status = statusFilter, q = searchFilter
+                        })" title="Export all matching budget items with actual, forecast and Over/Under calculations"><span aria-hidden="true">⇩</span> Export</a>
                     }
                     <a class="button" href="/reports">Reports</a>
                 </div>

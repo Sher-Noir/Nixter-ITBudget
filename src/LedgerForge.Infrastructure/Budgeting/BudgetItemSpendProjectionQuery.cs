@@ -12,7 +12,16 @@ public sealed record BudgetItemSpendProjection(
     decimal ExpectedRecurringToDate,
     decimal ExpectedDatedPurchaseToDate,
     decimal ExpectedUndatedSpentToDate,
-    decimal ExpectedUndatedPacedToDate);
+    decimal ExpectedUndatedPacedToDate,
+    decimal CurrentBudget,
+    decimal UnpostedRecurring,
+    decimal OutstandingCommitments,
+    decimal AdditionalUncoveredCommitments,
+    decimal? PublishedScenarioTotal,
+    decimal? ForecastFloor,
+    decimal AdditionalExpectedFromForecastFloor,
+    string ExpectedToDateBasis,
+    string RecurringScheduleDetails);
 public sealed record BudgetItemSpendInput(Guid Id, DateOnly? PurchaseDate, decimal CurrentBudget, BudgetItemStatus Status);
 
 /// <summary>Batch-computes consistent item-level annual forecast and expected spend to date.</summary>
@@ -138,12 +147,32 @@ public static class BudgetItemSpendProjectionQuery
                 : x.Status is BudgetItemStatus.Cancelled or BudgetItemStatus.Archived
                     ? publishedScenario
                     : Math.Max(publishedScenario ?? 0m, x.CurrentBudget);
-            var annual = BudgetItemForecastCalculator.Calculate(
-                actual, commitments, recurringByItem.GetValueOrDefault(x.Id),
-                scenarioOrPlan).Total;
+            var remainingRecurring = recurringByItem.GetValueOrDefault(x.Id);
+            var breakdown = BudgetItemForecastCalculator.Calculate(
+                actual, commitments, remainingRecurring, scenarioOrPlan);
+            var itemSchedules = schedules.Where(s => s.BudgetItemId == x.Id).ToArray();
+            var basis = itemSchedules.Length > 0
+                ? "Recurring schedule (one-time estimate excluded)"
+                : x.Status is BudgetItemStatus.Cancelled or BudgetItemStatus.Archived
+                    ? "Excluded (cancelled or archived)"
+                    : x.PurchaseDate is DateOnly
+                        ? "Estimated purchase date (full budget after date)"
+                        : x.Status == BudgetItemStatus.Purchased || actual > 0m
+                            ? "Undated; purchased or actual posted (full current budget)"
+                            : "Undated; estimated evenly across fiscal-year days";
+            var scheduleDetails = string.Join("; ", itemSchedules.Select(s =>
+                s.Description + " | " + s.Amount.ToString("0.####", System.Globalization.CultureInfo.InvariantCulture) +
+                " | " + (s.LastDayOfMonth ? "Last calendar day" : "Day " + s.DayOfMonth) +
+                " | " + s.StartDate.ToString("yyyy-MM-dd") +
+                " to " + s.EndDate.ToString("yyyy-MM-dd") +
+                " | " + (s.IsActive ? "Active" : "Paused")));
             return new BudgetItemSpendProjection(
-                annual, recurringExpected + oneTimeExpected,
-                recurringExpected, datedPurchase, undatedSpent, undatedPaced);
+                breakdown.Total, recurringExpected + oneTimeExpected,
+                recurringExpected, datedPurchase, undatedSpent, undatedPaced,
+                x.CurrentBudget, breakdown.UnpostedRecurring,
+                breakdown.OutstandingCommitments, breakdown.AdditionalUncoveredCommitments,
+                publishedScenario, scenarioOrPlan, breakdown.OtherExpectedFromPublishedScenario,
+                basis, scheduleDetails);
         });
     }
 

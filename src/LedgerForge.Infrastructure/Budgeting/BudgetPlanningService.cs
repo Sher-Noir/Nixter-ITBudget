@@ -44,7 +44,15 @@ public sealed record BudgetItemSummary(
     decimal ExpectedRecurringToDate = 0m,
     decimal ExpectedDatedPurchaseToDate = 0m,
     decimal ExpectedUndatedSpentToDate = 0m,
-    decimal ExpectedUndatedPacedToDate = 0m);
+    decimal ExpectedUndatedPacedToDate = 0m,
+    decimal UnpostedRecurring = 0m,
+    decimal OutstandingCommitments = 0m,
+    decimal AdditionalUncoveredCommitments = 0m,
+    decimal? PublishedScenarioTotal = null,
+    decimal? ForecastFloor = null,
+    decimal AdditionalExpectedFromForecastFloor = 0m,
+    string ExpectedToDateBasis = "",
+    string RecurringScheduleDetails = "");
 
 public sealed record BudgetPlanningSnapshot(
     IReadOnlyList<FiscalYearSummary> FiscalYears,
@@ -244,7 +252,15 @@ public sealed class BudgetPlanningService(
             projections.GetValueOrDefault(x.Id)?.ExpectedRecurringToDate ?? 0m,
             projections.GetValueOrDefault(x.Id)?.ExpectedDatedPurchaseToDate ?? 0m,
             projections.GetValueOrDefault(x.Id)?.ExpectedUndatedSpentToDate ?? 0m,
-            projections.GetValueOrDefault(x.Id)?.ExpectedUndatedPacedToDate ?? 0m))
+            projections.GetValueOrDefault(x.Id)?.ExpectedUndatedPacedToDate ?? 0m,
+            projections.GetValueOrDefault(x.Id)?.UnpostedRecurring ?? 0m,
+            projections.GetValueOrDefault(x.Id)?.OutstandingCommitments ?? 0m,
+            projections.GetValueOrDefault(x.Id)?.AdditionalUncoveredCommitments ?? 0m,
+            projections.GetValueOrDefault(x.Id)?.PublishedScenarioTotal,
+            projections.GetValueOrDefault(x.Id)?.ForecastFloor,
+            projections.GetValueOrDefault(x.Id)?.AdditionalExpectedFromForecastFloor ?? 0m,
+            projections.GetValueOrDefault(x.Id)?.ExpectedToDateBasis ?? "",
+            projections.GetValueOrDefault(x.Id)?.RecurringScheduleDetails ?? ""))
             .ToArray();
 
         return new(
