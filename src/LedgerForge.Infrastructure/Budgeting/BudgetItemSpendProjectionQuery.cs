@@ -6,7 +6,13 @@ using Microsoft.EntityFrameworkCore;
 
 namespace LedgerForge.Infrastructure.Budgeting;
 
-public sealed record BudgetItemSpendProjection(decimal FullYearForecast, decimal ExpectedToDate);
+public sealed record BudgetItemSpendProjection(
+    decimal FullYearForecast,
+    decimal ExpectedToDate,
+    decimal ExpectedRecurringToDate,
+    decimal ExpectedDatedPurchaseToDate,
+    decimal ExpectedUndatedSpentToDate,
+    decimal ExpectedUndatedPacedToDate);
 public sealed record BudgetItemSpendInput(Guid Id, DateOnly? PurchaseDate, decimal CurrentBudget, BudgetItemStatus Status);
 
 /// <summary>Batch-computes consistent item-level annual forecast and expected spend to date.</summary>
@@ -18,6 +24,10 @@ public static class BudgetItemSpendProjectionQuery
         IReadOnlyDictionary<Guid, decimal> actualTotals, CancellationToken ct = default)
     {
         if (inputs.Count == 0) return new Dictionary<Guid, BudgetItemSpendProjection>();
+        var fiscalYear = await db.FiscalYears.AsNoTracking()
+            .Where(x => x.Id == fiscalYearId)
+            .Select(x => new { x.StartDate, x.EndDate })
+            .SingleAsync(ct);
         var ids = inputs.Select(x => x.Id).Distinct().ToArray();
         var poRows = await (
             from l in db.PurchaseOrderLines.AsNoTracking()
@@ -96,22 +106,44 @@ public static class BudgetItemSpendProjectionQuery
 
         return inputs.ToDictionary(x => x.Id, x =>
         {
-            var expected = expectedByItem.GetValueOrDefault(x.Id);
-            // One-time items with a dated purchase are expected after that date.
-            // Without a purchase date, no reliable expected-to-date point exists.
-            // Never double count a budget item that already has recurring schedules.
-            if (!itemsWithSchedules.Contains(x.Id) && x.PurchaseDate is DateOnly purchaseDate
-                && purchaseDate < today && x.Status is not BudgetItemStatus.Cancelled
-                and not BudgetItemStatus.Archived)
-                expected += x.CurrentBudget;
+            var actual = actualTotals.GetValueOrDefault(x.Id);
+            var recurringExpected = expectedByItem.GetValueOrDefault(x.Id);
+            var oneTimeExpected = itemsWithSchedules.Contains(x.Id) ? 0m :
+                BudgetSpendPacingCalculator.ExpectedOneTimeToDate(
+                    x.CurrentBudget, x.PurchaseDate, x.Status, actual,
+                    fiscalYear.StartDate, fiscalYear.EndDate, today);
+
+            var datedPurchase = x.PurchaseDate is not null ? oneTimeExpected : 0m;
+            var undatedSpent = x.PurchaseDate is null &&
+                (x.Status == BudgetItemStatus.Purchased || actual > 0m)
+                ? oneTimeExpected : 0m;
+            var undatedPaced = x.PurchaseDate is null &&
+                x.Status != BudgetItemStatus.Purchased && actual <= 0m
+                ? oneTimeExpected : 0m;
+            if (itemsWithSchedules.Contains(x.Id))
+            {
+                datedPurchase = 0m;
+                undatedSpent = 0m;
+                undatedPaced = 0m;
+            }
 
             var commitments = Math.Max(0m,
                 po.GetValueOrDefault(x.Id) - invoice.GetValueOrDefault(x.Id));
-            decimal? scenario = published.TryGetValue(x.Id, out var p) ? p : null;
+            decimal? publishedScenario = published.TryGetValue(x.Id, out var p) ? p : null;
+            // When no recurring rule exists, the current planned/approved/revised
+            // line amount is still expected full-year spend unless cancelled.
+            // Otherwise the annual forecast would omit all unspent budget lines.
+            decimal? scenarioOrPlan = itemsWithSchedules.Contains(x.Id)
+                ? publishedScenario
+                : x.Status is BudgetItemStatus.Cancelled or BudgetItemStatus.Archived
+                    ? publishedScenario
+                    : Math.Max(publishedScenario ?? 0m, x.CurrentBudget);
             var annual = BudgetItemForecastCalculator.Calculate(
-                actualTotals.GetValueOrDefault(x.Id), commitments,
-                recurringByItem.GetValueOrDefault(x.Id), scenario).Total;
-            return new BudgetItemSpendProjection(annual, expected);
+                actual, commitments, recurringByItem.GetValueOrDefault(x.Id),
+                scenarioOrPlan).Total;
+            return new BudgetItemSpendProjection(
+                annual, recurringExpected + oneTimeExpected,
+                recurringExpected, datedPurchase, undatedSpent, undatedPaced);
         });
     }
 

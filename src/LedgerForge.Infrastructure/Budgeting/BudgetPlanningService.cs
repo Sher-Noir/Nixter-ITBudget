@@ -40,7 +40,11 @@ public sealed record BudgetItemSummary(
     string? Notes = null,
     decimal Actual = 0m,
     decimal Forecast = 0m,
-    decimal ExpectedToDate = 0m);
+    decimal ExpectedToDate = 0m,
+    decimal ExpectedRecurringToDate = 0m,
+    decimal ExpectedDatedPurchaseToDate = 0m,
+    decimal ExpectedUndatedSpentToDate = 0m,
+    decimal ExpectedUndatedPacedToDate = 0m);
 
 public sealed record BudgetPlanningSnapshot(
     IReadOnlyList<FiscalYearSummary> FiscalYears,
@@ -236,7 +240,11 @@ public sealed class BudgetPlanningService(
             x.Notes,
             actualTotals.GetValueOrDefault(x.Id),
             projections.GetValueOrDefault(x.Id)?.FullYearForecast ?? 0m,
-            projections.GetValueOrDefault(x.Id)?.ExpectedToDate ?? 0m))
+            projections.GetValueOrDefault(x.Id)?.ExpectedToDate ?? 0m,
+            projections.GetValueOrDefault(x.Id)?.ExpectedRecurringToDate ?? 0m,
+            projections.GetValueOrDefault(x.Id)?.ExpectedDatedPurchaseToDate ?? 0m,
+            projections.GetValueOrDefault(x.Id)?.ExpectedUndatedSpentToDate ?? 0m,
+            projections.GetValueOrDefault(x.Id)?.ExpectedUndatedPacedToDate ?? 0m))
             .ToArray();
 
         return new(
