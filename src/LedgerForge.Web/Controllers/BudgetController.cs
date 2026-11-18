@@ -164,6 +164,7 @@ public sealed class BudgetController(
         ViewData["RecurringToday"] = RecurringActualService.EasternToday();
         ViewData["RecurringFiscalDates"] = await recurringActualService.GetFiscalDatesAsync(id, cancellationToken);
         ViewData["BillingCadenceChanged"] = TempData["BillingCadenceChanged"] as string;
+        ViewData["OverUnderExclusionChanged"] = TempData["OverUnderExclusionChanged"] as string;
 
         var configuredLimit = configuration.GetValue<long?>("Documents:MaxFileSizeBytes");
         var configuredStoragePath = configuration.GetValue<string>("Documents:StoragePath");
@@ -249,6 +250,33 @@ public sealed class BudgetController(
             TempData["BudgetItemError"] = exception.Message;
             return RedirectToAction(nameof(Item), new { id });
         }
+    }
+
+    [Authorize(Policy = AuthorizationPolicies.EditPlanningBudget)]
+    [ValidateAntiForgeryToken]
+    [HttpPost("items/{id:guid}/over-under-exclusion")]
+    public async Task<IActionResult> SetOverUnderExclusion(
+        Guid id, bool excludeFromOverUnder, string? returnUrl,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            _ = RequireActor();
+            await planningService.SetOverUnderExclusionAsync(
+                id, excludeFromOverUnder, cancellationToken);
+            TempData["OverUnderExclusionChanged"] = excludeFromOverUnder
+                ? "Excluded from Current Over/Under. Budget, Actual and Forecast remain unchanged."
+                : "Included in Current Over/Under again.";
+        }
+        catch (KeyNotFoundException) { return NotFound(); }
+        catch (Exception exception) when (exception is InvalidOperationException or ArgumentException)
+        {
+            TempData["BudgetItemError"] = exception.Message;
+        }
+
+        if (!string.IsNullOrWhiteSpace(returnUrl) && Url.IsLocalUrl(returnUrl))
+            return LocalRedirect(returnUrl);
+        return RedirectToAction(nameof(Item), new { id, section = "overview" });
     }
 
     [Authorize(Policy = AuthorizationPolicies.EditPlanningBudget)]

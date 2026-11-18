@@ -65,14 +65,21 @@
     var displayedPlanned = filteredItems.Sum(x => x.PlannedTotal);
     var displayedActual = filteredItems.Sum(x => x.Actual);
     var displayedForecast = filteredItems.Sum(x => x.Forecast);
-    var expectedToDate = filteredItems.Sum(x => x.ExpectedToDate);
-    var expectedRecurringToDate = filteredItems.Sum(x => x.ExpectedRecurringToDate);
-    var expectedDatedToDate = filteredItems.Sum(x => x.ExpectedDatedPurchaseToDate);
-    var expectedUndatedSpentToDate = filteredItems.Sum(x => x.ExpectedUndatedSpentToDate);
-    var expectedUndatedPacedToDate = filteredItems.Sum(x => x.ExpectedUndatedPacedToDate);
-    var expectedInstallmentsToDate = filteredItems.Sum(x => x.ExpectedInstallmentsToDate);
-    // Positive = below the expected spending pace; negative = overspent.
-    var currentOverUnder = expectedToDate - displayedActual;
+    var includedForVariance = filteredItems.Where(x => !x.ExcludeFromOverUnder).ToArray();
+    var excludedForVariance = filteredItems.Where(x => x.ExcludeFromOverUnder).ToArray();
+    var varianceContributions = filteredItems.Select(x =>
+        BudgetOverUnderCalculator.Calculate(x.ExpectedToDate, x.Actual, x.ExcludeFromOverUnder)).ToArray();
+    var expectedToDate = varianceContributions.Sum(x => x.ExpectedIncluded);
+    var actualForVariance = varianceContributions.Sum(x => x.ActualIncluded);
+    var excludedExpected = varianceContributions.Sum(x => x.ExpectedExcluded);
+    var excludedActual = varianceContributions.Sum(x => x.ActualExcluded);
+    var expectedRecurringToDate = includedForVariance.Sum(x => x.ExpectedRecurringToDate);
+    var expectedDatedToDate = includedForVariance.Sum(x => x.ExpectedDatedPurchaseToDate);
+    var expectedUndatedSpentToDate = includedForVariance.Sum(x => x.ExpectedUndatedSpentToDate);
+    var expectedUndatedPacedToDate = includedForVariance.Sum(x => x.ExpectedUndatedPacedToDate);
+    var expectedInstallmentsToDate = includedForVariance.Sum(x => x.ExpectedInstallmentsToDate);
+    // Positive = below expected pace. Excluded items contribute neither side.
+    var currentOverUnder = varianceContributions.Sum(x => x.Variance);
     var overUnderDisplay = currentOverUnder < 0m
         ? "-" + Math.Abs(currentOverUnder).ToString("C2")
         : currentOverUnder > 0m
@@ -228,26 +235,29 @@
                     <article class="lf-card lf-budget-kpi"><span class="lf-budget-kpi-icon green">▤</span><div><strong>@displayedPlanned.ToString("C2")</strong><span>Planned Total</span></div></article>
                     <article class="lf-card lf-budget-kpi"><span class="lf-budget-kpi-icon teal">▥</span><div><strong>@displayedActual.ToString("C2")</strong><span>Current Actual</span></div></article>
                     <article class="lf-card lf-budget-kpi"><span class="lf-budget-kpi-icon purple">⌁</span><div><strong>@displayedForecast.ToString("C2")</strong><span>Current Forecasted <small>Full fiscal-year projection</small></span></div></article>
-                    <article class="lf-card lf-budget-kpi lf-budget-over-under @(currentOverUnder < 0m ? "is-over" : currentOverUnder > 0m ? "is-under" : "is-on-target")" title="Expected spending through today: @expectedToDate.ToString("C2"). Negative means over expected spending.">
+                    <article class="lf-card lf-budget-kpi lf-budget-over-under @(currentOverUnder < 0m ? "is-over" : currentOverUnder > 0m ? "is-under" : "is-on-target")" title="Included expected: @expectedToDate.ToString("C2") less included actual: @actualForVariance.ToString("C2"). Exclusions affect only this comparison.">
                         <span class="lf-budget-kpi-icon @(currentOverUnder < 0m ? "red" : "teal")">↕</span>
-                        <div><strong>@overUnderDisplay</strong><span>Current Over/Under <small>Expected to date: @expectedToDate.ToString("C2")</small></span></div>
+                        <div><strong>@overUnderDisplay</strong><span>Current Over/Under <small>Expected to date: @expectedToDate.ToString("C2") · @excludedForVariance.Length excluded</small></span></div>
                     </article>
                 </section>
                 <details class="lf-budget-variance-details" id="budget-over-under-explanation">
                     <summary>How is Current Over/Under calculated?</summary>
                     <div class="lf-budget-variance-content">
-                        <p><strong>Expected through today − Current Actual = Current Over/Under.</strong> A negative result means actual spending is above the amount expected by today, not necessarily above the full-year budget.</p>
+                        <p><strong>Expected through today (included items) − actual spending (included items) = Current Over/Under.</strong> Negative means above the expected spending pace; positive means below. Excluded items still count in the Current Actual KPI and full-year forecast.</p>
                         <dl class="lf-budget-variance-breakdown">
                             <div><dt>Recurring bills scheduled through today</dt><dd>@expectedRecurringToDate.ToString("C2")</dd></div>
                             <div><dt>One-time items with purchase dates reached</dt><dd>@expectedDatedToDate.ToString("C2")</dd></div>
                             <div><dt>Monthly/quarterly billed periods</dt><dd>@expectedInstallmentsToDate.ToString("C2")</dd></div>
                             <div><dt>Undated one-time items with spending or marked purchased</dt><dd>@expectedUndatedSpentToDate.ToString("C2")</dd></div>
                             <div><dt>Unscheduled one-time items (not assumed due)</dt><dd>@expectedUndatedPacedToDate.ToString("C2")</dd></div>
-                            <div><dt>Expected spending to date</dt><dd><strong>@expectedToDate.ToString("C2")</strong></dd></div>
-                            <div><dt>Actual spending to date</dt><dd><strong>@displayedActual.ToString("C2")</strong></dd></div>
+                            <div><dt>Expected spending removed by exclusions</dt><dd>@excludedExpected.ToString("C2")</dd></div>
+                            <div><dt>Expected spending to date (included)</dt><dd><strong>@expectedToDate.ToString("C2")</strong></dd></div>
+                            <div><dt>Current Actual (all items)</dt><dd>@displayedActual.ToString("C2")</dd></div>
+                            <div><dt>Actual spending removed by exclusions</dt><dd>@excludedActual.ToString("C2")</dd></div>
+                            <div><dt>Actual spending used for Over/Under</dt><dd><strong>@actualForVariance.ToString("C2")</strong></dd></div>
                             <div><dt>Over/Under (positive = under, negative = over)</dt><dd><strong>@overUnderDisplay</strong></dd></div>
                         </dl>
-                        <p class="muted">Monthly and quarterly billing uses annual budget ÷ 12 or ÷ 4, multiplied by distinct posted billing periods. Automatic detection requires at least three consecutive billed months. Undated one-time items with no recorded spend are not prorated. Add purchase dates, set Billing cadence, or configure recurring actual schedules for a more accurate comparison. Totals respect the filters above and include all matching budget items, not only the current table page.</p>
+                        <p class="muted">Monthly/quarterly billing uses annual budget ÷ 12 or ÷ 4 multiplied by billed periods. A past estimated purchase date alone does not make a one-time purchase expected: it must be marked Purchased or have an actual. Exclude as-needed items from Over/Under using the checkbox in the Budget table. Exclusions do not remove any actual spending, planned amounts or forecast. Totals respect the filters above and include all matching budget items, not only the current table page.</p>
                     </div>
                 </details>
 
@@ -360,6 +370,7 @@
                                     <th aria-sort="@SortAria("renewal")"><a class="lf-budget-sort-link" href="@SortUrl("renewal")">Renewal <span aria-hidden="true">@SortGlyph("renewal")</span></a></th>
                                     <th aria-sort="@SortAria("status")"><a class="lf-budget-sort-link" href="@SortUrl("status")">Status <span aria-hidden="true">@SortGlyph("status")</span></a></th>
                                     <th aria-sort="@SortAria("approval")"><a class="lf-budget-sort-link" href="@SortUrl("approval")">Approval <span aria-hidden="true">@SortGlyph("approval")</span></a></th>
+                                    <th title="Exclude only from the spending pace comparison">Exclude from Over/Under</th>
                                 </tr>
                                 </thead>
                                 <tbody>
@@ -395,6 +406,25 @@
                                         <td>@(item.RenewalDate?.ToString("MM/dd/yyyy") ?? "—")</td>
                                         <td><span class="lf-status-dot"></span>@FriendlyStatus(item.Status)</td>
                                         <td><span class="badge @((item.Status == BudgetItemStatus.Approved || (item.Status == BudgetItemStatus.Purchased && item.ApprovedTotal is not null)) ? "lf-badge-success" : item.Status == BudgetItemStatus.Submitted ? "lf-badge-warning" : item.Status == BudgetItemStatus.Denied ? "lf-badge-danger" : "lf-badge-muted")">@ApprovalLabel(item)</span></td>
+                                        <td>
+                                            @if (Model.CanEdit && !snapshot.SelectedVersionLocked &&
+                                                item.Status is not (BudgetItemStatus.Cancelled or BudgetItemStatus.Archived))
+                                            {
+                                                <form method="post" action="/budget/items/@item.Id/over-under-exclusion" class="lf-budget-variance-toggle">
+                                                    @Html.AntiForgeryToken()
+                                                    <input type="hidden" name="returnUrl" value="@(Context.Request.Path.ToString() + Context.Request.QueryString.ToString())" />
+                                                    <label title="Exclude @item.Description from Current Over/Under only">
+                                                        <input type="checkbox" name="excludeFromOverUnder" value="true" checked="@item.ExcludeFromOverUnder" data-budget-exclusion-toggle aria-label="Exclude @item.Description from Over/Under" />
+                                                        <span>@(item.ExcludeFromOverUnder ? "Excluded" : "Include")</span>
+                                                    </label>
+                                                    <button type="submit" class="lf-budget-variance-save">Save</button>
+                                                </form>
+                                            }
+                                            else
+                                            {
+                                                <span>@(item.ExcludeFromOverUnder ? "Excluded" : "Included")</span>
+                                            }
+                                        </td>
                                     </tr>
                                 }
                                 </tbody>
@@ -502,8 +532,27 @@
                     <div><span>Expected billing installments</span><strong>@selectedItem.ExpectedInstallmentsToDate.ToString("C2")</strong></div>
                     <div><span>Full-year Forecast</span><strong>@selectedItem.Forecast.ToString("C2")</strong></div>
                     <div><span>Expected to Date</span><strong>@selectedItem.ExpectedToDate.ToString("C2")</strong></div>
-                    <div><span>Current Over/Under</span><strong>@(selectedItem.ExpectedToDate - selectedItem.Actual < 0m ? "-" : selectedItem.ExpectedToDate - selectedItem.Actual > 0m ? "+" : "")@Math.Abs(selectedItem.ExpectedToDate - selectedItem.Actual).ToString("C2")</strong></div>
+                    <div><span>Current Over/Under</span><strong>@(selectedItem.ExcludeFromOverUnder ? "Excluded" : (selectedItem.ExpectedToDate - selectedItem.Actual < 0m ? "-" : selectedItem.ExpectedToDate - selectedItem.Actual > 0m ? "+" : "") + Math.Abs(selectedItem.ExpectedToDate - selectedItem.Actual).ToString("C2"))</strong></div>
                     <div><span>Status</span><strong>@FriendlyStatus(selectedItem.Status)</strong></div>
+                </section>
+
+                <section class="lf-drawer-card">
+                    <h3>Over/Under exclusion</h3>
+                    <p class="lf-muted">As-needed purchases can be excluded from spending pace comparisons without removing actuals.</p>
+                    @if (Model.CanEdit && !snapshot.SelectedVersionLocked &&
+                        selectedItem.Status is not (BudgetItemStatus.Cancelled or BudgetItemStatus.Archived))
+                    {
+                        <form method="post" action="/budget/items/@selectedItem.Id/over-under-exclusion" class="lf-variance-exclusion-form">
+                            @Html.AntiForgeryToken()
+                            <input type="hidden" name="returnUrl" value="@(Context.Request.Path.ToString() + Context.Request.QueryString.ToString())" />
+                            <label><input type="checkbox" name="excludeFromOverUnder" value="true" checked="@selectedItem.ExcludeFromOverUnder" /> Exclude from Current Over/Under</label>
+                            <button type="submit">Save exclusion</button>
+                        </form>
+                    }
+                    else
+                    {
+                        <p>@(selectedItem.ExcludeFromOverUnder ? "Excluded" : "Included")</p>
+                    }
                 </section>
 
                 <section class="lf-drawer-card">

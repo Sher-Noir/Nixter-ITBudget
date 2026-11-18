@@ -24,6 +24,7 @@
     var actualCorrected = ViewData["ActualCorrected"] as string;
     var recurringMessage = ViewData["RecurringActualMessage"] as string;
     var billingCadenceChanged = ViewData["BillingCadenceChanged"] as string;
+    var exclusionChanged = ViewData["OverUnderExclusionChanged"] as string;
     var recurringSchedules = ViewData["RecurringSchedules"] as IReadOnlyList<RecurringActualSchedule> ?? [];
     var recurringToday = ViewData["RecurringToday"] as DateOnly? ?? DateOnly.FromDateTime(DateTime.Today);
     var recurringFiscal = ViewData["RecurringFiscalDates"] is ValueTuple<DateOnly, DateOnly> fiscal
@@ -72,6 +73,10 @@
 @if (actualSaved)
 {
     <div class="card lf-alert lf-alert-success" role="status">Actual transaction added to this budget item.</div>
+}
+@if (!string.IsNullOrWhiteSpace(exclusionChanged))
+{
+    <div class="card lf-alert lf-alert-success" role="status">@exclusionChanged</div>
 }
 @if (!string.IsNullOrWhiteSpace(billingCadenceChanged))
 {
@@ -193,9 +198,26 @@
                     <div><span>Renewal Date</span><strong>@(item.RenewalDate?.ToString("MMM d, yyyy") ?? "—")</strong></div>
                     <div><span>Frequency</span><strong>@(frequency ?? "—")</strong></div>
                     <div><span>Billing cadence</span><strong>@item.BillingCadence</strong></div>
+                    <div><span>Current Over/Under</span><strong>@(item.ExcludeFromOverUnder ? "Excluded" : "Included")</strong></div>
                     <div><span>Finance Type</span><strong>@(financeType ?? "—")</strong></div>
                     <div><span>Internal Category</span><strong>@(category ?? "—")</strong></div>
                     <div><span>Budget Version</span><strong>@item.BudgetVersionName</strong></div>
+                </div>
+                <div class="lf-variance-exclusion-settings">
+                    <h3>Current Over/Under</h3>
+                    @if (canEditBranding && !item.VersionLocked &&
+                        item.Status is not (BudgetItemStatus.Archived or BudgetItemStatus.Cancelled))
+                    {
+                        <form method="post" action="/budget/items/@item.Id/over-under-exclusion" class="lf-variance-exclusion-form">
+                            @Html.AntiForgeryToken()
+                            <label>
+                                <input type="checkbox" name="excludeFromOverUnder" value="true" checked="@item.ExcludeFromOverUnder" />
+                                <span>Exclude this item from Current Over/Under</span>
+                            </label>
+                            <button type="submit" class="button">Save exclusion</button>
+                        </form>
+                    }
+                    <p class="muted">Use for as-needed/discretionary expenses. This removes both expected and actual amounts from the spending-pace comparison ONLY. Planned Total, Current Actual and Current Forecasted still include this item. You can uncheck it later.</p>
                 </div>
                 <div class="lf-spending-cadence">
                     <h3>Billing cadence for spending comparisons</h3>
@@ -227,7 +249,7 @@
                     <div><span>Available</span><strong>@workspace.Available.ToString("C2")</strong></div>
                     <div><span>Forecast</span><strong>@workspace.Forecast.ToString("C2")</strong></div>
                     <div><span>Expected to date</span><strong>@workspace.SpendProjection.ExpectedToDate.ToString("C2")</strong></div>
-                    <div><span>Spending pace over/under</span><strong>@(workspace.SpendProjection.ExpectedToDate - workspace.Actual < 0m ? "-" : "+")@Math.Abs(workspace.SpendProjection.ExpectedToDate - workspace.Actual).ToString("C2")</strong></div>
+                    <div><span>Spending pace over/under</span><strong>@(item.ExcludeFromOverUnder ? "Excluded" : (workspace.SpendProjection.ExpectedToDate - workspace.Actual < 0m ? "-" : "+") + Math.Abs(workspace.SpendProjection.ExpectedToDate - workspace.Actual).ToString("C2"))</strong></div>
                     <div><span>Variance (Budget vs Actual)</span><strong>@variance.ToString("C2")</strong></div>
                 </div>
                 <details id="forecast-breakdown" class="lf-forecast-breakdown">
