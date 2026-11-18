@@ -53,7 +53,7 @@ public sealed class MonthlyBillingVarianceIntegrationTests
             new FiscalYearAdministrationService(db,
                 new OutstandingCommitmentService(db)));
         var snap = await planning.GetSnapshotAsync(fy.Id, version.Id);
-        var line = Assert.Single(snap.Items.Where(x => x.Id == ubeo.Id));
+        var line = Assert.Single(snap.Items, x => x.Id == ubeo.Id);
         Assert.Equal(BudgetBillingCadence.Automatic, line.BillingCadence);
         Assert.Equal(BudgetBillingCadence.Monthly, line.EffectiveBillingCadence);
         Assert.Equal(4, line.BilledPeriods);
@@ -65,7 +65,7 @@ public sealed class MonthlyBillingVarianceIntegrationTests
         Assert.Equal(28800m, line.RemainingInstallmentAllowance);
         Assert.Equal(44714.93m, line.Forecast);
 
-        var switchItem = Assert.Single(snap.Items.Where(x => x.Id == unscheduled.Id));
+        var switchItem = Assert.Single(snap.Items, x => x.Id == unscheduled.Id);
         Assert.Equal(0m, switchItem.ExpectedToDate);
         Assert.Equal(0m, switchItem.Actual);
         Assert.Equal(28000m, switchItem.Forecast);
