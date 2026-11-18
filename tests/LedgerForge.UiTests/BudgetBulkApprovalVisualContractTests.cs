@@ -37,7 +37,8 @@ public sealed class BudgetBulkApprovalVisualContractTests
         Assert.Contains("ExpectedOneTimeToDate(", query, StringComparison.Ordinal);
         Assert.Contains("FiscalYears.AsNoTracking()", query, StringComparison.Ordinal);
         Assert.Contains("actual > 0m", query, StringComparison.Ordinal);
-        Assert.Contains("elapsedDays", helper, StringComparison.Ordinal);
+        Assert.Contains("return 0m;", helper, StringComparison.Ordinal);
+        Assert.Contains("ExpectedInstallmentsToDate", query, StringComparison.Ordinal);
     }
 
     private static string Read(params string[] segments)

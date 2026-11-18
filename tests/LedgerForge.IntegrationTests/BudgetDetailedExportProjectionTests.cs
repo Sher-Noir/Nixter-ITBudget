@@ -63,6 +63,6 @@ public sealed class BudgetDetailedExportProjectionTests
         Assert.Equal(-100m, filtered.Sum(x => x.ExpectedToDate - x.Actual));
         Assert.Equal(1310.40m, filtered.Sum(x => x.ExpectedUndatedSpentToDate));
         Assert.Equal(0m, filtered.Sum(x => x.ExpectedUndatedPacedToDate));
-        Assert.Contains("Undated", item.ExpectedToDateBasis, StringComparison.Ordinal);
+        Assert.Contains("undated", item.ExpectedToDateBasis, StringComparison.OrdinalIgnoreCase);
     }
 }

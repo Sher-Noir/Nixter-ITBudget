@@ -20,14 +20,11 @@ public sealed class BudgetSpendPacingCalculatorTests
     }
 
     [Fact]
-    public void UndatedUnspentItem_IsPacedOverFiscalYearInsteadOfZero()
+    public void UndatedUnspentItem_HasNoAssumedBillingDate()
     {
         var expected = BudgetSpendPacingCalculator.ExpectedOneTimeToDate(
             36500m, null, BudgetItemStatus.Draft, 0m, Start, End, Today);
-        var elapsedDays = Today.DayNumber - Start.DayNumber + 1;
-        Assert.Equal(decimal.Round(36500m * elapsedDays / 365m, 2,
-            MidpointRounding.AwayFromZero), expected);
-        Assert.InRange(expected, 1m, 36500m);
+        Assert.Equal(0m, expected);
     }
 
     [Fact]
@@ -42,11 +39,11 @@ public sealed class BudgetSpendPacingCalculatorTests
     }
 
     [Fact]
-    public void UndatedExpected_PacesCorrectlyAtFiscalYearBoundaries()
+    public void UndatedUnspentItem_NeverInventsCalendarPacing()
     {
         Assert.Equal(0m, BudgetSpendPacingCalculator.ExpectedOneTimeToDate(
             36500m, null, BudgetItemStatus.Draft, 0m, Start, End, Start.AddDays(-1)));
-        Assert.Equal(36500m, BudgetSpendPacingCalculator.ExpectedOneTimeToDate(
+        Assert.Equal(0m, BudgetSpendPacingCalculator.ExpectedOneTimeToDate(
             36500m, null, BudgetItemStatus.Draft, 0m, Start, End, End.AddDays(1)));
     }
 
