@@ -24,7 +24,7 @@ public sealed class BudgetItemActualCorrectionTests
         var suffix = Guid.NewGuid().ToString("N")[..8];
         var year = new FiscalYear($"Correction {suffix}", new DateOnly(2038, 1, 1), new DateOnly(2038, 12, 31), 2038);
         year.SetStatus(FiscalYearStatus.Active);
-        var version = new BudgetVersion(year.Id, $"Correction {suffix}", BudgetVersionType.InitialPlanning, 1, year.StartDate);
+        var version = new BudgetVersion(year.Id, $"Correction {suffix}", BudgetVersionType.InitialPlanning, 1, effectiveDate: year.StartDate);
         var item = new BudgetItem(year.Id, version.Id, $"ITEM-{suffix}", "1", "Correction test item", 1m, 1000m);
         db.FiscalYears.Add(year);
         db.BudgetVersions.Add(version);
