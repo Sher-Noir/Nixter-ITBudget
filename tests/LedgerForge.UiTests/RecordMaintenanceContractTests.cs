@@ -49,7 +49,7 @@ public sealed class RecordMaintenanceContractTests
         var planning = Read("src", "LedgerForge.Infrastructure", "Budgeting", "BudgetPlanningService.cs");
         var table = Read("src", "LedgerForge.Infrastructure", "Budgeting", "BudgetItemTable.cs");
 
-        Assert.Contains("BeginTransactionAsync(cancellationToken)", ledger, StringComparison.Ordinal);
+        Assert.Contains("IsolationLevel.Serializable, cancellationToken", ledger, StringComparison.Ordinal);
         Assert.Contains("await ReverseAsync(original.Id, original.TransactionDate, reason, cancellationToken)", ledger, StringComparison.Ordinal);
         Assert.Contains("var replacementId = await PostManualAsync(", ledger, StringComparison.Ordinal);
         Assert.Contains("[HttpPost(\"{id:guid}/correct\")]", controller, StringComparison.Ordinal);
